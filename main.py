@@ -46,7 +46,7 @@ def web_panel():
                 }
             }
 
-            setInterval(updateStatus, 2000); // update every 2 seconds
+            setInterval(updateStatus, 2000);
             updateStatus();
         </script>
     </body>
