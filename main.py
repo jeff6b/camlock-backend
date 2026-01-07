@@ -1,60 +1,54 @@
-from fastapi import FastAPI, Header, HTTPException
-import sqlite3
+from fastapi.responses import HTMLResponse
 
-app = FastAPI()
+@app.get("/", response_class=HTMLResponse)
+def web_panel():
+    return """
+    <html>
+    <head>
+        <title>Camlock Control Panel</title>
+    </head>
+    <body>
+        <h1>Camlock Control</h1>
+        <button onclick="toggle(true)">Turn ON</button>
+        <button onclick="toggle(false)">Turn OFF</button>
+        <p id="status">Loading...</p>
 
-API_KEY = "test_key_123"
+        <script>
+            const API_URL = '/api/status';
+            const API_KEY = 'test_key_123';
 
-def get_db():
-    return sqlite3.connect("database.db")
+            async function updateStatus() {
+                try {
+                    const res = await fetch(API_URL, {
+                        headers: { 'Authorization': API_KEY }
+                    });
+                    const data = await res.json();
+                    document.getElementById('status').innerText =
+                        'Camlock is ' + (data.camlock ? 'ON' : 'OFF');
+                } catch (err) {
+                    document.getElementById('status').innerText = 'Error fetching status';
+                }
+            }
 
-def init_db():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
-    cur.execute("""
-        INSERT OR IGNORE INTO settings (key, value)
-        VALUES ('camlock', 'false')
-    """)
-    db.commit()
-    db.close()
+            async function toggle(state) {
+                try {
+                    await fetch(API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': API_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ camlock: state })
+                    });
+                    updateStatus();
+                } catch (err) {
+                    alert('Failed to toggle state');
+                }
+            }
 
-init_db()
-
-def check_key(auth):
-    if auth != API_KEY:
-        raise HTTPException(status_code=401)
-
-@app.get("/api/status")
-def get_status(authorization: str = Header(None)):
-    check_key(authorization)
-
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT value FROM settings WHERE key='camlock'")
-    value = cur.fetchone()[0]
-    db.close()
-
-    return {"camlock": value == "true"}
-
-@app.post("/api/status")
-def set_status(data: dict, authorization: str = Header(None)):
-    check_key(authorization)
-
-    camlock = "true" if data.get("camlock") else "false"
-
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(
-        "UPDATE settings SET value=? WHERE key='camlock'",
-        (camlock,)
-    )
-    db.commit()
-    db.close()
-
-    return {"success": True}
+            setInterval(updateStatus, 2000); // update every 2 seconds
+            updateStatus();
+        </script>
+    </body>
+    </html>
+    """
