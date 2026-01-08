@@ -111,7 +111,7 @@ def web_panel(username: str = Path(..., description="Username")):
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>UI Remake - {username}</title>
+<title>Phase user {username}</title>
 <style>
 /* ================= RESET ================= */
 * {{
@@ -650,10 +650,10 @@ function applyConfigToUI() {{
         }}
     }});
     
-    // Apply inputs
+    // Apply inputs (but skip if user is currently editing)
     document.querySelectorAll('.custom-input').forEach(input => {{
         const setting = input.dataset.setting;
-        if (setting) {{
+        if (setting && input.dataset.editing !== 'true') {{
             const [section, key] = setting.split('.');
             if (config[section] && config[section][key] !== undefined) {{
                 input.value = config[section][key];
@@ -789,14 +789,34 @@ document.querySelectorAll('.toggle').forEach(toggle => {{
     }});
 }});
 
-// Custom input handling
+// Custom input handling with debounce
+let inputTimers = {{}};
 document.querySelectorAll('.custom-input').forEach(input => {{
-    input.addEventListener('change', () => {{
+    // Mark input as being edited
+    input.addEventListener('focus', () => {{
+        input.dataset.editing = 'true';
+    }});
+    
+    input.addEventListener('blur', () => {{
+        input.dataset.editing = 'false';
         const setting = input.dataset.setting;
         if (setting) {{
             const [section, key] = setting.split('.');
             config[section][key] = parseFloat(input.value);
             saveConfig();
+        }}
+    }});
+    
+    // Save on input with debounce
+    input.addEventListener('input', () => {{
+        const setting = input.dataset.setting;
+        if (setting) {{
+            clearTimeout(inputTimers[setting]);
+            inputTimers[setting] = setTimeout(() => {{
+                const [section, key] = setting.split('.');
+                config[section][key] = parseFloat(input.value);
+                saveConfig();
+            }}, 1000); // Wait 1 second after typing stops
         }}
     }});
 }});
