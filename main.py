@@ -1,10 +1,9 @@
-from fastapi import FastAPI, Header, HTTPException
+# main.py
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 import sqlite3
 
 app = FastAPI()
-
-API_KEY = "test_key_123"
 
 # ---------------- Database ----------------
 def get_db():
@@ -13,49 +12,51 @@ def get_db():
 def init_db():
     db = get_db()
     cur = db.cursor()
+    
+    # Settings table (per-user, key format "camlock_<username>")
     cur.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
         )
     """)
-    cur.execute("""
-        INSERT OR IGNORE INTO settings (key, value)
-        VALUES ('camlock', 'false')
-    """)
+    
     db.commit()
     db.close()
 
 init_db()
 
-def check_key(auth):
-    if auth != API_KEY:
-        raise HTTPException(status_code=401)
-
 # ---------------- API ----------------
 @app.get("/api/status")
-def get_status(authorization: str = Header(None)):
-    check_key(authorization)
+def get_status(user: str = "default"):
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT value FROM settings WHERE key='camlock'")
+    
+    # create entry if user doesn't exist
+    cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (f"camlock_{user}", "false"))
+    db.commit()
+    
+    cur.execute("SELECT value FROM settings WHERE key=?", (f"camlock_{user}",))
     value = cur.fetchone()[0]
     db.close()
     return {"camlock": value == "true"}
 
 @app.post("/api/status")
-def set_status(data: dict, authorization: str = Header(None)):
-    check_key(authorization)
+def set_status(data: dict):
+    user = data.get("user", "default")
     camlock = "true" if data.get("camlock") else "false"
+
     db = get_db()
     cur = db.cursor()
-    cur.execute(
-        "UPDATE settings SET value=? WHERE key='camlock'",
-        (camlock,)
-    )
+    # create or update user-specific camlock
+    cur.execute("""
+        INSERT INTO settings(key, value) VALUES(?, ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value
+    """, (f"camlock_{user}", camlock))
     db.commit()
     db.close()
-    return {"success": True}
+
+    return {"success": True, "user": user, "camlock": camlock == "true"}
 
 # ---------------- Web Panel ----------------
 @app.get("/", response_class=HTMLResponse)
@@ -67,40 +68,41 @@ def web_panel():
     </head>
     <body>
         <h1>Camlock Control</h1>
+
+        <label for="username">User:</label>
+        <input type="text" id="username" value="lol">
+        <br><br>
+
         <button onclick="toggle(true)">Turn ON</button>
         <button onclick="toggle(false)">Turn OFF</button>
         <p id="status">Loading...</p>
 
         <script>
             const API_URL = '/api/status';
-            const API_KEY = 'test_key_123';
 
             async function updateStatus() {
+                const user = document.getElementById('username').value;
                 try {
-                    const res = await fetch(API_URL, {
-                        headers: { 'Authorization': API_KEY }
-                    });
+                    const res = await fetch(API_URL + '?user=' + encodeURIComponent(user));
                     const data = await res.json();
                     document.getElementById('status').innerText =
-                        'Camlock is ' + (data.camlock ? 'ON' : 'OFF');
+                        'Camlock for ' + user + ' is ' + (data.camlock ? 'ON' : 'OFF');
                 } catch (err) {
                     document.getElementById('status').innerText = 'Error fetching status';
                 }
             }
 
             async function toggle(state) {
+                const user = document.getElementById('username').value;
                 try {
                     await fetch(API_URL, {
                         method: 'POST',
-                        headers: {
-                            'Authorization': API_KEY,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ camlock: state })
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user: user, camlock: state })
                     });
                     updateStatus();
                 } catch (err) {
-                    alert('Failed to toggle state');
+                    alert('Failed to toggle state for ' + user);
                 }
             }
 
