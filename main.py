@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, Path, Request
+from fastapi import FastAPI, Path
 from fastapi.responses import HTMLResponse
 import sqlite3
 import json
@@ -8,26 +8,51 @@ app = FastAPI()
 
 # ---------------- Database ----------------
 def get_db():
-    return sqlite3.connect("database.db", check_same_thread=False)
+    return sqlite3.connect("database.db")
 
 def init_db():
     db = get_db()
     cur = db.cursor()
+   
+    # Settings table (stores entire config as JSON per user)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS settings (
-            username TEXT,
-            key TEXT,
-            value TEXT,
-            PRIMARY KEY (username, key)
+            username TEXT PRIMARY KEY,
+            config TEXT
         )
     """)
+   
     db.commit()
     db.close()
 
 init_db()
 
-# Default configuration (used for new users)
+# Default configuration
 DEFAULT_CONFIG = {
+    "triggerbot": {
+        "Enabled": True,
+        "Keybind": "Right Mouse",
+        "Delay": 0.0,
+        "MaxStuds": 120,
+        "LimitStuds": True,
+        "DeathCheck": True,
+        "KnifeCheck": True,
+        "TeamCheck": True,
+        "TargetMode": False,
+        "TargetKeybind": "Middle Mouse",
+        "Prediction": 0.1,
+    },
+    "esp": {
+        "Enabled": False,
+        "Animation": True,
+        "BaseColor": [255, 255, 255, 255],
+        "WaveColor": [0, 0, 0, 255],
+        "TextColor": [200, 200, 200, 255],
+        "StudCheck": False,
+        "MaxStuds": 500,
+        "TeamCheck": True,
+        "Skeleton": False,
+    },
     "camlock": {
         "Enabled": True,
         "Keybind": "Q",
@@ -41,93 +66,52 @@ DEFAULT_CONFIG = {
         "BodyPart": "Head",
         "ClosestPart": False,
         "ScaleToggle": False,
-        "Scale": 3
-    },
-    "esp": {
-        "Enabled": False,
-        "Animation": True,
-        "BaseColor": [255, 255, 255, 255],
-        "WaveColor": [0, 0, 0, 255],
-        "TextColor": [200, 200, 200, 255],
-        "StudCheck": False,
-        "MaxStuds": 500,
-        "TeamCheck": True,
-        "Skeleton": False
-    },
-    "triggerbot": {
-        "Enabled": True,
-        "Keybind": "Right Mouse",
-        "Delay": 0.0,
-        "MaxStuds": 120,
-        "LimitStuds": True,
-        "DeathCheck": True,
-        "KnifeCheck": True,
-        "TeamCheck": True,
-        "TargetMode": False,
-        "TargetKeybind": "Middle Mouse",
-        "Prediction": 0.1
+        "Scale": 1.0,
     }
 }
 
-# ---------------- API Endpoints ----------------
+# ---------------- API ----------------
 @app.get("/api/config/{username}")
-def get_config(username: str = Path(..., min_length=1)):
+def get_config(username: str = Path(..., description="Username")):
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT key, value FROM settings WHERE username = ?", (username,))
-    rows = cur.fetchall()
+   
+    # Create entry if user doesn't exist
+    cur.execute("INSERT OR IGNORE INTO settings (username, config) VALUES (?, ?)", 
+                (username, json.dumps(DEFAULT_CONFIG)))
+    db.commit()
+   
+    cur.execute("SELECT config FROM settings WHERE username=?", (username,))
+    result = cur.fetchone()
     db.close()
-
-    # Start with defaults
-    config = {k: dict(v) for k, v in DEFAULT_CONFIG.items()}
-
-    for key, value_json in rows:
-        try:
-            value = json.loads(value_json)
-        except:
-            value = value_json
-        parts = key.split(".", 1)
-        if len(parts) == 2:
-            section, subkey = parts
-            if section in config:
-                config[section][subkey] = value
-
+    
+    config = json.loads(result[0]) if result else DEFAULT_CONFIG
     return config
 
 @app.post("/api/config/{username}")
-async def set_config(username: str = Path(..., min_length=1), request: Request = None):
-    data = await request.json()
+def set_config(username: str, data: dict):
     db = get_db()
     cur = db.cursor()
-
-    for full_key, value in data.items():
-        value_json = json.dumps(value)
-        cur.execute("""
-            INSERT INTO settings (username, key, value)
-            VALUES (?, ?, ?)
-            ON CONFLICT(username, key) DO UPDATE SET value = excluded.value
-        """, (username, full_key, value_json))
-
+    
+    # Update or create user config
+    cur.execute("""
+        INSERT INTO settings(username, config) VALUES(?, ?)
+        ON CONFLICT(username) DO UPDATE SET config=excluded.config
+    """, (username, json.dumps(data)))
+    
     db.commit()
     db.close()
-    return {"success": True}
+    return {"success": True, "username": username}
 
 # ---------------- Web Panel ----------------
 @app.get("/{username}", response_class=HTMLResponse)
-@app.get("/", response_class=HTMLResponse)
-def web_panel(username: str = None):
-    if username is None:
-        return HTMLResponse("""
-        <h1>Camlock Control Panel</h1>
-        <p>Append a username to the URL → <code>https://camlock-backend.onrender.com/yourusername</code></p>
-        <p>Example: <a href="/lol">https://camlock-backend.onrender.com/lol</a></p>
-        """)
-
-    html = f"""<!DOCTYPE html>
+def web_panel(username: str = Path(..., description="Username")):
+    return f"""
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>UI Remake</title>
+<title>UI Remake - {username}</title>
 <style>
 /* ================= RESET ================= */
 * {{
@@ -628,224 +612,337 @@ body {{
 </div>
 <script>
 const USERNAME = "{username}";
-const API_URL = `/api/config/${USERNAME}`;
+const API_URL = `/api/config/${{USERNAME}}`;
 
-// Load config from backend
-async function loadConfig() {
-    try {
+// Configuration object
+let config = {{}};
+
+// Load config from server
+async function loadConfig() {{
+    try {{
         const res = await fetch(API_URL);
-        if (!res.ok) throw new Error("Failed to fetch");
-        const config = await res.json();
+        const data = await res.json();
+        config = data;
+        applyConfigToUI();
+    }} catch (err) {{
+        console.error('Failed to load config:', err);
+    }}
+}}
 
-        document.querySelectorAll('[data-setting]').forEach(el => {
-            const setting = el.dataset.setting;
+// Apply config to UI elements
+function applyConfigToUI() {{
+    // Apply toggles
+    document.querySelectorAll('.toggle').forEach(toggle => {{
+        const setting = toggle.dataset.setting;
+        if (setting) {{
             const [section, key] = setting.split('.');
-            const value = config[section]?.[key];
-            if (typeof value === 'undefined') return;
-
-            if (el.classList.contains('toggle')) {
-                el.classList.toggle('on', value === true);
-            } else if (el.classList.contains('custom-input')) {
-                el.value = value;
-            } else if (el.classList.contains('select-selected')) {
-                const select = el.parentElement;
-                const items = select.querySelectorAll('.select-item');
-                items.forEach(item => {
+            if (config[section] && config[section][key] !== undefined) {{
+                toggle.classList.toggle('on', config[section][key]);
+            }}
+        }}
+    }});
+    
+    // Apply inputs
+    document.querySelectorAll('.custom-input').forEach(input => {{
+        const setting = input.dataset.setting;
+        if (setting) {{
+            const [section, key] = setting.split('.');
+            if (config[section] && config[section][key] !== undefined) {{
+                input.value = config[section][key];
+            }}
+        }}
+    }});
+    
+    // Apply keybinds
+    document.querySelectorAll('.keybind-btn').forEach(btn => {{
+        const setting = btn.dataset.setting;
+        if (setting) {{
+            const [section, key] = setting.split('.');
+            if (config[section] && config[section][key] !== undefined) {{
+                btn.textContent = config[section][key];
+            }}
+        }}
+    }});
+    
+    // Apply dropdowns
+    document.querySelectorAll('.custom-select').forEach(select => {{
+        const setting = select.dataset.setting;
+        if (setting) {{
+            const [section, key] = setting.split('.');
+            if (config[section] && config[section][key] !== undefined) {{
+                const value = config[section][key];
+                select.querySelector('.select-selected').textContent = value;
+                select.querySelectorAll('.select-item').forEach(item => {{
                     item.classList.toggle('selected', item.dataset.value === value);
-                });
-                el.textContent = value;
-            } else if (el.classList.contains('slider')) {
-                el.value = value;
-                if (el.id === 'scaleSlider') updateSlider();
-            } else if (el.classList.contains('color')) {
-                if (Array.isArray(value) && value.length >= 3) {
-                    el.style.background = `rgb(${value[0]},${value[1]},${value[2]})`;
-                }
-            } else if (el.classList.contains('keybind-btn')) {
-                el.textContent = value || 'None';
-            }
-        });
-    } catch (err) {
-        console.error("Failed to load config:", err);
-    }
-}
+                }});
+            }}
+        }}
+    }});
+    
+    // Apply slider
+    if (config.camlock && config.camlock.Scale !== undefined) {{
+        const slider = document.getElementById('scaleSlider');
+        const value = Math.round(config.camlock.Scale * 5);
+        slider.value = value;
+        updateSlider();
+    }}
+    
+    // Apply colors
+    document.querySelectorAll('.color').forEach(color => {{
+        const setting = color.dataset.setting;
+        if (setting) {{
+            const [section, key] = setting.split('.');
+            if (config[section] && config[section][key] !== undefined) {{
+                const [r, g, b] = config[section][key];
+                color.style.background = `rgb(${{r}},${{g}},${{b}})`;
+            }}
+        }}
+    }});
+}}
 
-// Save individual setting
-function saveSetting(key, value) {
-    fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [key]: value })
-    }).catch(err => console.error("Save failed:", err));
-}
+// Save config to server
+async function saveConfig() {{
+    try {{
+        await fetch(API_URL, {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify(config)
+        }});
+    }} catch (err) {{
+        console.error('Failed to save config:', err);
+    }}
+}}
 
-// Toggles
-document.querySelectorAll('.toggle').forEach(toggle => {
-    toggle.addEventListener('click', () => {
+// Search functionality
+const searchInput = document.getElementById('searchInput');
+searchInput.addEventListener('input', (e) => {{
+    const query = e.target.value.toLowerCase().trim();
+   
+    if (query === '') {{
+        document.querySelectorAll('.row.highlight').forEach(row => {{
+            row.classList.remove('highlight');
+        }});
+        return;
+    }}
+   
+    const allRows = document.querySelectorAll('.row[data-search]');
+    let foundMatch = null;
+   
+    allRows.forEach(row => {{
+        const searchTerms = row.getAttribute('data-search').toLowerCase();
+        if (searchTerms.includes(query)) {{
+            if (!foundMatch) foundMatch = row;
+        }}
+    }});
+   
+    if (foundMatch) {{
+        const tabContent = foundMatch.closest('.tab-content');
+        const tabId = tabContent.id;
+       
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+       
+        document.querySelector(`.tab[data-tab="${{tabId}}"]`).classList.add('active');
+        tabContent.classList.add('active');
+       
+        document.querySelectorAll('.row.highlight').forEach(row => {{
+            row.classList.remove('highlight');
+        }});
+       
+        foundMatch.classList.add('highlight');
+       
+        setTimeout(() => {{
+            foundMatch.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+        }}, 100);
+    }}
+}});
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(tab => {{
+    tab.addEventListener('click', () => {{
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+       
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab).classList.add('active');
+    }});
+}});
+
+// Toggle handling
+document.querySelectorAll('.toggle').forEach(toggle => {{
+    toggle.addEventListener('click', () => {{
         toggle.classList.toggle('on');
-        saveSetting(toggle.dataset.setting, toggle.classList.contains('on'));
-    });
-});
+        const setting = toggle.dataset.setting;
+        if (setting) {{
+            const [section, key] = setting.split('.');
+            config[section][key] = toggle.classList.contains('on');
+            saveConfig();
+        }}
+    }});
+}});
 
-// Number inputs
-document.querySelectorAll('.custom-input').forEach(input => {
-    input.addEventListener('change', () => {
-        const value = parseFloat(input.value) || 0;
-        input.value = value;
-        saveSetting(input.dataset.setting, value);
-    });
-});
+// Custom input handling
+document.querySelectorAll('.custom-input').forEach(input => {{
+    input.addEventListener('change', () => {{
+        const setting = input.dataset.setting;
+        if (setting) {{
+            const [section, key] = setting.split('.');
+            config[section][key] = parseFloat(input.value);
+            saveConfig();
+        }}
+    }});
+}});
 
-// Dropdowns
-document.querySelectorAll('.custom-select').forEach(select => {
+// Custom dropdown handling
+document.querySelectorAll('.custom-select').forEach(select => {{
     const selected = select.querySelector('.select-selected');
     const itemsContainer = select.querySelector('.select-items');
     const items = select.querySelectorAll('.select-item');
-
-    selected.addEventListener('click', e => {
+   
+    selected.addEventListener('click', (e) => {{
         e.stopPropagation();
-        document.querySelectorAll('.select-items').forEach(s => {
+        document.querySelectorAll('.select-items').forEach(s => {{
             if (s !== itemsContainer) s.classList.remove('show');
-        });
+        }});
         itemsContainer.classList.toggle('show');
-    });
-
-    items.forEach(item => {
-        item.addEventListener('click', () => {
+    }});
+   
+    items.forEach(item => {{
+        item.addEventListener('click', () => {{
             const value = item.dataset.value;
             selected.textContent = value;
+           
             items.forEach(i => i.classList.remove('selected'));
             item.classList.add('selected');
+           
             itemsContainer.classList.remove('show');
-            saveSetting(select.dataset.setting, value);
-        });
-    });
-});
+           
+            const setting = select.dataset.setting;
+            if (setting) {{
+                const [section, key] = setting.split('.');
+                config[section][key] = value;
+                saveConfig();
+            }}
+        }});
+    }});
+}});
 
-document.addEventListener('click', () => {
+// Close dropdowns when clicking outside
+document.addEventListener('click', () => {{
     document.querySelectorAll('.select-items').forEach(s => s.classList.remove('show'));
-});
+}});
 
-// Slider
+// Custom slider handling with dynamic label color
 const scaleSlider = document.getElementById('scaleSlider');
 const scaleFill = document.getElementById('scaleFill');
 const scaleLabel = document.getElementById('scaleLabel');
 
-function updateSlider() {
+function updateSlider() {{
     const value = parseInt(scaleSlider.value);
-    const percentage = ((value - 1) / 4) * 100;
+    const max = parseInt(scaleSlider.max);
+    const percentage = ((value - 1) / (max - 1)) * 100;
+   
     scaleFill.style.width = percentage + '%';
-    scaleLabel.textContent = `${value}/5`;
-    scaleLabel.style.color = percentage >= 50 ? '#000000' : '#ffffff';
-    saveSetting('camlock.Scale', value);
-}
+    scaleLabel.textContent = `${{value}}/5`;
+   
+    if (percentage >= 50) {{
+        scaleLabel.style.color = '#000000';
+    }} else {{
+        scaleLabel.style.color = '#ffffff';
+    }}
+   
+    const setting = scaleSlider.dataset.setting;
+    if (setting) {{
+        const [section, key] = setting.split('.');
+        config[section][key] = value / 5;
+        saveConfig();
+    }}
+}}
 
 scaleSlider.addEventListener('input', updateSlider);
 
-// Color picker
-document.querySelectorAll('.color').forEach(color => {
-    color.addEventListener('click', () => {
+// Color picker handling
+document.querySelectorAll('.color').forEach(color => {{
+    color.addEventListener('click', () => {{
         const input = document.createElement('input');
         input.type = 'color';
-        const match = color.style.background.match(/\\d+/g);
-        if (match) {
-            const hex = '#' + match.slice(0,3).map(x => parseInt(x).toString(16).padStart(2,'0')).join('');
+        const rgb = color.style.background.match(/\\d+/g);
+        if (rgb) {{
+            const hex = '#' + rgb.slice(0, 3).map(x => {{
+                const hex = parseInt(x).toString(16);
+                return hex.length === 1 ? '0' + hex : hex;
+            }}).join('');
             input.value = hex;
-        }
-        input.addEventListener('change', () => {
+        }}
+       
+        input.addEventListener('change', () => {{
             const hex = input.value;
-            const r = parseInt(hex.slice(1,3),16);
-            const g = parseInt(hex.slice(3,5),16);
-            const b = parseInt(hex.slice(5,7),16);
-            color.style.background = `rgb(${r},${g},${b})`;
-            saveSetting(color.dataset.setting, [r, g, b, 255]);
-        });
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+           
+            color.style.background = `rgb(${{r}},${{g}},${{b}})`;
+           
+            const setting = color.dataset.setting;
+            if (setting) {{
+                const [section, key] = setting.split('.');
+                config[section][key] = [r, g, b, 255];
+                saveConfig();
+            }}
+        }});
+       
         input.click();
-    });
-});
+    }});
+}});
 
-// Keybinds
-document.querySelectorAll('.keybind-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+// Keybind handling
+document.querySelectorAll('.keybind-btn').forEach(btn => {{
+    btn.addEventListener('click', () => {{
         const oldText = btn.textContent;
         btn.textContent = '...';
         btn.classList.add('listening');
-
-        const handler = (e) => {
+       
+        const handleKey = (e) => {{
             e.preventDefault();
             let key = e.key;
-            if (e.type === 'mousedown') {
-                if (e.button === 0) key = 'LMB';
-                else if (e.button === 1) key = 'MMB';
-                else if (e.button === 2) key = 'RMB';
-            } else if (key.length === 1) {
-                key = key.toUpperCase();
-            }
-
+           
+            if (e.button === 0) key = 'LMB';
+            else if (e.button === 1) key = 'MMB';
+            else if (e.button === 2) key = 'RMB';
+            else if (e.key.length === 1) key = e.key.toUpperCase();
+           
             btn.textContent = key;
             btn.classList.remove('listening');
-            saveSetting(btn.dataset.setting, key);
-
-            document.removeEventListener('keydown', handler);
-            document.removeEventListener('mousedown', handler);
-        };
-
-        document.addEventListener('keydown', handler);
-        document.addEventListener('mousedown', handler);
-
-        setTimeout(() => {
-            document.removeEventListener('keydown', handler);
-            document.removeEventListener('mousedown', handler);
-            if (btn.textContent === '...') {
+           
+            const setting = btn.dataset.setting;
+            if (setting) {{
+                const [section, settingKey] = setting.split('.');
+                config[section][settingKey] = key;
+                saveConfig();
+            }}
+           
+            document.removeEventListener('keydown', handleKey);
+            document.removeEventListener('mousedown', handleKey);
+        }};
+       
+        document.addEventListener('keydown', handleKey);
+        document.addEventListener('mousedown', handleKey);
+       
+        setTimeout(() => {{
+            document.removeEventListener('keydown', handleKey);
+            document.removeEventListener('mousedown', handleKey);
+            if (btn.textContent === '...') {{
                 btn.textContent = oldText;
                 btn.classList.remove('listening');
-            }
-        }, 5000);
-    });
-});
+            }}
+        }}, 5000);
+    }});
+}});
 
-// Search
-const searchInput = document.getElementById('searchInput');
-searchInput.addEventListener('input', (e) => {
-    const query = e.target.value.toLowerCase().trim();
-    if (query === '') {
-        document.querySelectorAll('.row.highlight').forEach(row => row.classList.remove('highlight'));
-        return;
-    }
-    const rows = document.querySelectorAll('.row[data-search]');
-    let match = null;
-    rows.forEach(row => {
-        if (row.getAttribute('data-search').toLowerCase().includes(query) && !match) {
-            match = row;
-        }
-    });
-    if (match) {
-        const tabContent = match.closest('.tab-content');
-        const tabId = tabContent.id;
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        document.querySelector(`.tab[data-tab="${tabId}"]`).classList.add('active');
-        tabContent.classList.add('active');
-        document.querySelectorAll('.row.highlight').forEach(r => r.classList.remove('highlight'));
-        match.classList.add('highlight');
-        setTimeout(() => match.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
-    }
-});
-
-// Tab switching
-document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById(tab.dataset.tab).classList.add('active');
-    });
-});
-
-// Initial load + periodic sync
+// Initialize
 loadConfig();
-setInterval(loadConfig, 3000);
+setInterval(loadConfig, 2000); // Poll for updates every 2 seconds
 </script>
 </body>
-</html>"""
-    return HTMLResponse(html)
+</html>
+    """
