@@ -26,7 +26,7 @@ def init_db():
 
 init_db()
 
-# Default config (used when a new user first visits)
+# Default configuration (used for new users)
 DEFAULT_CONFIG = {
     "camlock": {
         "Enabled": True,
@@ -41,7 +41,7 @@ DEFAULT_CONFIG = {
         "BodyPart": "Head",
         "ClosestPart": False,
         "ScaleToggle": False,
-        "Scale": 3  # 1-5 slider (internal value 3 means 3/5)
+        "Scale": 3
     },
     "esp": {
         "Enabled": False,
@@ -74,12 +74,13 @@ DEFAULT_CONFIG = {
 def get_config(username: str = Path(..., min_length=1)):
     db = get_db()
     cur = db.cursor()
-    
     cur.execute("SELECT key, value FROM settings WHERE username = ?", (username,))
     rows = cur.fetchall()
-    
+    db.close()
+
+    # Start with defaults
     config = {k: dict(v) for k, v in DEFAULT_CONFIG.items()}
-    
+
     for key, value_json in rows:
         try:
             value = json.loads(value_json)
@@ -90,8 +91,7 @@ def get_config(username: str = Path(..., min_length=1)):
             section, subkey = parts
             if section in config:
                 config[section][subkey] = value
-    
-    db.close()
+
     return config
 
 @app.post("/api/config/{username}")
@@ -99,7 +99,7 @@ async def set_config(username: str = Path(..., min_length=1), request: Request =
     data = await request.json()
     db = get_db()
     cur = db.cursor()
-    
+
     for full_key, value in data.items():
         value_json = json.dumps(value)
         cur.execute("""
@@ -107,7 +107,7 @@ async def set_config(username: str = Path(..., min_length=1), request: Request =
             VALUES (?, ?, ?)
             ON CONFLICT(username, key) DO UPDATE SET value = excluded.value
         """, (username, full_key, value_json))
-    
+
     db.commit()
     db.close()
     return {"success": True}
@@ -117,18 +117,17 @@ async def set_config(username: str = Path(..., min_length=1), request: Request =
 @app.get("/", response_class=HTMLResponse)
 def web_panel(username: str = None):
     if username is None:
-        return """
+        return HTMLResponse("""
         <h1>Camlock Control Panel</h1>
-        <p>Use the URL like <code>https://camlock-backend.onrender.com/yourusername</code></p>
-        <p>Example: <a href="/lol">/lol</a></p>
-        """
+        <p>Append a username to the URL → <code>https://camlock-backend.onrender.com/yourusername</code></p>
+        <p>Example: <a href="/lol">https://camlock-backend.onrender.com/lol</a></p>
+        """)
 
-    html = f"""
-<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Camlock - {username}</title>
+<title>UI Remake - {username}</title>
 <style>
 /* ================= RESET ================= */
 * {{
@@ -627,227 +626,226 @@ body {{
         </div>
     </div>
 </div>
-
 <script>
 const USERNAME = "{username}";
-const API_URL = `/api/config/${{USERNAME}}`;
+const API_URL = `/api/config/${USERNAME}`;
 
 // Load config from backend
-async function loadConfig() {{
-    try {{
+async function loadConfig() {
+    try {
         const res = await fetch(API_URL);
+        if (!res.ok) throw new Error("Failed to fetch");
         const config = await res.json();
 
-        document.querySelectorAll('[data-setting]').forEach(el => {{
+        document.querySelectorAll('[data-setting]').forEach(el => {
             const setting = el.dataset.setting;
             const [section, key] = setting.split('.');
             const value = config[section]?.[key];
-
             if (typeof value === 'undefined') return;
 
-            if (el.classList.contains('toggle')) {{
+            if (el.classList.contains('toggle')) {
                 el.classList.toggle('on', value === true);
-            }} else if (el.classList.contains('custom-input')) {{
+            } else if (el.classList.contains('custom-input')) {
                 el.value = value;
-            }} else if (el.classList.contains('select-selected')) {{
+            } else if (el.classList.contains('select-selected')) {
                 const select = el.parentElement;
                 const items = select.querySelectorAll('.select-item');
-                items.forEach(item => {{
+                items.forEach(item => {
                     item.classList.toggle('selected', item.dataset.value === value);
-                }});
+                });
                 el.textContent = value;
-            }} else if (el.classList.contains('slider')) {{
+            } else if (el.classList.contains('slider')) {
                 el.value = value;
                 if (el.id === 'scaleSlider') updateSlider();
-            }} else if (el.classList.contains('color')) {{
-                if (Array.isArray(value) && value.length >= 3) {{
+            } else if (el.classList.contains('color')) {
+                if (Array.isArray(value) && value.length >= 3) {
                     el.style.background = `rgb(${value[0]},${value[1]},${value[2]})`;
-                }}
-            }} else if (el.classList.contains('keybind-btn')) {{
-                el.textContent = value;
-            }}
-        }});
-    }} catch (err) {{
+                }
+            } else if (el.classList.contains('keybind-btn')) {
+                el.textContent = value || 'None';
+            }
+        });
+    } catch (err) {
         console.error("Failed to load config:", err);
-    }}
-}}
+    }
+}
 
-// Save a single setting
-function saveSetting(key, value) {{
-    fetch(API_URL, {{
+// Save individual setting
+function saveSetting(key, value) {
+    fetch(API_URL, {
         method: 'POST',
-        headers: {{ 'Content-Type': 'application/json' }},
-        body: JSON.stringify({{ [key]: value }})
-    }}).catch(err => console.error("Save failed:", err));
-}}
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value })
+    }).catch(err => console.error("Save failed:", err));
+}
 
-// Toggle
-document.querySelectorAll('.toggle').forEach(toggle => {{
-    toggle.addEventListener('click', () => {{
+// Toggles
+document.querySelectorAll('.toggle').forEach(toggle => {
+    toggle.addEventListener('click', () => {
         toggle.classList.toggle('on');
         saveSetting(toggle.dataset.setting, toggle.classList.contains('on'));
-    }});
-}});
+    });
+});
 
 // Number inputs
-document.querySelectorAll('.custom-input').forEach(input => {{
-    input.addEventListener('change', () => {{
-        let value = parseFloat(input.value) || 0;
+document.querySelectorAll('.custom-input').forEach(input => {
+    input.addEventListener('change', () => {
+        const value = parseFloat(input.value) || 0;
         input.value = value;
         saveSetting(input.dataset.setting, value);
-    }});
-}});
+    });
+});
 
-// Dropdown
-document.querySelectorAll('.custom-select').forEach(select => {{
+// Dropdowns
+document.querySelectorAll('.custom-select').forEach(select => {
     const selected = select.querySelector('.select-selected');
     const itemsContainer = select.querySelector('.select-items');
     const items = select.querySelectorAll('.select-item');
 
-    selected.addEventListener('click', e => {{
+    selected.addEventListener('click', e => {
         e.stopPropagation();
-        document.querySelectorAll('.select-items').forEach(s => {{
+        document.querySelectorAll('.select-items').forEach(s => {
             if (s !== itemsContainer) s.classList.remove('show');
-        }});
+        });
         itemsContainer.classList.toggle('show');
-    }});
+    });
 
-    items.forEach(item => {{
-        item.addEventListener('click', () => {{
+    items.forEach(item => {
+        item.addEventListener('click', () => {
             const value = item.dataset.value;
             selected.textContent = value;
             items.forEach(i => i.classList.remove('selected'));
             item.classList.add('selected');
             itemsContainer.classList.remove('show');
             saveSetting(select.dataset.setting, value);
-        }});
-    }});
-}});
+        });
+    });
+});
 
-document.addEventListener('click', () => {{
+document.addEventListener('click', () => {
     document.querySelectorAll('.select-items').forEach(s => s.classList.remove('show'));
-}});
+});
 
-// Slider (scale)
+// Slider
 const scaleSlider = document.getElementById('scaleSlider');
 const scaleFill = document.getElementById('scaleFill');
 const scaleLabel = document.getElementById('scaleLabel');
 
-function updateSlider() {{
+function updateSlider() {
     const value = parseInt(scaleSlider.value);
-    const max = parseInt(scaleSlider.max);
-    const percentage = ((value - 1) / (max - 1)) * 100;
+    const percentage = ((value - 1) / 4) * 100;
     scaleFill.style.width = percentage + '%';
-    scaleLabel.textContent = `${{value}}/5`;
+    scaleLabel.textContent = `${value}/5`;
     scaleLabel.style.color = percentage >= 50 ? '#000000' : '#ffffff';
     saveSetting('camlock.Scale', value);
-}}
+}
 
 scaleSlider.addEventListener('input', updateSlider);
-updateSlider();
 
 // Color picker
-document.querySelectorAll('.color').forEach(color => {{
-    color.addEventListener('click', () => {{
+document.querySelectorAll('.color').forEach(color => {
+    color.addEventListener('click', () => {
         const input = document.createElement('input');
         input.type = 'color';
-        const rgb = color.style.background.match(/\d+/g);
-        if (rgb) {{
-            const hex = '#' + rgb.slice(0,3).map(x => parseInt(x).toString(16).padStart(2,'0')).join('');
+        const match = color.style.background.match(/\\d+/g);
+        if (match) {
+            const hex = '#' + match.slice(0,3).map(x => parseInt(x).toString(16).padStart(2,'0')).join('');
             input.value = hex;
-        }}
-        input.addEventListener('change', () => {{
+        }
+        input.addEventListener('change', () => {
             const hex = input.value;
             const r = parseInt(hex.slice(1,3),16);
             const g = parseInt(hex.slice(3,5),16);
             const b = parseInt(hex.slice(5,7),16);
-            color.style.background = `rgb(${{r}},${{g}},${{b}})`;
+            color.style.background = `rgb(${r},${g},${b})`;
             saveSetting(color.dataset.setting, [r, g, b, 255]);
-        }});
+        });
         input.click();
-    }});
-}});
+    });
+});
 
-// Keybind
-document.querySelectorAll('.keybind-btn').forEach(btn => {{
-    btn.addEventListener('click', () => {{
+// Keybinds
+document.querySelectorAll('.keybind-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
         const oldText = btn.textContent;
         btn.textContent = '...';
         btn.classList.add('listening');
 
-        const handleKey = (e) => {{
+        const handler = (e) => {
             e.preventDefault();
             let key = e.key;
-            if (e.button === 0) key = 'LMB';
-            else if (e.button === 1) key = 'MMB';
-            else if (e.button === 2) key = 'RMB';
-            else if (e.key.length === 1) key = e.key.toUpperCase();
+            if (e.type === 'mousedown') {
+                if (e.button === 0) key = 'LMB';
+                else if (e.button === 1) key = 'MMB';
+                else if (e.button === 2) key = 'RMB';
+            } else if (key.length === 1) {
+                key = key.toUpperCase();
+            }
 
             btn.textContent = key;
             btn.classList.remove('listening');
             saveSetting(btn.dataset.setting, key);
 
-            document.removeEventListener('keydown', handleKey);
-            document.removeEventListener('mousedown', handleKey);
-        }};
+            document.removeEventListener('keydown', handler);
+            document.removeEventListener('mousedown', handler);
+        };
 
-        document.addEventListener('keydown', handleKey);
-        document.addEventListener('mousedown', handleKey);
+        document.addEventListener('keydown', handler);
+        document.addEventListener('mousedown', handler);
 
-        setTimeout(() => {{
-            document.removeEventListener('keydown', handleKey);
-            document.removeEventListener('mousedown', handleKey);
-            if (btn.textContent === '...') {{
+        setTimeout(() => {
+            document.removeEventListener('keydown', handler);
+            document.removeEventListener('mousedown', handler);
+            if (btn.textContent === '...') {
                 btn.textContent = oldText;
                 btn.classList.remove('listening');
-            }}
-        }}, 5000);
-    }});
-}});
+            }
+        }, 5000);
+    });
+});
 
-// Search functionality (unchanged)
+// Search
 const searchInput = document.getElementById('searchInput');
-searchInput.addEventListener('input', (e) => {{
+searchInput.addEventListener('input', (e) => {
     const query = e.target.value.toLowerCase().trim();
-    if (query === '') {{
+    if (query === '') {
         document.querySelectorAll('.row.highlight').forEach(row => row.classList.remove('highlight'));
         return;
-    }}
-    const allRows = document.querySelectorAll('.row[data-search]');
-    let foundMatch = null;
-    allRows.forEach(row => {{
-        if (row.getAttribute('data-search').toLowerCase().includes(query)) {{
-            if (!foundMatch) foundMatch = row;
-        }}
-    }});
-    if (foundMatch) {{
-        const tabContent = foundMatch.closest('.tab-content');
+    }
+    const rows = document.querySelectorAll('.row[data-search]');
+    let match = null;
+    rows.forEach(row => {
+        if (row.getAttribute('data-search').toLowerCase().includes(query) && !match) {
+            match = row;
+        }
+    });
+    if (match) {
+        const tabContent = match.closest('.tab-content');
         const tabId = tabContent.id;
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        document.querySelector(`.tab[data-tab="${{tabId}}"]`).classList.add('active');
+        document.querySelector(`.tab[data-tab="${tabId}"]`).classList.add('active');
         tabContent.classList.add('active');
-        document.querySelectorAll('.row.highlight').forEach(row => row.classList.remove('highlight'));
-        foundMatch.classList.add('highlight');
-        setTimeout(() => foundMatch.scrollIntoView({{ behavior: 'smooth', block: 'center' }}), 100);
-    }}
-}});
+        document.querySelectorAll('.row.highlight').forEach(r => r.classList.remove('highlight'));
+        match.classList.add('highlight');
+        setTimeout(() => match.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+    }
+});
 
 // Tab switching
-document.querySelectorAll('.tab').forEach(tab => {{
-    tab.addEventListener('click', () => {{
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         tab.classList.add('active');
         document.getElementById(tab.dataset.tab).classList.add('active');
-    }});
-}});
+    });
+});
 
-// Initial load + periodic refresh
+// Initial load + periodic sync
 loadConfig();
 setInterval(loadConfig, 3000);
 </script>
 </body>
-</html>
-"""
+</html>"""
     return HTMLResponse(html)
