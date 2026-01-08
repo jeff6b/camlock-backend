@@ -325,6 +325,14 @@ body {{
     width: 100%;
     text-align: right;
 }}
+.custom-input::-webkit-outer-spin-button,
+.custom-input::-webkit-inner-spin-button {{
+    -webkit-appearance: none;
+    margin: 0;
+}}
+.custom-input[type=number] {{
+    -moz-appearance: textfield;
+}}
 .custom-input-small {{
     width: 60px;
 }}
