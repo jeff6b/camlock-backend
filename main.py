@@ -127,7 +127,7 @@ def web_panel(username: str = None):
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>UI Remake - {username}</title>
+<title>UI Remake</title>
 <style>
 /* ================= RESET ================= */
 * {{
