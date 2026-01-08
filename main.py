@@ -581,7 +581,7 @@ body {{
                             <div class="keybind-btn" data-setting="triggerbot.Keybind">RMB</div>
                         </div>
                     </div>
-                    <div class="row" data-search="delay triggerbot misc"><span>delay</span><div class="custom-input-wrapper custom-input-small"><input type="number" class="custom-input" value="0.0" step="0.01" data-setting="triggerbot.Delay"></div></div>
+                    <div class="row" data-search="delay triggerbot misc"><span>delay</span><div class="custom-input-wrapper custom-input-small"><input type="number" class="custom-input" value="0.0" step="0.01" min="0" data-setting="triggerbot.Delay"></div></div>
                     <div class="row" data-search="max studs distance triggerbot misc"><span>max studs</span><div class="custom-input-wrapper"><input type="number" class="custom-input" value="120" step="1" data-setting="triggerbot.MaxStuds"></div></div>
                     <div class="row" data-search="prediction triggerbot misc"><span>prediction</span><div class="custom-input-wrapper custom-input-small"><input type="number" class="custom-input" value="0.1" step="0.01" data-setting="triggerbot.Prediction"></div></div>
                 </div>
