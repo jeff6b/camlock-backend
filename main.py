@@ -773,7 +773,7 @@ document.querySelectorAll('.toggle').forEach(toggle => {{
 
 let inputTimers = {{}};
 document.querySelectorAll('.custom-input').forEach(input => {{
-    // Mark input as being edited
+    
     input.addEventListener('focus', () => {{
         input.dataset.editing = 'true';
     }});
