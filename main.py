@@ -98,7 +98,7 @@ def web_panel(username: str = Path(..., description="Username")):
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>UI Remake - {username}</title>
+<title>hola - {username}</title>
 <style>
 /* ================= RESET ================= */
 * {{
