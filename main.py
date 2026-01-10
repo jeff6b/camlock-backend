@@ -1,4 +1,4 @@
-# main.py
+
 from fastapi import FastAPI, Path
 from fastapi.responses import HTMLResponse
 import sqlite3
@@ -6,7 +6,6 @@ import json
 
 app = FastAPI()
 
-# ---------------- Database ----------------
 def get_db():
     return sqlite3.connect("database.db")
 
@@ -14,7 +13,6 @@ def init_db():
     db = get_db()
     cur = db.cursor()
    
-    # Settings table (stores entire config as JSON per user)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             username TEXT PRIMARY KEY,
