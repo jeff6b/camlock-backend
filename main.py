@@ -1,3 +1,4 @@
+# main.py
 from fastapi import FastAPI, Path
 from fastapi.responses import HTMLResponse
 import sqlite3
@@ -5,6 +6,7 @@ import json
 
 app = FastAPI()
 
+# ---------------- Database ----------------
 def get_db():
     return sqlite3.connect("database.db")
 
@@ -12,7 +14,7 @@ def init_db():
     db = get_db()
     cur = db.cursor()
    
-    
+    # Settings table (stores entire config as JSON per user)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             username TEXT PRIMARY KEY,
@@ -25,7 +27,7 @@ def init_db():
 
 init_db()
 
-
+# Default configuration
 DEFAULT_CONFIG = {
     "triggerbot": {
         "Enabled": True,
@@ -39,17 +41,6 @@ DEFAULT_CONFIG = {
         "TargetMode": False,
         "TargetKeybind": "Middle Mouse",
         "Prediction": 0.1,
-    },
-    "esp": {
-        "Enabled": False,
-        "Animation": True,
-        "BaseColor": [255, 255, 255, 255],
-        "WaveColor": [0, 0, 0, 255],
-        "TextColor": [200, 200, 200, 255],
-        "StudCheck": False,
-        "MaxStuds": 500,
-        "TeamCheck": True,
-        "Skeleton": False,
     },
     "camlock": {
         "Enabled": True,
@@ -68,13 +59,13 @@ DEFAULT_CONFIG = {
     }
 }
 
-
+# ---------------- API ----------------
 @app.get("/api/config/{username}")
 def get_config(username: str = Path(..., description="Username")):
     db = get_db()
     cur = db.cursor()
    
-    
+    # Create entry if user doesn't exist
     cur.execute("INSERT OR IGNORE INTO settings (username, config) VALUES (?, ?)", 
                 (username, json.dumps(DEFAULT_CONFIG)))
     db.commit()
@@ -91,7 +82,7 @@ def set_config(username: str, data: dict):
     db = get_db()
     cur = db.cursor()
     
-    
+    # Update or create user config
     cur.execute("""
         INSERT INTO settings(username, config) VALUES(?, ?)
         ON CONFLICT(username) DO UPDATE SET config=excluded.config
@@ -109,13 +100,15 @@ def web_panel(username: str = Path(..., description="Username")):
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Phase user {username}</title>
+<title>UI Remake - {username}</title>
 <style>
+/* ================= RESET ================= */
 * {{
     box-sizing: border-box;
     margin: 0;
     padding: 0;
 }}
+/* ================= COLORS ================= */
 :root {{
     --bg-main: #0d0f12;
     --bg-panel: #111418;
@@ -131,6 +124,7 @@ def web_panel(username: str = Path(..., description="Username")):
     --toggle-off: transparent;
     --toggle-on: #a78bfa;
 }}
+/* ================= BODY ================= */
 body {{
     background: radial-gradient(circle at top, #141821, #0b0d10 60%);
     font-family: "Segoe UI", Inter, system-ui, sans-serif;
@@ -140,6 +134,7 @@ body {{
     align-items: center;
     justify-content: center;
 }}
+/* ================= WINDOW ================= */
 .window {{
     width: 820px;
     height: 540px;
@@ -151,6 +146,7 @@ body {{
         0 20px 50px rgba(0,0,0,0.6);
     overflow: hidden;
 }}
+/* ================= TOP BAR ================= */
 .topbar {{
     height: 48px;
     background: linear-gradient(#101419, #0b0e12);
@@ -207,6 +203,7 @@ body {{
 .search::placeholder {{
     color: var(--text-faint);
 }}
+/* ================= CONTENT ================= */
 .content {{
     display: flex;
     gap: 14px;
@@ -221,6 +218,7 @@ body {{
     display: flex;
     gap: 14px;
 }}
+/* ================= PANELS ================= */
 .panel {{
     background:
         linear-gradient(180deg, #12161b, #0e1116);
@@ -246,15 +244,18 @@ body {{
     color: var(--text-dim);
     margin-bottom: 8px;
 }}
+/* ================= LEFT SIDE ================= */
 .left {{
     width: 240px;
     display: flex;
     flex-direction: column;
     gap: 14px;
 }}
+/* ================= RIGHT SIDE ================= */
 .right {{
     flex: 1;
 }}
+/* ================= ROW ================= */
 .row {{
     display: flex;
     align-items: center;
@@ -274,11 +275,13 @@ body {{
     0% {{ background: rgba(167, 139, 250, 0.4); }}
     100% {{ background: transparent; }}
 }}
+/* ================= ROW CONTROLS ================= */
 .row-controls {{
     display: flex;
     align-items: center;
     gap: 6px;
 }}
+/* ================= TOGGLE ================= */
 .toggle {{
     width: 16px;
     height: 16px;
@@ -292,6 +295,7 @@ body {{
     background: var(--toggle-on);
     border-color: var(--toggle-on);
 }}
+/* ================= CUSTOM INPUT ================= */
 .custom-input-wrapper {{
     display: flex;
     align-items: center;
@@ -321,6 +325,7 @@ body {{
 .custom-input-small {{
     width: 60px;
 }}
+/* ================= SLIDER ================= */
 .slider-container {{
     width: 120px;
     position: relative;
@@ -364,6 +369,7 @@ body {{
     cursor: pointer;
     z-index: 1;
 }}
+/* ================= COLOR SWATCH ================= */
 .color {{
     width: 28px;
     height: 14px;
@@ -372,6 +378,7 @@ body {{
     border: 1px solid rgba(0,0,0,0.6);
     cursor: pointer;
 }}
+/* ================= CUSTOM DROPDOWN ================= */
 .custom-select {{
     position: relative;
     width: 120px;
@@ -438,6 +445,7 @@ body {{
     background: rgba(167, 139, 250, 0.2);
     color: var(--text-main);
 }}
+/* ================= BUTTON ================= */
 .button {{
     margin-top: 10px;
     width: 100%;
@@ -479,7 +487,6 @@ body {{
         <img src="https://image2url.com/r2/bucket1/images/1767835198897-45b69784-a6ec-4151-947a-7d633e4797b8.png" alt="logo" class="logo">
         <div class="tabs">
             <div class="tab active" data-tab="aimbot">aimbot</div>
-            <div class="tab" data-tab="visuals">visuals</div>
             <div class="tab" data-tab="misc">misc</div>
             <div class="tab" data-tab="settings">settings</div>
         </div>
@@ -489,7 +496,7 @@ body {{
         </div>
     </div>
     <div class="content">
-        
+        <!-- AIMBOT TAB (CAMLOCK) -->
         <div class="tab-content active" id="aimbot">
             <div class="left">
                 <div class="panel">
@@ -538,27 +545,7 @@ body {{
                 </div>
             </div>
         </div>
-        
-        <div class="tab-content" id="visuals">
-            <div class="left">
-                <div class="panel">
-                    <div class="panel-title">esp</div>
-                    <div class="row" data-search="enabled esp visuals"><span>enabled</span><div class="toggle" data-setting="esp.Enabled"></div></div>
-                    <div class="row" data-search="animation esp visuals"><span>animation</span><div class="toggle on" data-setting="esp.Animation"></div></div>
-                    <div class="row" data-search="skeleton esp visuals"><span>skeleton</span><div class="toggle" data-setting="esp.Skeleton"></div></div>
-                    <div class="row" data-search="team check esp visuals"><span>team check</span><div class="toggle on" data-setting="esp.TeamCheck"></div></div>
-                    <div class="row" data-search="stud check distance esp visuals"><span>stud check</span><div class="toggle" data-setting="esp.StudCheck"></div></div>
-                    <div class="row" data-search="max studs distance esp visuals"><span>max studs</span><div class="custom-input-wrapper"><input type="number" class="custom-input" value="500" step="10" data-setting="esp.MaxStuds"></div></div>
-                </div>
-            </div>
-            <div class="right panel">
-                <div class="panel-title">colors</div>
-                <div class="row" data-search="base color esp visuals"><span>base color</span><div class="color" style="background: rgb(255,255,255)" data-setting="esp.BaseColor"></div></div>
-                <div class="row" data-search="wave color esp visuals"><span>wave color</span><div class="color" style="background: rgb(0,0,0)" data-setting="esp.WaveColor"></div></div>
-                <div class="row" data-search="text color esp visuals"><span>text color</span><div class="color" style="background: rgb(200,200,200)" data-setting="esp.TextColor"></div></div>
-            </div>
-        </div>
-        
+        <!-- MISC TAB (TRIGGERBOT) -->
         <div class="tab-content" id="misc">
             <div class="left">
                 <div class="panel">
@@ -590,11 +577,11 @@ body {{
                 </div>
             </div>
         </div>
-        
+        <!-- SETTINGS TAB -->
         <div class="tab-content" id="settings">
             <div class="panel" style="width: 100%;">
                 <div class="panel-title">settings</div>
-                <div class="row"><span>not done rn sorry</span></div>
+                <div class="row"><span>coming soon</span></div>
             </div>
         </div>
     </div>
@@ -603,10 +590,10 @@ body {{
 const USERNAME = "{username}";
 const API_URL = `/api/config/${{USERNAME}}`;
 
-
+// Configuration object
 let config = {{}};
 
-
+// Load config from server
 async function loadConfig() {{
     try {{
         const res = await fetch(API_URL);
@@ -614,13 +601,13 @@ async function loadConfig() {{
         config = data;
         applyConfigToUI();
     }} catch (err) {{
-        console.error('Failed to load figgywiggy:', err);
+        console.error('Failed to load config:', err);
     }}
 }}
 
-
+// Apply config to UI elements
 function applyConfigToUI() {{
-    
+    // Apply toggles
     document.querySelectorAll('.toggle').forEach(toggle => {{
         const setting = toggle.dataset.setting;
         if (setting) {{
@@ -631,7 +618,7 @@ function applyConfigToUI() {{
         }}
     }});
     
-    
+    // Apply inputs (but skip if user is currently editing)
     document.querySelectorAll('.custom-input').forEach(input => {{
         const setting = input.dataset.setting;
         if (setting && input.dataset.editing !== 'true') {{
@@ -642,7 +629,7 @@ function applyConfigToUI() {{
         }}
     }});
     
-    
+    // Apply keybinds
     document.querySelectorAll('.keybind-btn').forEach(btn => {{
         const setting = btn.dataset.setting;
         if (setting) {{
@@ -653,7 +640,7 @@ function applyConfigToUI() {{
         }}
     }});
     
-    
+    // Apply dropdowns
     document.querySelectorAll('.custom-select').forEach(select => {{
         const setting = select.dataset.setting;
         if (setting) {{
@@ -668,7 +655,7 @@ function applyConfigToUI() {{
         }}
     }});
     
-    
+    // Apply slider
     if (config.camlock && config.camlock.Scale !== undefined) {{
         const slider = document.getElementById('scaleSlider');
         const value = Math.round(config.camlock.Scale * 5);
@@ -676,7 +663,7 @@ function applyConfigToUI() {{
         updateSlider();
     }}
     
-    
+    // Apply colors
     document.querySelectorAll('.color').forEach(color => {{
         const setting = color.dataset.setting;
         if (setting) {{
@@ -689,7 +676,7 @@ function applyConfigToUI() {{
     }});
 }}
 
-
+// Save config to server
 async function saveConfig() {{
     try {{
         await fetch(API_URL, {{
@@ -702,7 +689,7 @@ async function saveConfig() {{
     }}
 }}
 
-
+// Search functionality
 const searchInput = document.getElementById('searchInput');
 searchInput.addEventListener('input', (e) => {{
     const query = e.target.value.toLowerCase().trim();
@@ -746,7 +733,7 @@ searchInput.addEventListener('input', (e) => {{
     }}
 }});
 
-
+// Tab switching
 document.querySelectorAll('.tab').forEach(tab => {{
     tab.addEventListener('click', () => {{
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -757,7 +744,7 @@ document.querySelectorAll('.tab').forEach(tab => {{
     }});
 }});
 
-
+// Toggle handling
 document.querySelectorAll('.toggle').forEach(toggle => {{
     toggle.addEventListener('click', () => {{
         toggle.classList.toggle('on');
@@ -770,10 +757,10 @@ document.querySelectorAll('.toggle').forEach(toggle => {{
     }});
 }});
 
-
+// Custom input handling with debounce
 let inputTimers = {{}};
 document.querySelectorAll('.custom-input').forEach(input => {{
-    
+    // Mark input as being edited
     input.addEventListener('focus', () => {{
         input.dataset.editing = 'true';
     }});
@@ -788,7 +775,7 @@ document.querySelectorAll('.custom-input').forEach(input => {{
         }}
     }});
     
-    
+    // Save on input with debounce
     input.addEventListener('input', () => {{
         const setting = input.dataset.setting;
         if (setting) {{
@@ -797,11 +784,12 @@ document.querySelectorAll('.custom-input').forEach(input => {{
                 const [section, key] = setting.split('.');
                 config[section][key] = parseFloat(input.value);
                 saveConfig();
-            }}, 1000);
+            }}, 1000); // Wait 1 second after typing stops
         }}
     }});
 }});
 
+// Custom dropdown handling
 document.querySelectorAll('.custom-select').forEach(select => {{
     const selected = select.querySelector('.select-selected');
     const itemsContainer = select.querySelector('.select-items');
@@ -835,10 +823,12 @@ document.querySelectorAll('.custom-select').forEach(select => {{
     }});
 }});
 
+// Close dropdowns when clicking outside
 document.addEventListener('click', () => {{
     document.querySelectorAll('.select-items').forEach(s => s.classList.remove('show'));
 }});
 
+// Custom slider handling with dynamic label color
 const scaleSlider = document.getElementById('scaleSlider');
 const scaleFill = document.getElementById('scaleFill');
 const scaleLabel = document.getElementById('scaleLabel');
@@ -867,6 +857,7 @@ function updateSlider() {{
 
 scaleSlider.addEventListener('input', updateSlider);
 
+// Color picker handling
 document.querySelectorAll('.color').forEach(color => {{
     color.addEventListener('click', () => {{
         const input = document.createElement('input');
@@ -900,6 +891,7 @@ document.querySelectorAll('.color').forEach(color => {{
     }});
 }});
 
+// Keybind handling
 document.querySelectorAll('.keybind-btn').forEach(btn => {{
     btn.addEventListener('click', () => {{
         const oldText = btn.textContent;
@@ -943,9 +935,9 @@ document.querySelectorAll('.keybind-btn').forEach(btn => {{
     }});
 }});
 
-
+// Initialize
 loadConfig();
-setInterval(loadConfig, 2000); 
+setInterval(loadConfig, 2000); // Poll for updates every 2 seconds
 </script>
 </body>
 </html>
