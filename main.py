@@ -1,12 +1,15 @@
-# main.py
-from fastapi import FastAPI, Path
+# main.py - FULL BACKEND ON RENDER (camlock-backend.onrender.com)
+from fastapi import FastAPI, Path, HTTPException
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 import sqlite3
 import json
+import uuid
+from datetime import datetime, timedelta
 
 app = FastAPI()
 
-# ---------------- Database ----------------
+# ============== DATABASE ==============
 def get_db():
     return sqlite3.connect("database.db")
 
@@ -14,11 +17,25 @@ def init_db():
     db = get_db()
     cur = db.cursor()
    
-    # Settings table (stores entire config as JSON per user)
+    # Settings table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             username TEXT PRIMARY KEY,
             config TEXT
+        )
+    """)
+    
+    # Keys table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS keys (
+            key TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            duration TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            hwid TEXT,
+            active INTEGER DEFAULT 1,
+            created_by TEXT
         )
     """)
    
@@ -59,13 +76,36 @@ DEFAULT_CONFIG = {
     }
 }
 
-# ---------------- API ----------------
+# ============== PYDANTIC MODELS ==============
+class KeyCreate(BaseModel):
+    username: str
+    duration: str
+    created_by: str
+
+class KeyValidate(BaseModel):
+    key: str
+    hwid: str
+    username: str
+
+# ============== HELPER FUNCTIONS ==============
+def generate_key(prefix="PHASE"):
+    return f"{prefix}-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:8].upper()}"
+
+def get_expiry_date(duration):
+    if duration == "weekly":
+        return (datetime.now() + timedelta(weeks=1)).isoformat()
+    elif duration == "monthly":
+        return (datetime.now() + timedelta(days=30)).isoformat()
+    elif duration == "3monthly":
+        return (datetime.now() + timedelta(days=90)).isoformat()
+    return None
+
+# ============== CONFIG API (Dashboard) ==============
 @app.get("/api/config/{username}")
 def get_config(username: str = Path(..., description="Username")):
     db = get_db()
     cur = db.cursor()
    
-    # Create entry if user doesn't exist
     cur.execute("INSERT OR IGNORE INTO settings (username, config) VALUES (?, ?)", 
                 (username, json.dumps(DEFAULT_CONFIG)))
     db.commit()
@@ -82,7 +122,6 @@ def set_config(username: str, data: dict):
     db = get_db()
     cur = db.cursor()
     
-    # Update or create user config
     cur.execute("""
         INSERT INTO settings(username, config) VALUES(?, ?)
         ON CONFLICT(username) DO UPDATE SET config=excluded.config
@@ -92,7 +131,183 @@ def set_config(username: str, data: dict):
     db.close()
     return {"status": "ok"}
 
-# ---------------- HTML UI ----------------
+# ============== KEYSYSTEM API ==============
+
+@app.post("/api/keys/create")
+def create_key(data: KeyCreate):
+    """Create a new license key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    key = generate_key()
+    expires_at = get_expiry_date(data.duration)
+    
+    if not expires_at:
+        raise HTTPException(status_code=400, detail="Invalid duration")
+    
+    try:
+        cur.execute("""
+            INSERT INTO keys (key, username, duration, created_at, expires_at, created_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (key, data.username, data.duration, datetime.now().isoformat(), expires_at, data.created_by))
+        
+        db.commit()
+        db.close()
+        
+        return {
+            "key": key,
+            "username": data.username,
+            "duration": data.duration,
+            "expires_at": expires_at
+        }
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/keys/{key}")
+def delete_key(key: str):
+    """Delete a license key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute("SELECT username FROM keys WHERE key=?", (key,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="Key not found")
+    
+    username = result[0]
+    cur.execute("DELETE FROM keys WHERE key=?", (key,))
+    db.commit()
+    db.close()
+    
+    return {"status": "deleted", "username": username}
+
+@app.get("/api/keys/{key}")
+def get_key_info(key: str):
+    """Get information about a key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute("SELECT * FROM keys WHERE key=?", (key,))
+    result = cur.fetchone()
+    db.close()
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Key not found")
+    
+    return {
+        "key": result[0],
+        "username": result[1],
+        "duration": result[2],
+        "created_at": result[3],
+        "expires_at": result[4],
+        "hwid": result[5],
+        "active": result[6],
+        "created_by": result[7]
+    }
+
+@app.get("/api/keys/list")
+def list_keys():
+    """List all keys"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute("SELECT * FROM keys")
+    results = cur.fetchall()
+    db.close()
+    
+    keys = []
+    for result in results:
+        keys.append({
+            "key": result[0],
+            "username": result[1],
+            "duration": result[2],
+            "created_at": result[3],
+            "expires_at": result[4],
+            "hwid": result[5],
+            "active": result[6],
+            "created_by": result[7]
+        })
+    
+    return {"keys": keys}
+
+@app.post("/api/keys/{key}/reset")
+def reset_hwid(key: str):
+    """Reset HWID binding for a key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute("SELECT username, hwid FROM keys WHERE key=?", (key,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="Key not found")
+    
+    username, old_hwid = result
+    cur.execute("UPDATE keys SET hwid=NULL WHERE key=?", (key,))
+    db.commit()
+    db.close()
+    
+    return {"status": "reset", "username": username, "old_hwid": old_hwid}
+
+@app.post("/api/validate")
+def validate_key(data: KeyValidate):
+    """Validate a key and bind HWID"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute("SELECT * FROM keys WHERE key=?", (data.key,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        return {"valid": False, "error": "Invalid key"}, 401
+    
+    key, username, duration, created_at, expires_at, hwid, active, created_by = result
+    
+    # Check if expired
+    if datetime.now() > datetime.fromisoformat(expires_at):
+        db.close()
+        return {"valid": False, "error": "Key expired"}, 401
+    
+    # Check username match
+    if username != data.username:
+        db.close()
+        return {"valid": False, "error": "Username mismatch"}, 401
+    
+    # Check HWID binding
+    if hwid is None:
+        # First time use - bind HWID
+        cur.execute("UPDATE keys SET hwid=? WHERE key=?", (data.hwid, data.key))
+        db.commit()
+        db.close()
+        
+        return {
+            "valid": True,
+            "message": "HWID bound successfully",
+            "username": username,
+            "expires_at": expires_at
+        }
+    
+    elif hwid == data.hwid:
+        # HWID matches - allow access
+        db.close()
+        return {
+            "valid": True,
+            "message": "Authentication successful",
+            "username": username,
+            "expires_at": expires_at
+        }
+    
+    else:
+        # HWID mismatch
+        db.close()
+        return {"valid": False, "error": "HWID mismatch"}, 401
+
+# ============== DASHBOARD UI ==============
 @app.get("/{username}", response_class=HTMLResponse)
 def serve_ui(username: str):
     return f"""
@@ -451,7 +666,6 @@ def serve_ui(username: str):
 <script>
 let config = {json.dumps(DEFAULT_CONFIG)};
 
-// Save config to backend
 async function saveConfig() {{
     try {{
         await fetch(`/api/config/{username}`, {{
@@ -464,7 +678,6 @@ async function saveConfig() {{
     }}
 }}
 
-// Load config from backend
 async function loadConfig() {{
     try {{
         const res = await fetch(`/api/config/{username}`);
@@ -475,9 +688,7 @@ async function loadConfig() {{
     }}
 }}
 
-// Apply config to UI
 function applyConfigToUI() {{
-    // Toggles
     document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
         const setting = toggle.dataset.setting;
         const [section, key] = setting.split('.');
@@ -486,7 +697,6 @@ function applyConfigToUI() {{
         }}
     }});
     
-    // Keybinds
     document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
         const setting = picker.dataset.setting;
         const [section, key] = setting.split('.');
@@ -495,7 +705,6 @@ function applyConfigToUI() {{
         }}
     }});
     
-    // Sliders
     if (config.triggerbot.Delay !== undefined) {{
         sliders.delay.current = config.triggerbot.Delay;
         sliders.delay.update();
@@ -510,7 +719,6 @@ function applyConfigToUI() {{
     }}
 }}
 
-// Toggle click handlers
 document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
     toggle.addEventListener('click', () => {{
         toggle.classList.toggle('active');
@@ -521,7 +729,6 @@ document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
     }});
 }});
 
-// Keybind picker
 document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
     picker.addEventListener('click', () => {{
         picker.textContent = '...';
@@ -547,7 +754,6 @@ document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
     }});
 }});
 
-// Search functionality
 const searchInput = document.getElementById('searchInput');
 const toggleRows = document.querySelectorAll('.toggle-row[data-search]');
 searchInput.addEventListener('input', () => {{
@@ -565,10 +771,8 @@ searchInput.addEventListener('input', () => {{
     }});
 }});
 
-// Slider system
 const sliders = {{}};
 
-// Decimal slider (Delay, Prediction)
 function createDecimalSlider(id, fillId, valueId, defaultVal, min, max, step, setting) {{
     const slider = document.getElementById(id);
     const fill = document.getElementById(fillId);
@@ -613,7 +817,6 @@ function createDecimalSlider(id, fillId, valueId, defaultVal, min, max, step, se
     return obj;
 }}
 
-// Integer slider (Max Studs)
 function createIntSlider(id, fillId, valueId, defaultVal, max, blackThreshold, setting) {{
     const slider = document.getElementById(id);
     const fill = document.getElementById(fillId);
@@ -655,15 +858,11 @@ function createIntSlider(id, fillId, valueId, defaultVal, max, blackThreshold, s
     return obj;
 }}
 
-// Initialize sliders
 sliders.delay = createDecimalSlider('delaySlider', 'delayFill', 'delayValue', 0.05, 0.01, 1.00, 0.01, 'triggerbot.Delay');
 sliders.maxStuds = createIntSlider('maxStudsSlider', 'maxStudsFill', 'maxStudsValue', 120, 300, 150, 'triggerbot.MaxStuds');
 sliders.pred = createDecimalSlider('predSlider', 'predFill', 'predValue', 0.10, 0.01, 1.00, 0.01, 'triggerbot.Prediction');
 
-// Load initial config
 loadConfig();
-
-// Poll for updates every 1 second
 setInterval(loadConfig, 1000);
 </script>
 </body>
