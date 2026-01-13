@@ -39,8 +39,7 @@ DEFAULT_CONFIG = {
     "camlock": {"Enabled": True, "Keybind": "Q", "FOV": 280.0, "SmoothX": 14.0, "SmoothY": 14.0,
         "EnableSmoothing": True, "EasingStyle": "Linear", "Prediction": 0.14, "EnablePrediction": True,
         "MaxStuds": 120.0, "UnlockOnDeath": True, "SelfDeathCheck": True, "BodyPart": "Head",
-        "ClosestPart": False, "ScaleToggle": True, "Scale": 1.0},
-    "misc": {"SpeedEnabled": False, "Speed": 23}
+        "ClosestPart": False, "ScaleToggle": True, "Scale": 1.0}
 }
 
 class KeyCreate(BaseModel):
@@ -339,6 +338,10 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 .dropdown-item:hover{{background:#1a1a1a}}
 .dropdown-item.selected{{background:#222;color:#fff}}
 .config-list{{position:absolute;top:32px;left:16px;right:16px;bottom:16px;overflow-y:auto}}
+.config-list::-webkit-scrollbar{{width:6px}}
+.config-list::-webkit-scrollbar-track{{background:#0a0a0a;border-left:1px solid #111}}
+.config-list::-webkit-scrollbar-thumb{{background:#333;border-radius:3px}}
+.config-list::-webkit-scrollbar-thumb:hover{{background:#555}}
 .config-item{{background:#0f0f0f;border:1px solid #2a2a2a;padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:12px;position:relative}}
 .config-item:hover{{background:#1a1a1a}}
 .config-name{{flex:1;font-size:11px;color:#fff;font-weight:normal}}
@@ -352,6 +355,17 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 .input-box{{width:100%;height:24px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;padding:0 8px;outline:none}}
 .config-btn{{background:#0f0f0f;border:1px solid #2a2a2a;padding:6px 12px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;width:100%;margin-top:6px}}
 .config-btn:hover{{background:#222}}
+.modal-overlay{{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:9999}}
+.modal-overlay.active{{display:flex}}
+.modal-box{{background:linear-gradient(#111,#0a0a0a);border:1px solid #2a2a2a;padding:24px;min-width:300px;box-shadow:0 8px 32px rgba(0,0,0,0.8)}}
+.modal-title{{color:#fff;font-size:13px;margin-bottom:16px;font-weight:normal}}
+.modal-input{{width:100%;height:28px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none;margin-bottom:12px}}
+.modal-input:focus{{border-color:#555}}
+.modal-buttons{{display:flex;gap:8px}}
+.modal-btn{{flex:1;height:28px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;cursor:pointer;transition:background 0.2s}}
+.modal-btn:hover{{background:#222}}
+.modal-btn.primary{{background:#1a1a1a}}
+.modal-btn.primary:hover{{background:#252525}}
 </style>
 </head>
 <body>
@@ -361,7 +375,6 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 <div class="tabs">
 <div class="tab active" data-tab="aimbot">aimbot</div>
 <div class="tab" data-tab="triggerbot">triggerbot</div>
-<div class="tab" data-tab="misc">misc</div>
 <div class="tab" data-tab="settings">settings</div>
 </div>
 <div class="topbar-right">
@@ -559,31 +572,6 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 </div>
 </div>
 </div>
-<div class="tab-content" id="misc">
-<div class="merged-panel">
-<div class="inner-container">
-<div class="half-panel">
-<div class="panel-header">speed</div>
-<div class="toggle-row" style="top:32px">
-<div class="toggle-text">
-<div class="toggle" data-setting="misc.SpeedEnabled"></div>
-<span class="enable-text">Enable Speed</span>
-</div>
-</div>
-<div class="slider-label" style="top:58px">Speed Value</div>
-<div class="slider-container" id="speedSlider" style="top:72px" data-setting="misc.Speed">
-<div class="slider-track">
-<div class="slider-fill" id="speedFill"></div>
-<div class="slider-value" id="speedValue">23</div>
-</div>
-</div>
-</div>
-<div class="half-panel">
-<div style="color:#666;text-align:center;padding:40px">More features coming soon...</div>
-</div>
-</div>
-</div>
-</div>
 <div class="tab-content" id="settings">
 <div class="merged-panel">
 <div class="inner-container">
@@ -603,6 +591,17 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 </div>
 </div>
 </div>
+</div>
+</div>
+</div>
+
+<div class="modal-overlay" id="renameModal">
+<div class="modal-box">
+<div class="modal-title">Rename Config</div>
+<input type="text" id="renameInput" class="modal-input" placeholder="Enter new name...">
+<div class="modal-buttons">
+<button class="modal-btn" onclick="closeRenameModal()">Cancel</button>
+<button class="modal-btn primary" onclick="confirmRename()">Rename</button>
 </div>
 </div>
 </div>
@@ -645,7 +644,6 @@ if(sliders.smoothY){{sliders.smoothY.current=config.camlock.SmoothY;sliders.smoo
 if(sliders.camlockPred){{sliders.camlockPred.current=config.camlock.Prediction;sliders.camlockPred.update();}}
 if(sliders.camlockMaxStuds){{sliders.camlockMaxStuds.current=config.camlock.MaxStuds;sliders.camlockMaxStuds.update();}}
 if(sliders.scale){{sliders.scale.current=config.camlock.Scale;sliders.scale.update();}}
-if(sliders.speed){{sliders.speed.current=config.misc.Speed;sliders.speed.update();}}
 
 if(config.camlock.BodyPart){{
 document.getElementById('bodyPartHeader').textContent=config.camlock.BodyPart;
@@ -820,7 +818,6 @@ sliders.smoothY=createIntSlider('smoothYSlider','smoothYFill','smoothYValue',14,
 sliders.camlockPred=createDecimalSlider('camlockPredSlider','camlockPredFill','camlockPredValue',0.14,0.01,1.00,0.01,'camlock.Prediction');
 sliders.camlockMaxStuds=createIntSlider('camlockMaxStudsSlider','camlockMaxStudsFill','camlockMaxStudsValue',120,300,150,'camlock.MaxStuds');
 sliders.scale=createDecimalSlider('scaleSlider','scaleFill','scaleValue',1.0,0.5,2.0,0.1,'camlock.Scale');
-sliders.speed=createIntSlider('speedSlider','speedFill','speedValue',23,100,50,'misc.Speed');
 
 async function loadSavedConfigs(){{
 try{{
@@ -877,14 +874,41 @@ await saveConfig();
 }}catch(e){{alert('Failed to load');}}
 }}
 
-async function renameConfigPrompt(oldName){{
-const newName=prompt(`Rename "${{oldName}}" to:`,oldName);
-if(!newName||newName===oldName)return;
-try{{
-await fetch(`/api/configs/{key}/rename`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{old_name:oldName,new_name:newName}})}});
-await loadSavedConfigs();
-}}catch(e){{alert('Failed to rename');}}
+let currentRenameConfig=null;
+
+function renameConfigPrompt(oldName){{
+currentRenameConfig=oldName;
+document.getElementById('renameInput').value=oldName;
+document.getElementById('renameModal').classList.add('active');
+document.getElementById('renameInput').focus();
+document.getElementById('renameInput').select();
 }}
+
+function closeRenameModal(){{
+document.getElementById('renameModal').classList.remove('active');
+currentRenameConfig=null;
+}}
+
+async function confirmRename(){{
+const newName=document.getElementById('renameInput').value.trim();
+if(!newName||newName===currentRenameConfig){{
+closeRenameModal();
+return;
+}}
+try{{
+await fetch(`/api/configs/{key}/rename`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{old_name:currentRenameConfig,new_name:newName}})}});
+await loadSavedConfigs();
+closeRenameModal();
+}}catch(e){{
+alert('Failed to rename');
+closeRenameModal();
+}}
+}}
+
+document.getElementById('renameInput').addEventListener('keypress',(e)=>{{
+if(e.key==='Enter')confirmRename();
+if(e.key==='Escape')closeRenameModal();
+}});
 
 async function deleteConfigByName(name){{
 if(!confirm(`Delete ${{name}}?`))return;
