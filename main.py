@@ -1,4 +1,4 @@
-
+# main.py
 from fastapi import FastAPI, Path
 from fastapi.responses import HTMLResponse
 import sqlite3
@@ -6,6 +6,7 @@ import json
 
 app = FastAPI()
 
+# ---------------- Database ----------------
 def get_db():
     return sqlite3.connect("database.db")
 
@@ -13,6 +14,7 @@ def init_db():
     db = get_db()
     cur = db.cursor()
    
+    # Settings table (stores entire config as JSON per user)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             username TEXT PRIMARY KEY,
@@ -30,9 +32,9 @@ DEFAULT_CONFIG = {
     "triggerbot": {
         "Enabled": True,
         "Keybind": "Right Mouse",
-        "Delay": 0.0,
+        "Delay": 0.05,
         "MaxStuds": 120,
-        "LimitStuds": True,
+        "StudCheck": True,
         "DeathCheck": True,
         "KnifeCheck": True,
         "TeamCheck": True,
@@ -88,855 +90,582 @@ def set_config(username: str, data: dict):
     
     db.commit()
     db.close()
-    return {"success": True, "username": username}
+    return {"status": "ok"}
 
-# ---------------- Web Panel ----------------
+# ---------------- HTML UI ----------------
 @app.get("/{username}", response_class=HTMLResponse)
-def web_panel(username: str = Path(..., description="Username")):
+def serve_ui(username: str):
     return f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>hola - {username}</title>
+<meta charset="UTF-8" />
+<title>Axion - {username}</title>
 <style>
-/* ================= RESET ================= */
-* {{
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}}
-/* ================= COLORS ================= */
-:root {{
-    --bg-main: #0d0f12;
-    --bg-panel: #111418;
-    --bg-panel-soft: #15191e;
-    --bg-top: #0b0d10;
-    --border-main: #2a2f36;
-    --border-soft: #1f242b;
-    --text-main: #e6e6e6;
-    --text-dim: #9aa0a6;
-    --text-faint: #6f7680;
-    --accent: #7fd1ff;
-    --accent-soft: rgba(127,209,255,0.25);
-    --toggle-off: transparent;
-    --toggle-on: #a78bfa;
-}}
-/* ================= BODY ================= */
-body {{
-    background: radial-gradient(circle at top, #141821, #0b0d10 60%);
-    font-family: "Segoe UI", Inter, system-ui, sans-serif;
-    color: var(--text-main);
-    height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}}
-/* ================= WINDOW ================= */
-.window {{
-    width: 820px;
-    height: 540px;
-    background: linear-gradient(#0f1216, #0b0d10);
-    border: 1px solid var(--border-main);
-    border-radius: 6px;
-    box-shadow:
-        0 0 0 1px rgba(255,255,255,0.02),
-        0 20px 50px rgba(0,0,0,0.6);
-    overflow: hidden;
-}}
-/* ================= TOP BAR ================= */
-.topbar {{
-    height: 48px;
-    background: linear-gradient(#101419, #0b0e12);
-    border-bottom: 1px solid var(--border-soft);
-    display: flex;
-    align-items: center;
-    padding: 0 14px;
-    gap: 18px;
-}}
-.logo {{
-    width: 24px;
-    height: 24px;
-    object-fit: contain;
-}}
-.tabs {{
-    display: flex;
-    gap: 18px;
-}}
-.tab {{
-    font-size: 13px;
-    color: var(--text-dim);
-    cursor: pointer;
-    transition: color 0.2s;
-}}
-.tab:hover {{
-    color: var(--text-main);
-}}
-.tab.active {{
-    color: var(--text-main);
-}}
-.search-container {{
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: #0c0f13;
-    border: 1px solid var(--border-soft);
-    border-radius: 4px;
-    padding: 6px 10px;
-}}
-.search-icon {{
-    width: 14px;
-    height: 14px;
-    opacity: 0.5;
-}}
-.search {{
-    background: transparent;
-    border: none;
-    outline: none;
-    font-size: 12px;
-    color: var(--text-faint);
-    width: 180px;
-}}
-.search::placeholder {{
-    color: var(--text-faint);
-}}
-/* ================= CONTENT ================= */
-.content {{
-    display: flex;
-    gap: 14px;
-    padding: 14px;
-    height: calc(100% - 48px);
-}}
-.tab-content {{
-    display: none;
-    width: 100%;
-}}
-.tab-content.active {{
-    display: flex;
-    gap: 14px;
-}}
-/* ================= PANELS ================= */
-.panel {{
-    background:
-        linear-gradient(180deg, #12161b, #0e1116);
-    border: 1px solid var(--border-soft);
-    border-radius: 4px;
-    padding: 10px;
-    overflow-y: auto;
-}}
-.panel::-webkit-scrollbar {{
-    width: 6px;
-}}
-.panel::-webkit-scrollbar-track {{
-    background: #0c0f13;
-    border-radius: 3px;
-}}
-.panel::-webkit-scrollbar-thumb {{
-    background: var(--border-main);
-    border-radius: 3px;
-}}
-.panel-title {{
-    font-size: 12px;
-    text-transform: lowercase;
-    color: var(--text-dim);
-    margin-bottom: 8px;
-}}
-/* ================= LEFT SIDE ================= */
-.left {{
-    width: 240px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}}
-/* ================= RIGHT SIDE ================= */
-.right {{
-    flex: 1;
-}}
-/* ================= ROW ================= */
-.row {{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 4px;
-    font-size: 12px;
-    color: var(--text-dim);
-}}
-.row + .row {{
-    border-top: 1px solid rgba(255,255,255,0.03);
-}}
-.row.highlight {{
-    background: rgba(167, 139, 250, 0.2);
-    animation: highlight-fade 2s ease-out;
-}}
-@keyframes highlight-fade {{
-    0% {{ background: rgba(167, 139, 250, 0.4); }}
-    100% {{ background: transparent; }}
-}}
-/* ================= ROW CONTROLS ================= */
-.row-controls {{
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}}
-/* ================= TOGGLE ================= */
-.toggle {{
-    width: 16px;
-    height: 16px;
-    background: var(--toggle-off);
-    border: 1px solid var(--border-soft);
-    border-radius: 2px;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-}}
-.toggle.on {{
-    background: var(--toggle-on);
-    border-color: var(--toggle-on);
-}}
-/* ================= CUSTOM INPUT ================= */
-.custom-input-wrapper {{
-    display: flex;
-    align-items: center;
-    background: #0c0f13;
-    border: 1px solid var(--border-soft);
-    border-radius: 4px;
-    padding: 4px 8px;
-    width: 80px;
-}}
-.custom-input {{
-    background: transparent;
-    border: none;
-    outline: none;
-    font-size: 11px;
-    color: var(--text-dim);
-    width: 100%;
-    text-align: right;
-}}
-.custom-input::-webkit-outer-spin-button,
-.custom-input::-webkit-inner-spin-button {{
-    -webkit-appearance: none;
-    margin: 0;
-}}
-.custom-input[type=number] {{
-    -moz-appearance: textfield;
-}}
-.custom-input-small {{
-    width: 60px;
-}}
-/* ================= SLIDER ================= */
-.slider-container {{
-    width: 120px;
-    position: relative;
-}}
-.slider-wrapper {{
-    position: relative;
-    height: 20px;
-    background: transparent;
-    border: 1px solid var(--border-soft);
-    border-radius: 3px;
-    overflow: hidden;
-}}
-.slider-fill {{
-    position: absolute;
-    left: 0;
-    top: 0;
-    height: 100%;
-    background: var(--toggle-on);
-    transition: width 0.1s;
-    pointer-events: none;
-}}
-.slider-label {{
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 9px;
-    color: #ffffff;
-    pointer-events: none;
-    z-index: 2;
-    font-weight: 600;
-    transition: color 0.1s;
-}}
-.slider {{
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
-    z-index: 1;
-}}
-/* ================= COLOR SWATCH ================= */
-.color {{
-    width: 28px;
-    height: 14px;
-    background: linear-gradient(45deg,#9aa0a6,#e6e6e6);
-    border-radius: 2px;
-    border: 1px solid rgba(0,0,0,0.6);
-    cursor: pointer;
-}}
-/* ================= CUSTOM DROPDOWN ================= */
-.custom-select {{
-    position: relative;
-    width: 120px;
-}}
-.select-selected {{
-    background: #0c0f13;
-    border: 1px solid var(--border-soft);
-    padding: 4px 8px;
-    border-radius: 3px;
-    font-size: 11px;
-    color: var(--text-dim);
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}}
-.select-selected:hover {{
-    background: #12161b;
-}}
-.select-selected::after {{
-    content: "▼";
-    font-size: 8px;
-    color: var(--text-faint);
-}}
-.select-items {{
-    position: absolute;
-    background: #0c0f13;
-    border: 1px solid var(--border-soft);
-    border-radius: 3px;
-    top: 100%;
-    left: 0;
-    right: 0;
-    z-index: 99;
-    margin-top: 2px;
-    display: none;
-    max-height: 150px;
-    overflow-y: auto;
-}}
-.select-items::-webkit-scrollbar {{
-    width: 4px;
-}}
-.select-items::-webkit-scrollbar-track {{
-    background: #0c0f13;
-}}
-.select-items::-webkit-scrollbar-thumb {{
-    background: var(--border-main);
-    border-radius: 2px;
-}}
-.select-items.show {{
-    display: block;
-}}
-.select-item {{
-    padding: 6px 8px;
-    font-size: 11px;
-    color: var(--text-dim);
-    cursor: pointer;
-    transition: all 0.15s;
-}}
-.select-item:hover {{
-    background: var(--toggle-on);
-    color: var(--text-main);
-}}
-.select-item.selected {{
-    background: rgba(167, 139, 250, 0.2);
-    color: var(--text-main);
-}}
-/* ================= BUTTON ================= */
-.button {{
-    margin-top: 10px;
-    width: 100%;
-    background: linear-gradient(#151a20,#0e1116);
-    border: 1px solid var(--border-soft);
-    border-radius: 3px;
-    padding: 8px;
-    text-align: center;
-    font-size: 12px;
-    color: var(--text-dim);
-    cursor: pointer;
-    transition: background 0.2s;
-}}
-.button:hover {{
-    background: linear-gradient(#1a1f26,#12161b);
-}}
-.keybind-btn {{
-    background: #0c0f13;
-    border: 1px solid var(--border-soft);
-    padding: 2px 6px;
-    border-radius: 2px;
-    font-size: 9px;
-    color: var(--text-dim);
-    cursor: pointer;
-    min-width: 40px;
-    text-align: center;
-}}
-.keybind-btn:hover {{
-    background: #12161b;
-}}
-.keybind-btn.listening {{
-    color: #ffffff;
-}}
+    * {{
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        user-select: none;
+    }}
+    body {{
+        height: 100vh;
+        background: radial-gradient(circle at top, #0f0f0f, #050505);
+        font-family: Arial, Helvetica, sans-serif;
+        color: #cfcfcf;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }}
+    .window {{
+        width: 760px;
+        height: 520px;
+        background: linear-gradient(#111, #0a0a0a);
+        border: 1px solid #2a2a2a;
+        box-shadow: 0 0 40px rgba(0,0,0,0.8);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }}
+    .topbar {{
+        height: 38px;
+        background: linear-gradient(#1a1a1a, #0e0e0e);
+        border-bottom: 1px solid #2b2b2b;
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        gap: 16px;
+    }}
+    .title {{
+        font-size: 13px;
+        color: #bfbfbf;
+        padding-right: 16px;
+        border-right: 1px solid #2a2a2a;
+    }}
+    .tabs {{
+        display: flex;
+        gap: 18px;
+        font-size: 12px;
+    }}
+    .tab {{
+        color: #9a9a9a;
+        cursor: pointer;
+        transition: color 0.2s;
+    }}
+    .tab:hover,
+    .tab.active {{
+        color: #ffffff;
+        text-shadow: 0 0 4px rgba(255,255,255,0.3);
+    }}
+    .topbar-right {{
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+    }}
+    .search-container {{
+        position: relative;
+        width: 180px;
+    }}
+    .search-bar {{
+        width: 100%;
+        height: 26px;
+        background: #0f0f0f;
+        border: 1px solid #2a2a2a;
+        color: #cfcfcf;
+        font-size: 11px;
+        padding: 0 10px 0 32px;
+        outline: none;
+        transition: border-color 0.2s ease;
+    }}
+    .search-bar::placeholder {{
+        color: #666666;
+    }}
+    .search-bar:focus {{
+        border-color: #555555;
+    }}
+    .search-icon {{
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 14px;
+        height: 14px;
+        pointer-events: none;
+    }}
+    .content {{
+        flex: 1;
+        padding: 10px;
+        background: #0c0c0c;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }}
+    .merged-panel {{
+        width: 100%;
+        height: 100%;
+        background: #0c0c0c;
+        border: 1px solid #222;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }}
+    .inner-container {{
+        width: 98%;
+        height: 96%;
+        display: flex;
+        gap: 14px;
+        overflow: hidden;
+    }}
+    .half-panel {{
+        flex: 1;
+        background: #111111;
+        border: 1px solid #2a2a2a;
+        box-shadow: 0 0 25px rgba(0,0,0,0.6) inset;
+        overflow-y: auto;
+        border-radius: 0;
+        padding: 14px 16px;
+        position: relative;
+    }}
+    .panel-header {{
+        position: absolute;
+        top: 10px;
+        left: 16px;
+        color: #bfbfbf;
+        font-size: 11px;
+        font-weight: normal;
+        pointer-events: none;
+        z-index: 1;
+    }}
+    .toggle-row {{
+        position: absolute;
+        left: 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        z-index: 1;
+    }}
+    .toggle-text {{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }}
+    .toggle {{
+        width: 14px;
+        height: 14px;
+        background: transparent;
+        border: 0.8px solid #1a1a1a;
+        border-radius: 0;
+        cursor: pointer;
+        transition: background 0.2s ease;
+        flex-shrink: 0;
+    }}
+    .toggle.active {{
+        background: #cccccc;
+        box-shadow: inset 0 0 4px rgba(0,0,0,0.5);
+    }}
+    .enable-text {{
+        color: #9a9a9a;
+        font-size: 11px;
+        line-height: 1;
+        transition: color 0.25s ease;
+        pointer-events: none;
+    }}
+    .toggle.active + .enable-text {{
+        color: #e0e0e0;
+    }}
+    .underline-highlight {{
+        text-decoration: underline;
+        text-decoration-color: #cccccc;
+        text-decoration-thickness: 1.5px;
+        text-underline-offset: 2px;
+    }}
+    .keybind-picker {{
+        width: 80px;
+        height: 20px;
+        background: #0f0f0f;
+        border: 1px solid #2a2a2a;
+        color: #cfcfcf;
+        font-size: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        user-select: none;
+    }}
+    .slider-label {{
+        position: absolute;
+        left: 16px;
+        color: #bfbfbf;
+        font-size: 11px;
+        font-weight: normal;
+        z-index: 1;
+    }}
+    .slider-container {{
+        position: absolute;
+        left: 16px;
+        width: 210px;
+        height: 14px;
+        background: #0f0f0f;
+        border: 1px solid #2a2a2a;
+        overflow: hidden;
+        z-index: 10;
+    }}
+    .slider-track {{
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #0f0f0f;
+    }}
+    .slider-fill {{
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background: #cccccc;
+        width: 50%;
+        transition: width 0.1s ease;
+    }}
+    .slider-thumb {{
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 12px;
+        height: 12px;
+        background: #ffffff;
+        cursor: ew-resize;
+        pointer-events: none;
+        z-index: 2;
+    }}
+    .slider-value {{
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 9px;
+        font-weight: bold;
+        pointer-events: none;
+        z-index: 3;
+        transition: color 0.2s;
+    }}
+    .half-panel::-webkit-scrollbar {{
+        width: 5px;
+    }}
+    .half-panel::-webkit-scrollbar-track {{
+        background: #0a0a0a;
+        border-left: 1px solid #111;
+    }}
+    .half-panel::-webkit-scrollbar-thumb {{
+        background: #222222;
+        border-radius: 0;
+    }}
+    .half-panel::-webkit-scrollbar-thumb:hover {{
+        background: #444444;
+    }}
 </style>
 </head>
 <body>
 <div class="window">
     <div class="topbar">
-        <img src="https://image2url.com/r2/bucket1/images/1767835198897-45b69784-a6ec-4151-947a-7d633e4797b8.png" alt="logo" class="logo">
+        <div class="title">Axion</div>
         <div class="tabs">
-            <div class="tab active" data-tab="aimbot">aimbot</div>
-            <div class="tab" data-tab="misc">misc</div>
-            <div class="tab" data-tab="settings">settings</div>
+            <div class="tab">aimbot</div>
+            <div class="tab active">triggerbot</div>
+            <div class="tab">settings</div>
+            <div class="tab">configs</div>
         </div>
-        <div class="search-container">
-            <img src="https://img.icons8.com/?size=100&id=7695&format=png&color=FFFFFF" alt="search" class="search-icon">
-            <input type="text" class="search" id="searchInput" placeholder="search">
+        <div class="topbar-right">
+            <div class="search-container">
+                <img src="https://img.icons8.com/?size=100&id=14079&format=png&color=FFFFFF" alt="Search" class="search-icon">
+                <input type="text" id="searchInput" class="search-bar" placeholder="Search...">
+            </div>
         </div>
     </div>
     <div class="content">
-        <!-- AIMBOT TAB (CAMLOCK) -->
-        <div class="tab-content active" id="aimbot">
-            <div class="left">
-                <div class="panel">
-                    <div class="panel-title">camlock</div>
-                    <div class="row" data-search="enabled keybind camlock aimbot">
-                        <span>enabled</span>
-                        <div class="row-controls">
-                            <div class="toggle on" data-setting="camlock.Enabled"></div>
-                            <div class="keybind-btn" data-setting="camlock.Keybind">Q</div>
+        <div class="merged-panel">
+            <div class="inner-container">
+                <div class="half-panel">
+                    <div class="panel-header">triggerbot</div>
+                    <div class="toggle-row" style="top: 32px;" data-search="enable triggerbot">
+                        <div class="toggle-text">
+                            <div class="toggle active" data-setting="triggerbot.Enabled"></div>
+                            <span class="enable-text">Enable Triggerbot</span>
+                        </div>
+                        <div class="keybind-picker" data-setting="triggerbot.Keybind">Right Mouse</div>
+                    </div>
+                    <div class="toggle-row" style="top: 58px;" data-search="target mode">
+                        <div class="toggle-text">
+                            <div class="toggle" data-setting="triggerbot.TargetMode"></div>
+                            <span class="enable-text">Target Mode</span>
+                        </div>
+                        <div class="keybind-picker" data-setting="triggerbot.TargetKeybind">Middle Mouse</div>
+                    </div>
+                </div>
+                <div class="half-panel">
+                    <div class="panel-header">triggerbot settings</div>
+                    <div class="toggle-row" style="top: 32px;" data-search="stud check distance">
+                        <div class="toggle active" data-setting="triggerbot.StudCheck"></div>
+                        <span class="enable-text">Stud Check</span>
+                    </div>
+                    <div class="toggle-row" style="top: 56px;" data-search="death check">
+                        <div class="toggle active" data-setting="triggerbot.DeathCheck"></div>
+                        <span class="enable-text">Death Check</span>
+                    </div>
+                    <div class="toggle-row" style="top: 80px;" data-search="knife check">
+                        <div class="toggle active" data-setting="triggerbot.KnifeCheck"></div>
+                        <span class="enable-text">Knife Check</span>
+                    </div>
+                    <div class="toggle-row" style="top: 104px;" data-search="team check">
+                        <div class="toggle active" data-setting="triggerbot.TeamCheck"></div>
+                        <span class="enable-text">Team Check</span>
+                    </div>
+                    <div class="slider-label" style="top: 130px;">Delay (s)</div>
+                    <div class="slider-container" id="delaySlider" style="top: 144px;" data-setting="triggerbot.Delay">
+                        <div class="slider-track">
+                            <div class="slider-fill" id="delayFill"></div>
+                            <div class="slider-value" id="delayValue">0.05</div>
                         </div>
                     </div>
-                    <div class="row" data-search="fov field of view camlock aimbot"><span>fov</span><div class="custom-input-wrapper"><input type="number" class="custom-input" value="280.0" step="1" data-setting="camlock.FOV"></div></div>
-                    <div class="row" data-search="smooth x smoothing camlock aimbot"><span>smooth x</span><div class="custom-input-wrapper custom-input-small"><input type="number" class="custom-input" value="14.0" step="0.1" data-setting="camlock.SmoothX"></div></div>
-                    <div class="row" data-search="smooth y smoothing camlock aimbot"><span>smooth y</span><div class="custom-input-wrapper custom-input-small"><input type="number" class="custom-input" value="14.0" step="0.1" data-setting="camlock.SmoothY"></div></div>
-                    <div class="row" data-search="prediction camlock aimbot"><span>prediction</span><div class="custom-input-wrapper custom-input-small"><input type="number" class="custom-input" value="0.14" step="0.01" data-setting="camlock.Prediction"></div></div>
-                    <div class="row" data-search="max studs distance camlock aimbot"><span>max studs</span><div class="custom-input-wrapper"><input type="number" class="custom-input" value="120.0" step="1" data-setting="camlock.MaxStuds"></div></div>
-                </div>
-            </div>
-            <div class="right panel">
-                <div class="panel-title">settings</div>
-                <div class="row" data-search="unlock death camlock aimbot"><span>unlock on death</span><div class="toggle on" data-setting="camlock.UnlockOnDeath"></div></div>
-                <div class="row" data-search="self death check camlock aimbot"><span>self death check</span><div class="toggle on" data-setting="camlock.SelfDeathCheck"></div></div>
-                <div class="row" data-search="body part target camlock aimbot">
-                    <span>body part</span>
-                    <div class="custom-select" data-setting="camlock.BodyPart">
-                        <div class="select-selected">Head</div>
-                        <div class="select-items">
-                            <div class="select-item selected" data-value="Head">Head</div>
-                            <div class="select-item" data-value="Torso">Torso</div>
-                            <div class="select-item" data-value="UpperTorso">UpperTorso</div>
-                            <div class="select-item" data-value="LowerTorso">LowerTorso</div>
+                    <div class="slider-label" style="top: 170px;">Max Studs</div>
+                    <div class="slider-container" id="maxStudsSlider" style="top: 184px;" data-setting="triggerbot.MaxStuds">
+                        <div class="slider-track">
+                            <div class="slider-fill" id="maxStudsFill"></div>
+                            <div class="slider-value" id="maxStudsValue">120</div>
+                        </div>
+                    </div>
+                    <div class="slider-label" style="top: 210px;">Prediction</div>
+                    <div class="slider-container" id="predSlider" style="top: 224px;" data-setting="triggerbot.Prediction">
+                        <div class="slider-track">
+                            <div class="slider-fill" id="predFill"></div>
+                            <div class="slider-value" id="predValue">0.10</div>
                         </div>
                     </div>
                 </div>
-                <div class="row" data-search="closest part camlock aimbot"><span>closest part</span><div class="toggle" data-setting="camlock.ClosestPart"></div></div>
-                <div class="row" data-search="scale toggle camlock aimbot"><span>scale toggle</span><div class="toggle" data-setting="camlock.ScaleToggle"></div></div>
-                <div class="row" data-search="scale camlock aimbot">
-                    <span>scale</span>
-                    <div class="slider-container">
-                        <div class="slider-wrapper">
-                            <div class="slider-fill" id="scaleFill"></div>
-                            <div class="slider-label" id="scaleLabel">3/5</div>
-                            <input type="range" class="slider" id="scaleSlider" min="1" max="5" step="1" value="3" data-setting="camlock.Scale">
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <!-- MISC TAB (TRIGGERBOT) -->
-        <div class="tab-content" id="misc">
-            <div class="left">
-                <div class="panel">
-                    <div class="panel-title">triggerbot</div>
-                    <div class="row" data-search="enabled keybind triggerbot misc">
-                        <span>enabled</span>
-                        <div class="row-controls">
-                            <div class="toggle on" data-setting="triggerbot.Enabled"></div>
-                            <div class="keybind-btn" data-setting="triggerbot.Keybind">RMB</div>
-                        </div>
-                    </div>
-                    <div class="row" data-search="delay triggerbot misc"><span>delay</span><div class="custom-input-wrapper custom-input-small"><input type="number" class="custom-input" value="0.0" step="0.01" min="0" data-setting="triggerbot.Delay"></div></div>
-                    <div class="row" data-search="max studs distance triggerbot misc"><span>max studs</span><div class="custom-input-wrapper"><input type="number" class="custom-input" value="120" step="1" data-setting="triggerbot.MaxStuds"></div></div>
-                    <div class="row" data-search="prediction triggerbot misc"><span>prediction</span><div class="custom-input-wrapper custom-input-small"><input type="number" class="custom-input" value="0.1" step="0.01" data-setting="triggerbot.Prediction"></div></div>
-                </div>
-            </div>
-            <div class="right panel">
-                <div class="panel-title">checks</div>
-                <div class="row" data-search="limit studs distance triggerbot misc"><span>limit studs</span><div class="toggle on" data-setting="triggerbot.LimitStuds"></div></div>
-                <div class="row" data-search="death check triggerbot misc"><span>death check</span><div class="toggle on" data-setting="triggerbot.DeathCheck"></div></div>
-                <div class="row" data-search="knife check triggerbot misc"><span>knife check</span><div class="toggle on" data-setting="triggerbot.KnifeCheck"></div></div>
-                <div class="row" data-search="team check triggerbot misc"><span>team check</span><div class="toggle on" data-setting="triggerbot.TeamCheck"></div></div>
-                <div class="row" data-search="target mode keybind triggerbot misc">
-                    <span>target mode</span>
-                    <div class="row-controls">
-                        <div class="toggle" data-setting="triggerbot.TargetMode"></div>
-                        <div class="keybind-btn" data-setting="triggerbot.TargetKeybind">MMB</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <!-- SETTINGS TAB -->
-        <div class="tab-content" id="settings">
-            <div class="panel" style="width: 100%;">
-                <div class="panel-title">settings</div>
-                <div class="row"><span>coming soon</span></div>
             </div>
         </div>
     </div>
 </div>
+
 <script>
-const USERNAME = "{username}";
-const API_URL = `/api/config/${{USERNAME}}`;
+let config = {json.dumps(DEFAULT_CONFIG)};
 
-// Configuration object
-let config = {{}};
-
-// Load config from server
-async function loadConfig() {{
-    try {{
-        const res = await fetch(API_URL);
-        const data = await res.json();
-        config = data;
-        applyConfigToUI();
-    }} catch (err) {{
-        console.error('Failed to load config:', err);
-    }}
-}}
-
-// Apply config to UI elements
-function applyConfigToUI() {{
-    // Apply toggles
-    document.querySelectorAll('.toggle').forEach(toggle => {{
-        const setting = toggle.dataset.setting;
-        if (setting) {{
-            const [section, key] = setting.split('.');
-            if (config[section] && config[section][key] !== undefined) {{
-                toggle.classList.toggle('on', config[section][key]);
-            }}
-        }}
-    }});
-    
-    // Apply inputs (but skip if user is currently editing)
-    document.querySelectorAll('.custom-input').forEach(input => {{
-        const setting = input.dataset.setting;
-        if (setting && input.dataset.editing !== 'true') {{
-            const [section, key] = setting.split('.');
-            if (config[section] && config[section][key] !== undefined) {{
-                input.value = config[section][key];
-            }}
-        }}
-    }});
-    
-    // Apply keybinds
-    document.querySelectorAll('.keybind-btn').forEach(btn => {{
-        const setting = btn.dataset.setting;
-        if (setting) {{
-            const [section, key] = setting.split('.');
-            if (config[section] && config[section][key] !== undefined) {{
-                btn.textContent = config[section][key];
-            }}
-        }}
-    }});
-    
-    // Apply dropdowns
-    document.querySelectorAll('.custom-select').forEach(select => {{
-        const setting = select.dataset.setting;
-        if (setting) {{
-            const [section, key] = setting.split('.');
-            if (config[section] && config[section][key] !== undefined) {{
-                const value = config[section][key];
-                select.querySelector('.select-selected').textContent = value;
-                select.querySelectorAll('.select-item').forEach(item => {{
-                    item.classList.toggle('selected', item.dataset.value === value);
-                }});
-            }}
-        }}
-    }});
-    
-    // Apply slider
-    if (config.camlock && config.camlock.Scale !== undefined) {{
-        const slider = document.getElementById('scaleSlider');
-        const value = Math.round(config.camlock.Scale * 5);
-        slider.value = value;
-        updateSlider();
-    }}
-    
-    // Apply colors
-    document.querySelectorAll('.color').forEach(color => {{
-        const setting = color.dataset.setting;
-        if (setting) {{
-            const [section, key] = setting.split('.');
-            if (config[section] && config[section][key] !== undefined) {{
-                const [r, g, b] = config[section][key];
-                color.style.background = `rgb(${{r}},${{g}},${{b}})`;
-            }}
-        }}
-    }});
-}}
-
-// Save config to server
+// Save config to backend
 async function saveConfig() {{
     try {{
-        await fetch(API_URL, {{
+        await fetch(`/api/config/{username}`, {{
             method: 'POST',
             headers: {{ 'Content-Type': 'application/json' }},
             body: JSON.stringify(config)
         }});
-    }} catch (err) {{
-        console.error('Failed to save config:', err);
+    }} catch(e) {{
+        console.error('Save failed:', e);
     }}
 }}
+
+// Load config from backend
+async function loadConfig() {{
+    try {{
+        const res = await fetch(`/api/config/{username}`);
+        config = await res.json();
+        applyConfigToUI();
+    }} catch(e) {{
+        console.error('Load failed:', e);
+    }}
+}}
+
+// Apply config to UI
+function applyConfigToUI() {{
+    // Toggles
+    document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
+        const setting = toggle.dataset.setting;
+        const [section, key] = setting.split('.');
+        if (config[section] && config[section][key] !== undefined) {{
+            toggle.classList.toggle('active', config[section][key]);
+        }}
+    }});
+    
+    // Keybinds
+    document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
+        const setting = picker.dataset.setting;
+        const [section, key] = setting.split('.');
+        if (config[section] && config[section][key] !== undefined) {{
+            picker.textContent = config[section][key];
+        }}
+    }});
+    
+    // Sliders
+    if (config.triggerbot.Delay !== undefined) {{
+        sliders.delay.current = config.triggerbot.Delay;
+        sliders.delay.update();
+    }}
+    if (config.triggerbot.MaxStuds !== undefined) {{
+        sliders.maxStuds.current = config.triggerbot.MaxStuds;
+        sliders.maxStuds.update();
+    }}
+    if (config.triggerbot.Prediction !== undefined) {{
+        sliders.pred.current = config.triggerbot.Prediction;
+        sliders.pred.update();
+    }}
+}}
+
+// Toggle click handlers
+document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
+    toggle.addEventListener('click', () => {{
+        toggle.classList.toggle('active');
+        const setting = toggle.dataset.setting;
+        const [section, key] = setting.split('.');
+        config[section][key] = toggle.classList.contains('active');
+        saveConfig();
+    }});
+}});
+
+// Keybind picker
+document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
+    picker.addEventListener('click', () => {{
+        picker.textContent = '...';
+        const listener = (e) => {{
+            e.preventDefault();
+            let keyName = '';
+            if (e.button !== undefined) {{
+                keyName = e.button === 0 ? 'Left Mouse' : e.button === 2 ? 'Right Mouse' : e.button === 1 ? 'Middle Mouse' : `Mouse${{e.button}}`;
+            }} else if (e.key) {{
+                keyName = e.key.toUpperCase();
+                if (keyName === ' ') keyName = 'SPACE';
+            }}
+            picker.textContent = keyName || 'NONE';
+            const setting = picker.dataset.setting;
+            const [section, key] = setting.split('.');
+            config[section][key] = keyName;
+            saveConfig();
+            document.removeEventListener('keydown', listener);
+            document.removeEventListener('mousedown', listener);
+        }};
+        document.addEventListener('keydown', listener, {{ once: true }});
+        document.addEventListener('mousedown', listener, {{ once: true }});
+    }});
+}});
 
 // Search functionality
 const searchInput = document.getElementById('searchInput');
-searchInput.addEventListener('input', (e) => {{
-    const query = e.target.value.toLowerCase().trim();
-   
-    if (query === '') {{
-        document.querySelectorAll('.row.highlight').forEach(row => {{
-            row.classList.remove('highlight');
-        }});
-        return;
-    }}
-   
-    const allRows = document.querySelectorAll('.row[data-search]');
-    let foundMatch = null;
-   
-    allRows.forEach(row => {{
-        const searchTerms = row.getAttribute('data-search').toLowerCase();
-        if (searchTerms.includes(query)) {{
-            if (!foundMatch) foundMatch = row;
+const toggleRows = document.querySelectorAll('.toggle-row[data-search]');
+searchInput.addEventListener('input', () => {{
+    const query = searchInput.value.toLowerCase().trim();
+    toggleRows.forEach(row => {{
+        const textSpan = row.querySelector('.enable-text');
+        const originalText = textSpan.dataset.original || textSpan.textContent;
+        if (!textSpan.dataset.original) textSpan.dataset.original = originalText;
+        textSpan.innerHTML = originalText;
+        if (query === '') return;
+        const searchTerm = row.getAttribute('data-search').toLowerCase();
+        if (searchTerm.includes(query)) {{
+            textSpan.innerHTML = `<span class="underline-highlight">${{originalText}}</span>`;
         }}
     }});
-   
-    if (foundMatch) {{
-        const tabContent = foundMatch.closest('.tab-content');
-        const tabId = tabContent.id;
-       
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-       
-        document.querySelector(`.tab[data-tab="${{tabId}}"]`).classList.add('active');
-        tabContent.classList.add('active');
-       
-        document.querySelectorAll('.row.highlight').forEach(row => {{
-            row.classList.remove('highlight');
-        }});
-       
-        foundMatch.classList.add('highlight');
-       
-        setTimeout(() => {{
-            foundMatch.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-        }}, 100);
-    }}
 }});
 
-// Tab switching
-document.querySelectorAll('.tab').forEach(tab => {{
-    tab.addEventListener('click', () => {{
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-       
-        tab.classList.add('active');
-        document.getElementById(tab.dataset.tab).classList.add('active');
-    }});
-}});
+// Slider system
+const sliders = {{}};
 
-// Toggle handling
-document.querySelectorAll('.toggle').forEach(toggle => {{
-    toggle.addEventListener('click', () => {{
-        toggle.classList.toggle('on');
-        const setting = toggle.dataset.setting;
-        if (setting) {{
-            const [section, key] = setting.split('.');
-            config[section][key] = toggle.classList.contains('on');
+// Decimal slider (Delay, Prediction)
+function createDecimalSlider(id, fillId, valueId, defaultVal, min, max, step, setting) {{
+    const slider = document.getElementById(id);
+    const fill = document.getElementById(fillId);
+    const valueText = document.getElementById(valueId);
+    
+    const obj = {{
+        current: defaultVal,
+        min: min,
+        max: max,
+        step: step,
+        setting: setting,
+        update: function() {{
+            const percent = ((this.current - this.min) / (this.max - this.min)) * 100;
+            fill.style.width = percent + '%';
+            valueText.textContent = this.current.toFixed(2);
+            valueText.style.color = this.current >= 0.5 ? '#000000' : '#ffffff';
+        }}
+    }};
+    
+    slider.addEventListener('mousedown', (e) => {{
+        const rect = slider.getBoundingClientRect();
+        function move(e) {{
+            const x = e.clientX - rect.left;
+            let percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            obj.current = obj.min + (percent / 100) * (obj.max - obj.min);
+            obj.current = Math.round(obj.current / obj.step) * obj.step;
+            obj.current = Math.max(obj.min, Math.min(obj.max, obj.current));
+            obj.update();
+            const [section, key] = obj.setting.split('.');
+            config[section][key] = obj.current;
             saveConfig();
         }}
-    }});
-}});
-
-// Custom input handling with debounce
-let inputTimers = {{}};
-document.querySelectorAll('.custom-input').forEach(input => {{
-    // Mark input as being edited
-    input.addEventListener('focus', () => {{
-        input.dataset.editing = 'true';
-    }});
-    
-    input.addEventListener('blur', () => {{
-        input.dataset.editing = 'false';
-        const setting = input.dataset.setting;
-        if (setting) {{
-            const [section, key] = setting.split('.');
-            config[section][key] = parseFloat(input.value);
-            saveConfig();
+        function up() {{
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
         }}
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+        move(e);
     }});
-    
-    // Save on input with debounce
-    input.addEventListener('input', () => {{
-        const setting = input.dataset.setting;
-        if (setting) {{
-            clearTimeout(inputTimers[setting]);
-            inputTimers[setting] = setTimeout(() => {{
-                const [section, key] = setting.split('.');
-                config[section][key] = parseFloat(input.value);
-                saveConfig();
-            }}, 1000); // Wait 1 second after typing stops
-        }}
-    }});
-}});
-
-// Custom dropdown handling
-document.querySelectorAll('.custom-select').forEach(select => {{
-    const selected = select.querySelector('.select-selected');
-    const itemsContainer = select.querySelector('.select-items');
-    const items = select.querySelectorAll('.select-item');
-   
-    selected.addEventListener('click', (e) => {{
-        e.stopPropagation();
-        document.querySelectorAll('.select-items').forEach(s => {{
-            if (s !== itemsContainer) s.classList.remove('show');
-        }});
-        itemsContainer.classList.toggle('show');
-    }});
-   
-    items.forEach(item => {{
-        item.addEventListener('click', () => {{
-            const value = item.dataset.value;
-            selected.textContent = value;
-           
-            items.forEach(i => i.classList.remove('selected'));
-            item.classList.add('selected');
-           
-            itemsContainer.classList.remove('show');
-           
-            const setting = select.dataset.setting;
-            if (setting) {{
-                const [section, key] = setting.split('.');
-                config[section][key] = value;
-                saveConfig();
-            }}
-        }});
-    }});
-}});
-
-// Close dropdowns when clicking outside
-document.addEventListener('click', () => {{
-    document.querySelectorAll('.select-items').forEach(s => s.classList.remove('show'));
-}});
-
-// Custom slider handling with dynamic label color
-const scaleSlider = document.getElementById('scaleSlider');
-const scaleFill = document.getElementById('scaleFill');
-const scaleLabel = document.getElementById('scaleLabel');
-
-function updateSlider() {{
-    const value = parseInt(scaleSlider.value);
-    const max = parseInt(scaleSlider.max);
-    const percentage = ((value - 1) / (max - 1)) * 100;
-   
-    scaleFill.style.width = percentage + '%';
-    scaleLabel.textContent = `${{value}}/5`;
-   
-    if (percentage >= 50) {{
-        scaleLabel.style.color = '#000000';
-    }} else {{
-        scaleLabel.style.color = '#ffffff';
-    }}
-   
-    const setting = scaleSlider.dataset.setting;
-    if (setting) {{
-        const [section, key] = setting.split('.');
-        config[section][key] = value / 5;
-        saveConfig();
-    }}
+    obj.update();
+    return obj;
 }}
 
-scaleSlider.addEventListener('input', updateSlider);
-
-// Color picker handling
-document.querySelectorAll('.color').forEach(color => {{
-    color.addEventListener('click', () => {{
-        const input = document.createElement('input');
-        input.type = 'color';
-        const rgb = color.style.background.match(/\\d+/g);
-        if (rgb) {{
-            const hex = '#' + rgb.slice(0, 3).map(x => {{
-                const hex = parseInt(x).toString(16);
-                return hex.length === 1 ? '0' + hex : hex;
-            }}).join('');
-            input.value = hex;
+// Integer slider (Max Studs)
+function createIntSlider(id, fillId, valueId, defaultVal, max, blackThreshold, setting) {{
+    const slider = document.getElementById(id);
+    const fill = document.getElementById(fillId);
+    const valueText = document.getElementById(valueId);
+    
+    const obj = {{
+        current: defaultVal,
+        max: max,
+        blackThreshold: blackThreshold,
+        setting: setting,
+        update: function() {{
+            const percent = (this.current / this.max) * 100;
+            fill.style.width = percent + '%';
+            valueText.textContent = Math.round(this.current);
+            valueText.style.color = this.current >= this.blackThreshold ? '#000000' : '#ffffff';
         }}
-       
-        input.addEventListener('change', () => {{
-            const hex = input.value;
-            const r = parseInt(hex.slice(1, 3), 16);
-            const g = parseInt(hex.slice(3, 5), 16);
-            const b = parseInt(hex.slice(5, 7), 16);
-           
-            color.style.background = `rgb(${{r}},${{g}},${{b}})`;
-           
-            const setting = color.dataset.setting;
-            if (setting) {{
-                const [section, key] = setting.split('.');
-                config[section][key] = [r, g, b, 255];
-                saveConfig();
-            }}
-        }});
-       
-        input.click();
+    }};
+    
+    slider.addEventListener('mousedown', (e) => {{
+        const rect = slider.getBoundingClientRect();
+        function move(e) {{
+            const x = e.clientX - rect.left;
+            const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            obj.current = (percent / 100) * obj.max;
+            obj.update();
+            const [section, key] = obj.setting.split('.');
+            config[section][key] = Math.round(obj.current);
+            saveConfig();
+        }}
+        function up() {{
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+        }}
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+        move(e);
     }});
-}});
+    obj.update();
+    return obj;
+}}
 
-// Keybind handling
-document.querySelectorAll('.keybind-btn').forEach(btn => {{
-    btn.addEventListener('click', () => {{
-        const oldText = btn.textContent;
-        btn.textContent = '...';
-        btn.classList.add('listening');
-       
-        const handleKey = (e) => {{
-            e.preventDefault();
-            let key = e.key;
-           
-            if (e.button === 0) key = 'LMB';
-            else if (e.button === 1) key = 'MMB';
-            else if (e.button === 2) key = 'RMB';
-            else if (e.key.length === 1) key = e.key.toUpperCase();
-           
-            btn.textContent = key;
-            btn.classList.remove('listening');
-           
-            const setting = btn.dataset.setting;
-            if (setting) {{
-                const [section, settingKey] = setting.split('.');
-                config[section][settingKey] = key;
-                saveConfig();
-            }}
-           
-            document.removeEventListener('keydown', handleKey);
-            document.removeEventListener('mousedown', handleKey);
-        }};
-       
-        document.addEventListener('keydown', handleKey);
-        document.addEventListener('mousedown', handleKey);
-       
-        setTimeout(() => {{
-            document.removeEventListener('keydown', handleKey);
-            document.removeEventListener('mousedown', handleKey);
-            if (btn.textContent === '...') {{
-                btn.textContent = oldText;
-                btn.classList.remove('listening');
-            }}
-        }}, 5000);
-    }});
-}});
+// Initialize sliders
+sliders.delay = createDecimalSlider('delaySlider', 'delayFill', 'delayValue', 0.05, 0.01, 1.00, 0.01, 'triggerbot.Delay');
+sliders.maxStuds = createIntSlider('maxStudsSlider', 'maxStudsFill', 'maxStudsValue', 120, 300, 150, 'triggerbot.MaxStuds');
+sliders.pred = createDecimalSlider('predSlider', 'predFill', 'predValue', 0.10, 0.01, 1.00, 0.01, 'triggerbot.Prediction');
 
-// Initialize
+// Load initial config
 loadConfig();
-setInterval(loadConfig, 2000); // Poll for updates every 2 seconds
+
+// Poll for updates every 1 second
+setInterval(loadConfig, 1000);
 </script>
 </body>
 </html>
-    """
+"""
