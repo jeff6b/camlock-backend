@@ -338,6 +338,20 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 .dropdown-item{{padding:5px 10px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.15s}}
 .dropdown-item:hover{{background:#1a1a1a}}
 .dropdown-item.selected{{background:#222;color:#fff}}
+.config-list{{position:absolute;top:32px;left:16px;right:16px;bottom:16px;overflow-y:auto}}
+.config-item{{background:#0f0f0f;border:1px solid #2a2a2a;padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:12px;position:relative}}
+.config-item:hover{{background:#1a1a1a}}
+.config-name{{flex:1;font-size:11px;color:#fff;font-weight:normal}}
+.config-dots{{width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9a9a9a;font-size:18px;font-weight:bold;transition:color 0.2s;flex-shrink:0}}
+.config-dots:hover{{color:#fff}}
+.config-menu{{position:absolute;right:8px;top:32px;background:#0f0f0f;border:1px solid #2a2a2a;display:none;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,0.6);min-width:120px}}
+.config-menu.open{{display:block}}
+.config-menu-item{{padding:8px 16px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;border-bottom:1px solid #1a1a1a;white-space:nowrap}}
+.config-menu-item:last-child{{border-bottom:none}}
+.config-menu-item:hover{{background:#1a1a1a;color:#fff}}
+.input-box{{width:100%;height:24px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;padding:0 8px;outline:none}}
+.config-btn{{background:#0f0f0f;border:1px solid #2a2a2a;padding:6px 12px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;width:100%;margin-top:6px}}
+.config-btn:hover{{background:#222}}
 </style>
 </head>
 <body>
@@ -814,16 +828,35 @@ const res=await fetch(`/api/configs/{key}/list`);
 const data=await res.json();
 const list=document.getElementById('configList');
 list.innerHTML='';
-data.configs.forEach(cfg=>{{
+data.configs.forEach((cfg,idx)=>{{
 const div=document.createElement('div');
 div.className='config-item';
-div.innerHTML=`<div class="config-name">${{cfg.name}}</div>
-<button class="config-btn" onclick="loadConfigByName('${{cfg.name}}')">Load</button>
-<button class="config-btn" onclick="deleteConfigByName('${{cfg.name}}')">Delete</button>`;
+div.innerHTML=`
+<div class="config-name">${{cfg.name}}</div>
+<div class="config-dots" onclick="toggleConfigMenu(event, ${{idx}})">⋮</div>
+<div class="config-menu" id="configMenu${{idx}}">
+<div class="config-menu-item" onclick="loadConfigByName('${{cfg.name}}')">Load</div>
+<div class="config-menu-item" onclick="renameConfigPrompt('${{cfg.name}}')">Rename</div>
+<div class="config-menu-item" onclick="deleteConfigByName('${{cfg.name}}')">Delete</div>
+</div>
+`;
 list.appendChild(div);
 }});
 }}catch(e){{console.error(e);}}
 }}
+
+function toggleConfigMenu(e, idx){{
+e.stopPropagation();
+const menu=document.getElementById(`configMenu${{idx}}`);
+document.querySelectorAll('.config-menu').forEach(m=>{{
+if(m!==menu)m.classList.remove('open');
+}});
+menu.classList.toggle('open');
+}}
+
+document.addEventListener('click',()=>{{
+document.querySelectorAll('.config-menu').forEach(m=>m.classList.remove('open'));
+}});
 
 async function saveCurrentConfig(){{
 const name=document.getElementById('saveConfigInput').value.trim();
@@ -842,6 +875,15 @@ config=await res.json();
 applyConfigToUI();
 await saveConfig();
 }}catch(e){{alert('Failed to load');}}
+}}
+
+async function renameConfigPrompt(oldName){{
+const newName=prompt(`Rename "${{oldName}}" to:`,oldName);
+if(!newName||newName===oldName)return;
+try{{
+await fetch(`/api/configs/{key}/rename`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{old_name:oldName,new_name:newName}})}});
+await loadSavedConfigs();
+}}catch(e){{alert('Failed to rename');}}
 }}
 
 async function deleteConfigByName(name){{
