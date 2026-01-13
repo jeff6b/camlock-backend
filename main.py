@@ -342,14 +342,14 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 .config-list::-webkit-scrollbar-track{{background:#0a0a0a;border-left:1px solid #111}}
 .config-list::-webkit-scrollbar-thumb{{background:#333;border-radius:3px}}
 .config-list::-webkit-scrollbar-thumb:hover{{background:#555}}
-.config-item{{background:#0f0f0f;border:1px solid #2a2a2a;padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:12px;position:relative}}
+.config-item{{background:#0f0f0f;border:1px solid #2a2a2a;padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:10px;position:relative}}
 .config-item:hover{{background:#1a1a1a}}
-.config-name{{flex:1;font-size:11px;color:#fff;font-weight:normal}}
-.config-dots{{width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9a9a9a;font-size:18px;font-weight:bold;transition:color 0.2s;flex-shrink:0}}
+.config-name{{flex:1;font-size:10px;color:#fff;font-weight:normal}}
+.config-dots{{width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9a9a9a;font-size:16px;font-weight:bold;transition:color 0.2s;flex-shrink:0}}
 .config-dots:hover{{color:#fff}}
-.config-menu{{position:absolute;right:8px;top:32px;background:#0f0f0f;border:1px solid #2a2a2a;display:none;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,0.6);min-width:120px}}
+.config-menu{{position:absolute;right:8px;top:28px;background:#0f0f0f;border:1px solid #2a2a2a;display:none;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,0.6);min-width:100px}}
 .config-menu.open{{display:block}}
-.config-menu-item{{padding:8px 16px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;border-bottom:1px solid #1a1a1a;white-space:nowrap}}
+.config-menu-item{{padding:6px 12px;font-size:10px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;border-bottom:1px solid #1a1a1a;white-space:nowrap}}
 .config-menu-item:last-child{{border-bottom:none}}
 .config-menu-item:hover{{background:#1a1a1a;color:#fff}}
 .input-box{{width:100%;height:24px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;padding:0 8px;outline:none}}
@@ -911,7 +911,6 @@ if(e.key==='Escape')closeRenameModal();
 }});
 
 async function deleteConfigByName(name){{
-if(!confirm(`Delete ${{name}}?`))return;
 try{{
 await fetch(`/api/configs/{key}/delete/${{name}}`,{{method:'DELETE'}});
 await loadSavedConfigs();
