@@ -17,7 +17,7 @@ def init_db():
     db = get_db()
     cur = db.cursor()
    
-    # Settings table (now uses key instead of username)
+    # Settings table (uses key as identifier)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -25,15 +25,17 @@ def init_db():
         )
     """)
     
-    # Keys table (no username field)
+    # Keys table with user tracking
     cur.execute("""
         CREATE TABLE IF NOT EXISTS keys (
             key TEXT PRIMARY KEY,
             duration TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            expires_at TEXT NOT NULL,
+            expires_at TEXT,
+            redeemed_at TEXT,
+            redeemed_by TEXT,
             hwid TEXT,
-            active INTEGER DEFAULT 1,
+            active INTEGER DEFAULT 0,
             created_by TEXT
         )
     """)
@@ -43,7 +45,7 @@ def init_db():
 
 init_db()
 
-# Default configuration
+# Default configuration with BOTH triggerbot and camlock
 DEFAULT_CONFIG = {
     "triggerbot": {
         "Enabled": True,
@@ -80,6 +82,10 @@ class KeyCreate(BaseModel):
     duration: str
     created_by: str
 
+class KeyRedeem(BaseModel):
+    key: str
+    user_id: str
+
 class KeyValidate(BaseModel):
     key: str
     hwid: str
@@ -93,13 +99,15 @@ def generate_key():
         parts.append(part)
     return '-'.join(parts)
 
-def get_expiry_date(duration):
+def get_expiry_date(duration, from_date=None):
+    """Calculate expiry from specific date (for countdown on redemption)"""
+    base = from_date if from_date else datetime.now()
     if duration == "weekly":
-        return (datetime.now() + timedelta(weeks=1)).isoformat()
+        return (base + timedelta(weeks=1)).isoformat()
     elif duration == "monthly":
-        return (datetime.now() + timedelta(days=30)).isoformat()
+        return (base + timedelta(days=30)).isoformat()
     elif duration == "3monthly":
-        return (datetime.now() + timedelta(days=90)).isoformat()
+        return (base + timedelta(days=90)).isoformat()
     return None
 
 # ============== CONFIG API (Dashboard) ==============
@@ -137,21 +145,17 @@ def set_config(key: str, data: dict):
 
 @app.post("/api/keys/create")
 def create_key(data: KeyCreate):
-    """Create a new license key"""
+    """Create a new license key (not active until redeemed)"""
     db = get_db()
     cur = db.cursor()
     
     key = generate_key()
-    expires_at = get_expiry_date(data.duration)
-    
-    if not expires_at:
-        raise HTTPException(status_code=400, detail="Invalid duration")
     
     try:
         cur.execute("""
-            INSERT INTO keys (key, duration, created_at, expires_at, created_by)
-            VALUES (?, ?, ?, ?, ?)
-        """, (key, data.duration, datetime.now().isoformat(), expires_at, data.created_by))
+            INSERT INTO keys (key, duration, created_at, active, created_by)
+            VALUES (?, ?, ?, 0, ?)
+        """, (key, data.duration, datetime.now().isoformat(), data.created_by))
         
         db.commit()
         db.close()
@@ -159,30 +163,123 @@ def create_key(data: KeyCreate):
         return {
             "key": key,
             "duration": data.duration,
-            "expires_at": expires_at
+            "status": "awaiting_redemption"
         }
     except Exception as e:
         db.close()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/api/keys/{key}")
-def delete_key(key: str):
-    """Delete a license key"""
+@app.post("/api/keys/redeem")
+def redeem_key(data: KeyRedeem):
+    """Redeem a key - starts countdown and binds to user"""
     db = get_db()
     cur = db.cursor()
     
-    cur.execute("SELECT * FROM keys WHERE key=?", (key,))
+    # Check if key exists
+    cur.execute("SELECT * FROM keys WHERE key=?", (data.key,))
     result = cur.fetchone()
     
     if not result:
         db.close()
-        raise HTTPException(status_code=404, detail="Key not found")
+        raise HTTPException(status_code=404, detail="Invalid key")
     
-    cur.execute("DELETE FROM keys WHERE key=?", (key,))
+    key, duration, created_at, expires_at, redeemed_at, redeemed_by, hwid, active, created_by = result
+    
+    # Check if already redeemed
+    if redeemed_by:
+        db.close()
+        raise HTTPException(status_code=400, detail="Key already redeemed by another user")
+    
+    # Start countdown NOW
+    now = datetime.now()
+    expiry = get_expiry_date(duration, now)
+    
+    cur.execute("""
+        UPDATE keys 
+        SET redeemed_at=?, redeemed_by=?, expires_at=?, active=1
+        WHERE key=?
+    """, (now.isoformat(), data.user_id, expiry, data.key))
+    
     db.commit()
     db.close()
     
-    return {"status": "deleted", "key": key}
+    return {
+        "success": True,
+        "key": data.key,
+        "duration": duration,
+        "expires_at": expiry,
+        "message": "Key redeemed successfully"
+    }
+
+@app.delete("/api/users/{user_id}/license")
+def delete_user_license(user_id: str):
+    """Delete a user's license"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute("SELECT key FROM keys WHERE redeemed_by=?", (user_id,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="No license found for this user")
+    
+    key = result[0]
+    cur.execute("DELETE FROM keys WHERE redeemed_by=?", (user_id,))
+    db.commit()
+    db.close()
+    
+    return {"status": "deleted", "key": key, "user_id": user_id}
+
+@app.get("/api/users/{user_id}/license")
+def get_user_license(user_id: str):
+    """Get license info for a user"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute("SELECT * FROM keys WHERE redeemed_by=?", (user_id,))
+    result = cur.fetchone()
+    db.close()
+    
+    if not result:
+        return {"active": False, "message": "No license found"}
+    
+    key, duration, created_at, expires_at, redeemed_at, redeemed_by, hwid, active, created_by = result
+    
+    # Check if expired
+    if expires_at:
+        is_expired = datetime.now() > datetime.fromisoformat(expires_at)
+        if is_expired:
+            return {"active": False, "expired": True, "key": key}
+    
+    return {
+        "active": True,
+        "key": key,
+        "duration": duration,
+        "expires_at": expires_at,
+        "redeemed_at": redeemed_at,
+        "hwid": hwid
+    }
+
+@app.post("/api/users/{user_id}/reset-hwid")
+def reset_user_hwid(user_id: str):
+    """Reset HWID for a user's license"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute("SELECT hwid FROM keys WHERE redeemed_by=?", (user_id,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="No license found for this user")
+    
+    old_hwid = result[0]
+    cur.execute("UPDATE keys SET hwid=NULL WHERE redeemed_by=?", (user_id,))
+    db.commit()
+    db.close()
+    
+    return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
 
 @app.get("/api/keys/{key}")
 def get_key_info(key: str):
@@ -202,9 +299,11 @@ def get_key_info(key: str):
         "duration": result[1],
         "created_at": result[2],
         "expires_at": result[3],
-        "hwid": result[4],
-        "active": result[5],
-        "created_by": result[6]
+        "redeemed_at": result[4],
+        "redeemed_by": result[5],
+        "hwid": result[6],
+        "active": result[7],
+        "created_by": result[8]
     }
 
 @app.get("/api/keys/list")
@@ -224,32 +323,14 @@ def list_keys():
             "duration": result[1],
             "created_at": result[2],
             "expires_at": result[3],
-            "hwid": result[4],
-            "active": result[5],
-            "created_by": result[6]
+            "redeemed_at": result[4],
+            "redeemed_by": result[5],
+            "hwid": result[6],
+            "active": result[7],
+            "created_by": result[8]
         })
     
     return {"keys": keys}
-
-@app.post("/api/keys/{key}/reset")
-def reset_hwid(key: str):
-    """Reset HWID binding for a key"""
-    db = get_db()
-    cur = db.cursor()
-    
-    cur.execute("SELECT hwid FROM keys WHERE key=?", (key,))
-    result = cur.fetchone()
-    
-    if not result:
-        db.close()
-        raise HTTPException(status_code=404, detail="Key not found")
-    
-    old_hwid = result[0]
-    cur.execute("UPDATE keys SET hwid=NULL WHERE key=?", (key,))
-    db.commit()
-    db.close()
-    
-    return {"status": "reset", "key": key, "old_hwid": old_hwid}
 
 @app.post("/api/validate")
 def validate_key(data: KeyValidate):
@@ -264,10 +345,15 @@ def validate_key(data: KeyValidate):
         db.close()
         return {"valid": False, "error": "Invalid key"}, 401
     
-    key, duration, created_at, expires_at, hwid, active, created_by = result
+    key, duration, created_at, expires_at, redeemed_at, redeemed_by, hwid, active, created_by = result
+    
+    # Check if redeemed
+    if not redeemed_by:
+        db.close()
+        return {"valid": False, "error": "Key not redeemed yet"}, 401
     
     # Check if expired
-    if datetime.now() > datetime.fromisoformat(expires_at):
+    if expires_at and datetime.now() > datetime.fromisoformat(expires_at):
         db.close()
         return {"valid": False, "error": "Key expired"}, 401
     
@@ -570,11 +656,58 @@ def serve_ui(key: str):
     .half-panel::-webkit-scrollbar-thumb:hover {{
         background: #444444;
     }}
-    .placeholder-message {{
-        color: #666666;
-        font-size: 14px;
-        text-align: center;
-        padding: 40px;
+    .custom-dropdown {{
+        position: absolute;
+        left: 16px;
+        width: 210px;
+        height: 16px;
+        z-index: 100;
+    }}
+    .dropdown-header {{
+        width: 100%;
+        height: 100%;
+        background: #0f0f0f;
+        border: 1px solid #2a2a2a;
+        display: flex;
+        align-items: center;
+        padding: 0 8px;
+        cursor: pointer;
+        font-size: 10px;
+        color: #cfcfcf;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }}
+    .dropdown-list {{
+        position: absolute;
+        top: 100%;
+        left: 0;
+        width: 100%;
+        max-height: 160px;
+        background: #0f0f0f;
+        border: 1px solid #2a2a2a;
+        border-top: none;
+        overflow-y: auto;
+        display: none;
+        z-index: 101;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.6);
+    }}
+    .dropdown-list.open {{
+        display: block;
+    }}
+    .dropdown-item {{
+        padding: 5px 10px;
+        font-size: 11px;
+        color: #cfcfcf;
+        cursor: pointer;
+        transition: background 0.15s;
+    }}
+    .dropdown-item:hover {{
+        background: #1a1a1a;
+    }}
+    .dropdown-item.selected {{
+        background: #222;
+        color: #ffffff;
     }}
 </style>
 </head>
@@ -583,10 +716,9 @@ def serve_ui(key: str):
     <div class="topbar">
         <div class="title">Axion</div>
         <div class="tabs">
-            <div class="tab" data-tab="aimbot">aimbot</div>
-            <div class="tab active" data-tab="triggerbot">triggerbot</div>
+            <div class="tab active" data-tab="aimbot">aimbot</div>
+            <div class="tab" data-tab="triggerbot">triggerbot</div>
             <div class="tab" data-tab="settings">settings</div>
-            <div class="tab" data-tab="configs">configs</div>
         </div>
         <div class="topbar-right">
             <div class="search-container">
@@ -597,16 +729,85 @@ def serve_ui(key: str):
     </div>
     <div class="content">
         <!-- AIMBOT TAB -->
-        <div class="tab-content" id="aimbot">
+        <div class="tab-content active" id="aimbot">
             <div class="merged-panel">
-                <div class="placeholder-message">
-                    Aimbot settings coming soon...
+                <div class="inner-container">
+                    <div class="half-panel">
+                        <div class="panel-header">aimbot</div>
+                        <div class="toggle-row" style="top: 32px;">
+                            <div class="toggle-text">
+                                <div class="toggle active" data-setting="camlock.Enabled"></div>
+                                <span class="enable-text">Enable Aimbot</span>
+                            </div>
+                            <div class="keybind-picker" data-setting="camlock.Keybind">Q</div>
+                        </div>
+                        <div class="toggle-row" style="top: 58px;">
+                            <div class="toggle" data-setting="camlock.UnlockOnDeath"></div>
+                            <span class="enable-text">Unlock On Death</span>
+                        </div>
+                        <div class="toggle-row" style="top: 82px;">
+                            <div class="toggle" data-setting="camlock.SelfDeathCheck"></div>
+                            <span class="enable-text">Self Death Check</span>
+                        </div>
+                        <div class="toggle-row" style="top: 106px;">
+                            <div class="toggle" data-setting="camlock.ClosestPart"></div>
+                            <span class="enable-text">Closest Part</span>
+                        </div>
+                    </div>
+                    <div class="half-panel">
+                        <div class="panel-header">aimbot settings</div>
+                        <div class="slider-label" style="top: 32px;">FOV</div>
+                        <div class="slider-container" id="fovSlider" style="top: 46px;" data-setting="camlock.FOV">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="fovFill"></div>
+                                <div class="slider-value" id="fovValue">280</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top: 72px;">Smooth X</div>
+                        <div class="slider-container" id="smoothXSlider" style="top: 86px;" data-setting="camlock.SmoothX">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="smoothXFill"></div>
+                                <div class="slider-value" id="smoothXValue">14</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top: 112px;">Smooth Y</div>
+                        <div class="slider-container" id="smoothYSlider" style="top: 126px;" data-setting="camlock.SmoothY">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="smoothYFill"></div>
+                                <div class="slider-value" id="smoothYValue">14</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top: 152px;">Prediction</div>
+                        <div class="slider-container" id="camlockPredSlider" style="top: 166px;" data-setting="camlock.Prediction">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="camlockPredFill"></div>
+                                <div class="slider-value" id="camlockPredValue">0.14</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top: 192px;">Max Studs</div>
+                        <div class="slider-container" id="camlockMaxStudsSlider" style="top: 206px;" data-setting="camlock.MaxStuds">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="camlockMaxStudsFill"></div>
+                                <div class="slider-value" id="camlockMaxStudsValue">120</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top: 232px;">Body Part</div>
+                        <div class="custom-dropdown" style="top: 246px;" id="bodyPartDropdown" data-setting="camlock.BodyPart">
+                            <div class="dropdown-header" id="bodyPartHeader">Head</div>
+                            <div class="dropdown-list" id="bodyPartList">
+                                <div class="dropdown-item selected" data-value="Head">Head</div>
+                                <div class="dropdown-item" data-value="UpperTorso">UpperTorso</div>
+                                <div class="dropdown-item" data-value="LowerTorso">LowerTorso</div>
+                                <div class="dropdown-item" data-value="HumanoidRootPart">HumanoidRootPart</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
         
         <!-- TRIGGERBOT TAB -->
-        <div class="tab-content active" id="triggerbot">
+        <div class="tab-content" id="triggerbot">
             <div class="merged-panel">
                 <div class="inner-container">
                     <div class="half-panel">
@@ -673,17 +874,8 @@ def serve_ui(key: str):
         <!-- SETTINGS TAB -->
         <div class="tab-content" id="settings">
             <div class="merged-panel">
-                <div class="placeholder-message">
+                <div style="color: #666666; text-align: center; padding: 40px;">
                     Settings coming soon...
-                </div>
-            </div>
-        </div>
-        
-        <!-- CONFIGS TAB -->
-        <div class="tab-content" id="configs">
-            <div class="merged-panel">
-                <div class="placeholder-message">
-                    Config management coming soon...
                 </div>
             </div>
         </div>
@@ -696,11 +888,8 @@ let config = {json.dumps(DEFAULT_CONFIG)};
 // Tab switching
 document.querySelectorAll('.tab').forEach(tab => {{
     tab.addEventListener('click', () => {{
-        // Remove active from all tabs
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
-        
-        // Add active to clicked tab
         tab.classList.add('active');
         const tabId = tab.getAttribute('data-tab');
         document.getElementById(tabId).classList.add('active');
@@ -746,17 +935,22 @@ function applyConfigToUI() {{
         }}
     }});
     
-    if (config.triggerbot.Delay !== undefined) {{
-        sliders.delay.current = config.triggerbot.Delay;
-        sliders.delay.update();
-    }}
-    if (config.triggerbot.MaxStuds !== undefined) {{
-        sliders.maxStuds.current = config.triggerbot.MaxStuds;
-        sliders.maxStuds.update();
-    }}
-    if (config.triggerbot.Prediction !== undefined) {{
-        sliders.pred.current = config.triggerbot.Prediction;
-        sliders.pred.update();
+    // Update all sliders
+    if (sliders.delay) {{ sliders.delay.current = config.triggerbot.Delay; sliders.delay.update(); }}
+    if (sliders.maxStuds) {{ sliders.maxStuds.current = config.triggerbot.MaxStuds; sliders.maxStuds.update(); }}
+    if (sliders.pred) {{ sliders.pred.current = config.triggerbot.Prediction; sliders.pred.update(); }}
+    if (sliders.fov) {{ sliders.fov.current = config.camlock.FOV; sliders.fov.update(); }}
+    if (sliders.smoothX) {{ sliders.smoothX.current = config.camlock.SmoothX; sliders.smoothX.update(); }}
+    if (sliders.smoothY) {{ sliders.smoothY.current = config.camlock.SmoothY; sliders.smoothY.update(); }}
+    if (sliders.camlockPred) {{ sliders.camlockPred.current = config.camlock.Prediction; sliders.camlockPred.update(); }}
+    if (sliders.camlockMaxStuds) {{ sliders.camlockMaxStuds.current = config.camlock.MaxStuds; sliders.camlockMaxStuds.update(); }}
+    
+    // Update dropdown
+    if (config.camlock.BodyPart) {{
+        document.getElementById('bodyPartHeader').textContent = config.camlock.BodyPart;
+        document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item => {{
+            item.classList.toggle('selected', item.dataset.value === config.camlock.BodyPart);
+        }});
     }}
 }}
 
@@ -795,20 +989,20 @@ document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
     }});
 }});
 
-const searchInput = document.getElementById('searchInput');
-const toggleRows = document.querySelectorAll('.toggle-row[data-search]');
-searchInput.addEventListener('input', () => {{
-    const query = searchInput.value.toLowerCase().trim();
-    toggleRows.forEach(row => {{
-        const textSpan = row.querySelector('.enable-text');
-        const originalText = textSpan.dataset.original || textSpan.textContent;
-        if (!textSpan.dataset.original) textSpan.dataset.original = originalText;
-        textSpan.innerHTML = originalText;
-        if (query === '') return;
-        const searchTerm = row.getAttribute('data-search').toLowerCase();
-        if (searchTerm.includes(query)) {{
-            textSpan.innerHTML = `<span class="underline-highlight">${{originalText}}</span>`;
-        }}
+// Dropdown
+document.getElementById('bodyPartHeader').addEventListener('click', () => {{
+    document.getElementById('bodyPartList').classList.toggle('open');
+}});
+
+document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item => {{
+    item.addEventListener('click', () => {{
+        const value = item.dataset.value;
+        document.getElementById('bodyPartHeader').textContent = value;
+        document.querySelectorAll('#bodyPartList .dropdown-item').forEach(i => i.classList.remove('selected'));
+        item.classList.add('selected');
+        document.getElementById('bodyPartList').classList.remove('open');
+        config.camlock.BodyPart = value;
+        saveConfig();
     }});
 }});
 
@@ -816,6 +1010,7 @@ const sliders = {{}};
 
 function createDecimalSlider(id, fillId, valueId, defaultVal, min, max, step, setting) {{
     const slider = document.getElementById(id);
+    if (!slider) return null;
     const fill = document.getElementById(fillId);
     const valueText = document.getElementById(valueId);
     
@@ -860,6 +1055,7 @@ function createDecimalSlider(id, fillId, valueId, defaultVal, min, max, step, se
 
 function createIntSlider(id, fillId, valueId, defaultVal, max, blackThreshold, setting) {{
     const slider = document.getElementById(id);
+    if (!slider) return null;
     const fill = document.getElementById(fillId);
     const valueText = document.getElementById(valueId);
     
@@ -899,9 +1095,17 @@ function createIntSlider(id, fillId, valueId, defaultVal, max, blackThreshold, s
     return obj;
 }}
 
+// Triggerbot sliders
 sliders.delay = createDecimalSlider('delaySlider', 'delayFill', 'delayValue', 0.05, 0.01, 1.00, 0.01, 'triggerbot.Delay');
 sliders.maxStuds = createIntSlider('maxStudsSlider', 'maxStudsFill', 'maxStudsValue', 120, 300, 150, 'triggerbot.MaxStuds');
 sliders.pred = createDecimalSlider('predSlider', 'predFill', 'predValue', 0.10, 0.01, 1.00, 0.01, 'triggerbot.Prediction');
+
+// Camlock sliders
+sliders.fov = createIntSlider('fovSlider', 'fovFill', 'fovValue', 280, 500, 250, 'camlock.FOV');
+sliders.smoothX = createIntSlider('smoothXSlider', 'smoothXFill', 'smoothXValue', 14, 30, 15, 'camlock.SmoothX');
+sliders.smoothY = createIntSlider('smoothYSlider', 'smoothYFill', 'smoothYValue', 14, 30, 15, 'camlock.SmoothY');
+sliders.camlockPred = createDecimalSlider('camlockPredSlider', 'camlockPredFill', 'camlockPredValue', 0.14, 0.01, 1.00, 0.01, 'camlock.Prediction');
+sliders.camlockMaxStuds = createIntSlider('camlockMaxStudsSlider', 'camlockMaxStudsFill', 'camlockMaxStudsValue', 120, 300, 150, 'camlock.MaxStuds');
 
 loadConfig();
 setInterval(loadConfig, 1000);
