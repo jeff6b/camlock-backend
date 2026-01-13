@@ -4,7 +4,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import sqlite3
 import json
-import uuid
+import random
 from datetime import datetime, timedelta
 
 app = FastAPI()
@@ -17,19 +17,18 @@ def init_db():
     db = get_db()
     cur = db.cursor()
    
-    # Settings table
+    # Settings table (now uses key instead of username)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS settings (
-            username TEXT PRIMARY KEY,
+            key TEXT PRIMARY KEY,
             config TEXT
         )
     """)
     
-    # Keys table
+    # Keys table (no username field)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS keys (
             key TEXT PRIMARY KEY,
-            username TEXT NOT NULL,
             duration TEXT NOT NULL,
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL,
@@ -78,18 +77,21 @@ DEFAULT_CONFIG = {
 
 # ============== PYDANTIC MODELS ==============
 class KeyCreate(BaseModel):
-    username: str
     duration: str
     created_by: str
 
 class KeyValidate(BaseModel):
     key: str
     hwid: str
-    username: str
 
 # ============== HELPER FUNCTIONS ==============
-def generate_key(prefix="PHASE"):
-    return f"{prefix}-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:8].upper()}"
+def generate_key():
+    """Generate key in format: XXXX-XXXX-XXXX-XXXX"""
+    parts = []
+    for _ in range(4):
+        part = ''.join([str(random.randint(0, 9)) for _ in range(4)])
+        parts.append(part)
+    return '-'.join(parts)
 
 def get_expiry_date(duration):
     if duration == "weekly":
@@ -101,31 +103,31 @@ def get_expiry_date(duration):
     return None
 
 # ============== CONFIG API (Dashboard) ==============
-@app.get("/api/config/{username}")
-def get_config(username: str = Path(..., description="Username")):
+@app.get("/api/config/{key}")
+def get_config(key: str = Path(..., description="License Key")):
     db = get_db()
     cur = db.cursor()
    
-    cur.execute("INSERT OR IGNORE INTO settings (username, config) VALUES (?, ?)", 
-                (username, json.dumps(DEFAULT_CONFIG)))
+    cur.execute("INSERT OR IGNORE INTO settings (key, config) VALUES (?, ?)", 
+                (key, json.dumps(DEFAULT_CONFIG)))
     db.commit()
    
-    cur.execute("SELECT config FROM settings WHERE username=?", (username,))
+    cur.execute("SELECT config FROM settings WHERE key=?", (key,))
     result = cur.fetchone()
     db.close()
     
     config = json.loads(result[0]) if result else DEFAULT_CONFIG
     return config
 
-@app.post("/api/config/{username}")
-def set_config(username: str, data: dict):
+@app.post("/api/config/{key}")
+def set_config(key: str, data: dict):
     db = get_db()
     cur = db.cursor()
     
     cur.execute("""
-        INSERT INTO settings(username, config) VALUES(?, ?)
-        ON CONFLICT(username) DO UPDATE SET config=excluded.config
-    """, (username, json.dumps(data)))
+        INSERT INTO settings(key, config) VALUES(?, ?)
+        ON CONFLICT(key) DO UPDATE SET config=excluded.config
+    """, (key, json.dumps(data)))
     
     db.commit()
     db.close()
@@ -147,16 +149,15 @@ def create_key(data: KeyCreate):
     
     try:
         cur.execute("""
-            INSERT INTO keys (key, username, duration, created_at, expires_at, created_by)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (key, data.username, data.duration, datetime.now().isoformat(), expires_at, data.created_by))
+            INSERT INTO keys (key, duration, created_at, expires_at, created_by)
+            VALUES (?, ?, ?, ?, ?)
+        """, (key, data.duration, datetime.now().isoformat(), expires_at, data.created_by))
         
         db.commit()
         db.close()
         
         return {
             "key": key,
-            "username": data.username,
             "duration": data.duration,
             "expires_at": expires_at
         }
@@ -170,19 +171,18 @@ def delete_key(key: str):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute("SELECT username FROM keys WHERE key=?", (key,))
+    cur.execute("SELECT * FROM keys WHERE key=?", (key,))
     result = cur.fetchone()
     
     if not result:
         db.close()
         raise HTTPException(status_code=404, detail="Key not found")
     
-    username = result[0]
     cur.execute("DELETE FROM keys WHERE key=?", (key,))
     db.commit()
     db.close()
     
-    return {"status": "deleted", "username": username}
+    return {"status": "deleted", "key": key}
 
 @app.get("/api/keys/{key}")
 def get_key_info(key: str):
@@ -199,13 +199,12 @@ def get_key_info(key: str):
     
     return {
         "key": result[0],
-        "username": result[1],
-        "duration": result[2],
-        "created_at": result[3],
-        "expires_at": result[4],
-        "hwid": result[5],
-        "active": result[6],
-        "created_by": result[7]
+        "duration": result[1],
+        "created_at": result[2],
+        "expires_at": result[3],
+        "hwid": result[4],
+        "active": result[5],
+        "created_by": result[6]
     }
 
 @app.get("/api/keys/list")
@@ -214,7 +213,7 @@ def list_keys():
     db = get_db()
     cur = db.cursor()
     
-    cur.execute("SELECT * FROM keys")
+    cur.execute("SELECT * FROM keys ORDER BY created_at DESC")
     results = cur.fetchall()
     db.close()
     
@@ -222,13 +221,12 @@ def list_keys():
     for result in results:
         keys.append({
             "key": result[0],
-            "username": result[1],
-            "duration": result[2],
-            "created_at": result[3],
-            "expires_at": result[4],
-            "hwid": result[5],
-            "active": result[6],
-            "created_by": result[7]
+            "duration": result[1],
+            "created_at": result[2],
+            "expires_at": result[3],
+            "hwid": result[4],
+            "active": result[5],
+            "created_by": result[6]
         })
     
     return {"keys": keys}
@@ -239,23 +237,23 @@ def reset_hwid(key: str):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute("SELECT username, hwid FROM keys WHERE key=?", (key,))
+    cur.execute("SELECT hwid FROM keys WHERE key=?", (key,))
     result = cur.fetchone()
     
     if not result:
         db.close()
         raise HTTPException(status_code=404, detail="Key not found")
     
-    username, old_hwid = result
+    old_hwid = result[0]
     cur.execute("UPDATE keys SET hwid=NULL WHERE key=?", (key,))
     db.commit()
     db.close()
     
-    return {"status": "reset", "username": username, "old_hwid": old_hwid}
+    return {"status": "reset", "key": key, "old_hwid": old_hwid}
 
 @app.post("/api/validate")
 def validate_key(data: KeyValidate):
-    """Validate a key and bind HWID"""
+    """Validate a key and bind HWID (NO USERNAME NEEDED)"""
     db = get_db()
     cur = db.cursor()
     
@@ -266,17 +264,12 @@ def validate_key(data: KeyValidate):
         db.close()
         return {"valid": False, "error": "Invalid key"}, 401
     
-    key, username, duration, created_at, expires_at, hwid, active, created_by = result
+    key, duration, created_at, expires_at, hwid, active, created_by = result
     
     # Check if expired
     if datetime.now() > datetime.fromisoformat(expires_at):
         db.close()
         return {"valid": False, "error": "Key expired"}, 401
-    
-    # Check username match
-    if username != data.username:
-        db.close()
-        return {"valid": False, "error": "Username mismatch"}, 401
     
     # Check HWID binding
     if hwid is None:
@@ -288,7 +281,7 @@ def validate_key(data: KeyValidate):
         return {
             "valid": True,
             "message": "HWID bound successfully",
-            "username": username,
+            "key": key,
             "expires_at": expires_at
         }
     
@@ -298,7 +291,7 @@ def validate_key(data: KeyValidate):
         return {
             "valid": True,
             "message": "Authentication successful",
-            "username": username,
+            "key": key,
             "expires_at": expires_at
         }
     
@@ -308,14 +301,14 @@ def validate_key(data: KeyValidate):
         return {"valid": False, "error": "HWID mismatch"}, 401
 
 # ============== DASHBOARD UI ==============
-@app.get("/{username}", response_class=HTMLResponse)
-def serve_ui(username: str):
+@app.get("/{key}", response_class=HTMLResponse)
+def serve_ui(key: str):
     return f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Axion - {username}</title>
+<title>Axion - {key}</title>
 <style>
     * {{
         margin: 0;
@@ -414,6 +407,15 @@ def serve_ui(username: str):
         display: flex;
         align-items: center;
         justify-content: center;
+        position: relative;
+    }}
+    .tab-content {{
+        width: 100%;
+        height: 100%;
+        display: none;
+    }}
+    .tab-content.active {{
+        display: block;
     }}
     .merged-panel {{
         width: 100%;
@@ -543,17 +545,6 @@ def serve_ui(username: str):
         width: 50%;
         transition: width 0.1s ease;
     }}
-    .slider-thumb {{
-        position: absolute;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 12px;
-        height: 12px;
-        background: #ffffff;
-        cursor: ew-resize;
-        pointer-events: none;
-        z-index: 2;
-    }}
     .slider-value {{
         position: absolute;
         top: 50%;
@@ -579,6 +570,12 @@ def serve_ui(username: str):
     .half-panel::-webkit-scrollbar-thumb:hover {{
         background: #444444;
     }}
+    .placeholder-message {{
+        color: #666666;
+        font-size: 14px;
+        text-align: center;
+        padding: 40px;
+    }}
 </style>
 </head>
 <body>
@@ -586,10 +583,10 @@ def serve_ui(username: str):
     <div class="topbar">
         <div class="title">Axion</div>
         <div class="tabs">
-            <div class="tab">aimbot</div>
-            <div class="tab active">triggerbot</div>
-            <div class="tab">settings</div>
-            <div class="tab">configs</div>
+            <div class="tab" data-tab="aimbot">aimbot</div>
+            <div class="tab active" data-tab="triggerbot">triggerbot</div>
+            <div class="tab" data-tab="settings">settings</div>
+            <div class="tab" data-tab="configs">configs</div>
         </div>
         <div class="topbar-right">
             <div class="search-container">
@@ -599,64 +596,94 @@ def serve_ui(username: str):
         </div>
     </div>
     <div class="content">
-        <div class="merged-panel">
-            <div class="inner-container">
-                <div class="half-panel">
-                    <div class="panel-header">triggerbot</div>
-                    <div class="toggle-row" style="top: 32px;" data-search="enable triggerbot">
-                        <div class="toggle-text">
-                            <div class="toggle active" data-setting="triggerbot.Enabled"></div>
-                            <span class="enable-text">Enable Triggerbot</span>
+        <!-- AIMBOT TAB -->
+        <div class="tab-content" id="aimbot">
+            <div class="merged-panel">
+                <div class="placeholder-message">
+                    Aimbot settings coming soon...
+                </div>
+            </div>
+        </div>
+        
+        <!-- TRIGGERBOT TAB -->
+        <div class="tab-content active" id="triggerbot">
+            <div class="merged-panel">
+                <div class="inner-container">
+                    <div class="half-panel">
+                        <div class="panel-header">triggerbot</div>
+                        <div class="toggle-row" style="top: 32px;" data-search="enable triggerbot">
+                            <div class="toggle-text">
+                                <div class="toggle active" data-setting="triggerbot.Enabled"></div>
+                                <span class="enable-text">Enable Triggerbot</span>
+                            </div>
+                            <div class="keybind-picker" data-setting="triggerbot.Keybind">Right Mouse</div>
                         </div>
-                        <div class="keybind-picker" data-setting="triggerbot.Keybind">Right Mouse</div>
+                        <div class="toggle-row" style="top: 58px;" data-search="target mode">
+                            <div class="toggle-text">
+                                <div class="toggle" data-setting="triggerbot.TargetMode"></div>
+                                <span class="enable-text">Target Mode</span>
+                            </div>
+                            <div class="keybind-picker" data-setting="triggerbot.TargetKeybind">Middle Mouse</div>
+                        </div>
                     </div>
-                    <div class="toggle-row" style="top: 58px;" data-search="target mode">
-                        <div class="toggle-text">
-                            <div class="toggle" data-setting="triggerbot.TargetMode"></div>
-                            <span class="enable-text">Target Mode</span>
+                    <div class="half-panel">
+                        <div class="panel-header">triggerbot settings</div>
+                        <div class="toggle-row" style="top: 32px;" data-search="stud check distance">
+                            <div class="toggle active" data-setting="triggerbot.StudCheck"></div>
+                            <span class="enable-text">Stud Check</span>
                         </div>
-                        <div class="keybind-picker" data-setting="triggerbot.TargetKeybind">Middle Mouse</div>
+                        <div class="toggle-row" style="top: 56px;" data-search="death check">
+                            <div class="toggle active" data-setting="triggerbot.DeathCheck"></div>
+                            <span class="enable-text">Death Check</span>
+                        </div>
+                        <div class="toggle-row" style="top: 80px;" data-search="knife check">
+                            <div class="toggle active" data-setting="triggerbot.KnifeCheck"></div>
+                            <span class="enable-text">Knife Check</span>
+                        </div>
+                        <div class="toggle-row" style="top: 104px;" data-search="team check">
+                            <div class="toggle active" data-setting="triggerbot.TeamCheck"></div>
+                            <span class="enable-text">Team Check</span>
+                        </div>
+                        <div class="slider-label" style="top: 130px;">Delay (s)</div>
+                        <div class="slider-container" id="delaySlider" style="top: 144px;" data-setting="triggerbot.Delay">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="delayFill"></div>
+                                <div class="slider-value" id="delayValue">0.05</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top: 170px;">Max Studs</div>
+                        <div class="slider-container" id="maxStudsSlider" style="top: 184px;" data-setting="triggerbot.MaxStuds">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="maxStudsFill"></div>
+                                <div class="slider-value" id="maxStudsValue">120</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top: 210px;">Prediction</div>
+                        <div class="slider-container" id="predSlider" style="top: 224px;" data-setting="triggerbot.Prediction">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="predFill"></div>
+                                <div class="slider-value" id="predValue">0.10</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div class="half-panel">
-                    <div class="panel-header">triggerbot settings</div>
-                    <div class="toggle-row" style="top: 32px;" data-search="stud check distance">
-                        <div class="toggle active" data-setting="triggerbot.StudCheck"></div>
-                        <span class="enable-text">Stud Check</span>
-                    </div>
-                    <div class="toggle-row" style="top: 56px;" data-search="death check">
-                        <div class="toggle active" data-setting="triggerbot.DeathCheck"></div>
-                        <span class="enable-text">Death Check</span>
-                    </div>
-                    <div class="toggle-row" style="top: 80px;" data-search="knife check">
-                        <div class="toggle active" data-setting="triggerbot.KnifeCheck"></div>
-                        <span class="enable-text">Knife Check</span>
-                    </div>
-                    <div class="toggle-row" style="top: 104px;" data-search="team check">
-                        <div class="toggle active" data-setting="triggerbot.TeamCheck"></div>
-                        <span class="enable-text">Team Check</span>
-                    </div>
-                    <div class="slider-label" style="top: 130px;">Delay (s)</div>
-                    <div class="slider-container" id="delaySlider" style="top: 144px;" data-setting="triggerbot.Delay">
-                        <div class="slider-track">
-                            <div class="slider-fill" id="delayFill"></div>
-                            <div class="slider-value" id="delayValue">0.05</div>
-                        </div>
-                    </div>
-                    <div class="slider-label" style="top: 170px;">Max Studs</div>
-                    <div class="slider-container" id="maxStudsSlider" style="top: 184px;" data-setting="triggerbot.MaxStuds">
-                        <div class="slider-track">
-                            <div class="slider-fill" id="maxStudsFill"></div>
-                            <div class="slider-value" id="maxStudsValue">120</div>
-                        </div>
-                    </div>
-                    <div class="slider-label" style="top: 210px;">Prediction</div>
-                    <div class="slider-container" id="predSlider" style="top: 224px;" data-setting="triggerbot.Prediction">
-                        <div class="slider-track">
-                            <div class="slider-fill" id="predFill"></div>
-                            <div class="slider-value" id="predValue">0.10</div>
-                        </div>
-                    </div>
+            </div>
+        </div>
+        
+        <!-- SETTINGS TAB -->
+        <div class="tab-content" id="settings">
+            <div class="merged-panel">
+                <div class="placeholder-message">
+                    Settings coming soon...
+                </div>
+            </div>
+        </div>
+        
+        <!-- CONFIGS TAB -->
+        <div class="tab-content" id="configs">
+            <div class="merged-panel">
+                <div class="placeholder-message">
+                    Config management coming soon...
                 </div>
             </div>
         </div>
@@ -666,9 +693,23 @@ def serve_ui(username: str):
 <script>
 let config = {json.dumps(DEFAULT_CONFIG)};
 
+// Tab switching
+document.querySelectorAll('.tab').forEach(tab => {{
+    tab.addEventListener('click', () => {{
+        // Remove active from all tabs
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+        
+        // Add active to clicked tab
+        tab.classList.add('active');
+        const tabId = tab.getAttribute('data-tab');
+        document.getElementById(tabId).classList.add('active');
+    }});
+}});
+
 async function saveConfig() {{
     try {{
-        await fetch(`/api/config/{username}`, {{
+        await fetch(`/api/config/{key}`, {{
             method: 'POST',
             headers: {{ 'Content-Type': 'application/json' }},
             body: JSON.stringify(config)
@@ -680,7 +721,7 @@ async function saveConfig() {{
 
 async function loadConfig() {{
     try {{
-        const res = await fetch(`/api/config/{username}`);
+        const res = await fetch(`/api/config/{key}`);
         config = await res.json();
         applyConfigToUI();
     }} catch(e) {{
@@ -691,17 +732,17 @@ async function loadConfig() {{
 function applyConfigToUI() {{
     document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
         const setting = toggle.dataset.setting;
-        const [section, key] = setting.split('.');
-        if (config[section] && config[section][key] !== undefined) {{
-            toggle.classList.toggle('active', config[section][key]);
+        const [section, settingKey] = setting.split('.');
+        if (config[section] && config[section][settingKey] !== undefined) {{
+            toggle.classList.toggle('active', config[section][settingKey]);
         }}
     }});
     
     document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
         const setting = picker.dataset.setting;
-        const [section, key] = setting.split('.');
-        if (config[section] && config[section][key] !== undefined) {{
-            picker.textContent = config[section][key];
+        const [section, settingKey] = setting.split('.');
+        if (config[section] && config[section][settingKey] !== undefined) {{
+            picker.textContent = config[section][settingKey];
         }}
     }});
     
@@ -723,8 +764,8 @@ document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
     toggle.addEventListener('click', () => {{
         toggle.classList.toggle('active');
         const setting = toggle.dataset.setting;
-        const [section, key] = setting.split('.');
-        config[section][key] = toggle.classList.contains('active');
+        const [section, settingKey] = setting.split('.');
+        config[section][settingKey] = toggle.classList.contains('active');
         saveConfig();
     }});
 }});
@@ -743,8 +784,8 @@ document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
             }}
             picker.textContent = keyName || 'NONE';
             const setting = picker.dataset.setting;
-            const [section, key] = setting.split('.');
-            config[section][key] = keyName;
+            const [section, settingKey] = setting.split('.');
+            config[section][settingKey] = keyName;
             saveConfig();
             document.removeEventListener('keydown', listener);
             document.removeEventListener('mousedown', listener);
@@ -801,8 +842,8 @@ function createDecimalSlider(id, fillId, valueId, defaultVal, min, max, step, se
             obj.current = Math.round(obj.current / obj.step) * obj.step;
             obj.current = Math.max(obj.min, Math.min(obj.max, obj.current));
             obj.update();
-            const [section, key] = obj.setting.split('.');
-            config[section][key] = obj.current;
+            const [section, settingKey] = obj.setting.split('.');
+            config[section][settingKey] = obj.current;
             saveConfig();
         }}
         function up() {{
@@ -842,8 +883,8 @@ function createIntSlider(id, fillId, valueId, defaultVal, max, blackThreshold, s
             const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
             obj.current = (percent / 100) * obj.max;
             obj.update();
-            const [section, key] = obj.setting.split('.');
-            config[section][key] = Math.round(obj.current);
+            const [section, settingKey] = obj.setting.split('.');
+            config[section][settingKey] = Math.round(obj.current);
             saveConfig();
         }}
         function up() {{
