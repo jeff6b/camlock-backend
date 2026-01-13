@@ -20,6 +20,13 @@ def init_db():
         key TEXT PRIMARY KEY, duration TEXT NOT NULL, created_at TEXT NOT NULL,
         expires_at TEXT, redeemed_at TEXT, redeemed_by TEXT, hwid TEXT,
         active INTEGER DEFAULT 0, created_by TEXT)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        license_key TEXT NOT NULL,
+        config_name TEXT NOT NULL,
+        config_data TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(license_key, config_name))""")
     db.commit()
     db.close()
 
@@ -32,7 +39,8 @@ DEFAULT_CONFIG = {
     "camlock": {"Enabled": True, "Keybind": "Q", "FOV": 280.0, "SmoothX": 14.0, "SmoothY": 14.0,
         "EnableSmoothing": True, "EasingStyle": "Linear", "Prediction": 0.14, "EnablePrediction": True,
         "MaxStuds": 120.0, "UnlockOnDeath": True, "SelfDeathCheck": True, "BodyPart": "Head",
-        "ClosestPart": False, "ScaleToggle": False, "Scale": 1.0}
+        "ClosestPart": False, "ScaleToggle": True, "Scale": 1.0},
+    "misc": {"SpeedEnabled": False, "Speed": 23}
 }
 
 class KeyCreate(BaseModel):
@@ -46,6 +54,10 @@ class KeyRedeem(BaseModel):
 class KeyValidate(BaseModel):
     key: str
     hwid: str
+
+class SavedConfig(BaseModel):
+    config_name: str
+    config_data: dict
 
 def generate_key():
     return '-'.join([''.join([str(random.randint(0, 9)) for _ in range(4)]) for _ in range(4)])
@@ -76,6 +88,67 @@ def set_config(key: str, data: dict):
     db.commit()
     db.close()
     return {"status": "ok"}
+
+@app.get("/api/keepalive")
+def keepalive():
+    return {"status": "alive"}
+
+@app.get("/api/configs/{key}/list")
+def list_saved_configs(key: str):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT config_name, created_at FROM saved_configs WHERE license_key=? ORDER BY created_at DESC", (key,))
+    results = cur.fetchall()
+    db.close()
+    return {"configs": [{"name": r[0], "created_at": r[1]} for r in results]}
+
+@app.post("/api/configs/{key}/save")
+def save_config(key: str, data: SavedConfig):
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (?, ?, ?, ?)",
+                   (key, data.config_name, json.dumps(data.config_data), datetime.now().isoformat()))
+        db.commit()
+        db.close()
+        return {"status": "saved"}
+    except:
+        cur.execute("UPDATE saved_configs SET config_data=?, created_at=? WHERE license_key=? AND config_name=?",
+                   (json.dumps(data.config_data), datetime.now().isoformat(), key, data.config_name))
+        db.commit()
+        db.close()
+        return {"status": "updated"}
+
+@app.get("/api/configs/{key}/load/{config_name}")
+def load_saved_config(key: str, config_name: str):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT config_data FROM saved_configs WHERE license_key=? AND config_name=?", (key, config_name))
+    result = cur.fetchone()
+    db.close()
+    if not result:
+        raise HTTPException(status_code=404, detail="Config not found")
+    return json.loads(result[0])
+
+@app.delete("/api/configs/{key}/delete/{config_name}")
+def delete_saved_config(key: str, config_name: str):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM saved_configs WHERE license_key=? AND config_name=?", (key, config_name))
+    db.commit()
+    db.close()
+    return {"status": "deleted"}
+
+@app.post("/api/configs/{key}/rename")
+def rename_saved_config(key: str, data: dict):
+    old_name = data.get("old_name")
+    new_name = data.get("new_name")
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("UPDATE saved_configs SET config_name=? WHERE license_key=? AND config_name=?", (new_name, key, old_name))
+    db.commit()
+    db.close()
+    return {"status": "renamed"}
 
 @app.post("/api/keys/create")
 def create_key(data: KeyCreate):
@@ -274,6 +347,7 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 <div class="tabs">
 <div class="tab active" data-tab="aimbot">aimbot</div>
 <div class="tab" data-tab="triggerbot">triggerbot</div>
+<div class="tab" data-tab="misc">misc</div>
 <div class="tab" data-tab="settings">settings</div>
 </div>
 <div class="topbar-right">
@@ -393,6 +467,17 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 <div class="dropdown-item" data-value="Bounce">Bounce</div>
 </div>
 </div>
+<div class="toggle-row" style="top:272px">
+<div class="toggle active" data-setting="camlock.ScaleToggle"></div>
+<span class="enable-text">Scale Toggle</span>
+</div>
+<div class="slider-label" style="top:298px">Scale</div>
+<div class="slider-container" id="scaleSlider" style="top:312px" data-setting="camlock.Scale">
+<div class="slider-track">
+<div class="slider-fill" id="scaleFill"></div>
+<div class="slider-value" id="scaleValue">1.0</div>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -460,9 +545,49 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 </div>
 </div>
 </div>
+<div class="tab-content" id="misc">
+<div class="merged-panel">
+<div class="inner-container">
+<div class="half-panel">
+<div class="panel-header">speed</div>
+<div class="toggle-row" style="top:32px">
+<div class="toggle-text">
+<div class="toggle" data-setting="misc.SpeedEnabled"></div>
+<span class="enable-text">Enable Speed</span>
+</div>
+</div>
+<div class="slider-label" style="top:58px">Speed Value</div>
+<div class="slider-container" id="speedSlider" style="top:72px" data-setting="misc.Speed">
+<div class="slider-track">
+<div class="slider-fill" id="speedFill"></div>
+<div class="slider-value" id="speedValue">23</div>
+</div>
+</div>
+</div>
+<div class="half-panel">
+<div style="color:#666;text-align:center;padding:40px">More features coming soon...</div>
+</div>
+</div>
+</div>
+</div>
 <div class="tab-content" id="settings">
 <div class="merged-panel">
-<div style="color:#666;text-align:center;padding:40px">Settings coming soon...</div>
+<div class="inner-container">
+<div class="half-panel">
+<div class="panel-header">saved configs</div>
+<div class="config-list" id="configList"></div>
+</div>
+<div class="half-panel">
+<div class="panel-header">actions</div>
+<div style="position:absolute;top:32px;left:16px;right:16px">
+<div style="margin-bottom:12px">
+<div style="font-size:11px;color:#bfbfbf;margin-bottom:4px">Save Current Config</div>
+<input type="text" id="saveConfigInput" class="input-box" placeholder="Config name...">
+<button class="config-btn" style="margin-top:4px;width:100%" onclick="saveCurrentConfig()">Save</button>
+</div>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -505,6 +630,8 @@ if(sliders.smoothX){{sliders.smoothX.current=config.camlock.SmoothX;sliders.smoo
 if(sliders.smoothY){{sliders.smoothY.current=config.camlock.SmoothY;sliders.smoothY.update();}}
 if(sliders.camlockPred){{sliders.camlockPred.current=config.camlock.Prediction;sliders.camlockPred.update();}}
 if(sliders.camlockMaxStuds){{sliders.camlockMaxStuds.current=config.camlock.MaxStuds;sliders.camlockMaxStuds.update();}}
+if(sliders.scale){{sliders.scale.current=config.camlock.Scale;sliders.scale.update();}}
+if(sliders.speed){{sliders.speed.current=config.misc.Speed;sliders.speed.update();}}
 
 if(config.camlock.BodyPart){{
 document.getElementById('bodyPartHeader').textContent=config.camlock.BodyPart;
@@ -678,7 +805,54 @@ sliders.smoothX=createIntSlider('smoothXSlider','smoothXFill','smoothXValue',14,
 sliders.smoothY=createIntSlider('smoothYSlider','smoothYFill','smoothYValue',14,30,15,'camlock.SmoothY');
 sliders.camlockPred=createDecimalSlider('camlockPredSlider','camlockPredFill','camlockPredValue',0.14,0.01,1.00,0.01,'camlock.Prediction');
 sliders.camlockMaxStuds=createIntSlider('camlockMaxStudsSlider','camlockMaxStudsFill','camlockMaxStudsValue',120,300,150,'camlock.MaxStuds');
+sliders.scale=createDecimalSlider('scaleSlider','scaleFill','scaleValue',1.0,0.5,2.0,0.1,'camlock.Scale');
+sliders.speed=createIntSlider('speedSlider','speedFill','speedValue',23,100,50,'misc.Speed');
 
+async function loadSavedConfigs(){{
+try{{
+const res=await fetch(`/api/configs/{key}/list`);
+const data=await res.json();
+const list=document.getElementById('configList');
+list.innerHTML='';
+data.configs.forEach(cfg=>{{
+const div=document.createElement('div');
+div.className='config-item';
+div.innerHTML=`<div class="config-name">${{cfg.name}}</div>
+<button class="config-btn" onclick="loadConfigByName('${{cfg.name}}')">Load</button>
+<button class="config-btn" onclick="deleteConfigByName('${{cfg.name}}')">Delete</button>`;
+list.appendChild(div);
+}});
+}}catch(e){{console.error(e);}}
+}}
+
+async function saveCurrentConfig(){{
+const name=document.getElementById('saveConfigInput').value.trim();
+if(!name)return alert('Enter config name');
+try{{
+await fetch(`/api/configs/{key}/save`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{config_name:name,config_data:config}})}});
+document.getElementById('saveConfigInput').value='';
+await loadSavedConfigs();
+}}catch(e){{alert('Failed to save');}}
+}}
+
+async function loadConfigByName(name){{
+try{{
+const res=await fetch(`/api/configs/{key}/load/${{name}}`);
+config=await res.json();
+applyConfigToUI();
+await saveConfig();
+}}catch(e){{alert('Failed to load');}}
+}}
+
+async function deleteConfigByName(name){{
+if(!confirm(`Delete ${{name}}?`))return;
+try{{
+await fetch(`/api/configs/{key}/delete/${{name}}`,{{method:'DELETE'}});
+await loadSavedConfigs();
+}}catch(e){{alert('Failed to delete');}}
+}}
+
+loadSavedConfigs();
 loadConfig();
 setInterval(loadConfig,1000);
 </script>
