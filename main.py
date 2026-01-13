@@ -324,6 +324,18 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 <div class="dropdown-item" data-value="UpperTorso">UpperTorso</div>
 <div class="dropdown-item" data-value="LowerTorso">LowerTorso</div>
 <div class="dropdown-item" data-value="HumanoidRootPart">HumanoidRootPart</div>
+<div class="dropdown-item" data-value="LeftUpperArm">LeftUpperArm</div>
+<div class="dropdown-item" data-value="RightUpperArm">RightUpperArm</div>
+<div class="dropdown-item" data-value="LeftLowerArm">LeftLowerArm</div>
+<div class="dropdown-item" data-value="RightLowerArm">RightLowerArm</div>
+<div class="dropdown-item" data-value="LeftHand">LeftHand</div>
+<div class="dropdown-item" data-value="RightHand">RightHand</div>
+<div class="dropdown-item" data-value="LeftUpperLeg">LeftUpperLeg</div>
+<div class="dropdown-item" data-value="RightUpperLeg">RightUpperLeg</div>
+<div class="dropdown-item" data-value="LeftLowerLeg">LeftLowerLeg</div>
+<div class="dropdown-item" data-value="RightLowerLeg">RightLowerLeg</div>
+<div class="dropdown-item" data-value="LeftFoot">LeftFoot</div>
+<div class="dropdown-item" data-value="RightFoot">RightFoot</div>
 </div>
 </div>
 </div>
