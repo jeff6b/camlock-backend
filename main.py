@@ -5,12 +5,18 @@ from pydantic import BaseModel
 import sqlite3
 import json
 import random
+import os
 from datetime import datetime, timedelta
 
 app = FastAPI()
 
+# Database path - use persistent disk on Render
+# In Render: Add a persistent disk at /mnt/data
+# Then set DB_PATH=/mnt/data/database.db in environment variables
+DB_PATH = os.environ.get("DB_PATH", "database.db")
+
 def get_db():
-    return sqlite3.connect("database.db")
+    return sqlite3.connect(DB_PATH)
 
 def init_db():
     db = get_db()
@@ -29,6 +35,7 @@ def init_db():
         UNIQUE(license_key, config_name))""")
     db.commit()
     db.close()
+    print(f"✅ Database initialized at: {os.path.abspath(DB_PATH)}")
 
 init_db()
 
@@ -778,16 +785,16 @@ obj.update();
 return obj;
 }}
 
-function createIntSlider(id,fillId,valueId,defaultVal,max,blackThreshold,setting){{
+function createIntSlider(id,fillId,valueId,defaultVal,min,max,blackThreshold,setting){{
 const slider=document.getElementById(id);
 if(!slider)return null;
 const fill=document.getElementById(fillId);
 const valueText=document.getElementById(valueId);
 
 const obj={{
-current:defaultVal,max:max,blackThreshold:blackThreshold,setting:setting,
+current:defaultVal,min:min,max:max,blackThreshold:blackThreshold,setting:setting,
 update:function(){{
-const percent=(this.current/this.max)*100;
+const percent=((this.current-this.min)/(this.max-this.min))*100;
 fill.style.width=percent+'%';
 valueText.textContent=Math.round(this.current);
 valueText.style.color=this.current>=this.blackThreshold?'#000':'#fff';
@@ -799,7 +806,9 @@ const rect=slider.getBoundingClientRect();
 function move(e){{
 const x=e.clientX-rect.left;
 const percent=Math.max(0,Math.min(100,(x/rect.width)*100));
-obj.current=(percent/100)*obj.max;
+obj.current=obj.min+(percent/100)*(obj.max-obj.min);
+obj.current=Math.round(obj.current);
+obj.current=Math.max(obj.min,Math.min(obj.max,obj.current));
 obj.update();
 const[section,key]=obj.setting.split('.');
 config[section][key]=Math.round(obj.current);
@@ -818,14 +827,14 @@ return obj;
 }}
 
 sliders.delay=createDecimalSlider('delaySlider','delayFill','delayValue',0.05,0.01,1.00,0.01,'triggerbot.Delay');
-sliders.maxStuds=createIntSlider('maxStudsSlider','maxStudsFill','maxStudsValue',120,300,150,'triggerbot.MaxStuds');
+sliders.maxStuds=createIntSlider('maxStudsSlider','maxStudsFill','maxStudsValue',120,0,300,150,'triggerbot.MaxStuds');
 sliders.pred=createDecimalSlider('predSlider','predFill','predValue',0.10,0.01,1.00,0.01,'triggerbot.Prediction');
 sliders.triggerbotFov=createIntSlider('triggerbotFovSlider','triggerbotFovFill','triggerbotFovValue',25,1,100,50,'triggerbot.FOV');
-sliders.fov=createIntSlider('fovSlider','fovFill','fovValue',280,500,250,'camlock.FOV');
-sliders.smoothX=createIntSlider('smoothXSlider','smoothXFill','smoothXValue',14,30,15,'camlock.SmoothX');
-sliders.smoothY=createIntSlider('smoothYSlider','smoothYFill','smoothYValue',14,30,15,'camlock.SmoothY');
+sliders.fov=createIntSlider('fovSlider','fovFill','fovValue',280,0,500,250,'camlock.FOV');
+sliders.smoothX=createIntSlider('smoothXSlider','smoothXFill','smoothXValue',14,0,30,15,'camlock.SmoothX');
+sliders.smoothY=createIntSlider('smoothYSlider','smoothYFill','smoothYValue',14,0,30,15,'camlock.SmoothY');
 sliders.camlockPred=createDecimalSlider('camlockPredSlider','camlockPredFill','camlockPredValue',0.14,0.01,1.00,0.01,'camlock.Prediction');
-sliders.camlockMaxStuds=createIntSlider('camlockMaxStudsSlider','camlockMaxStudsFill','camlockMaxStudsValue',120,300,150,'camlock.MaxStuds');
+sliders.camlockMaxStuds=createIntSlider('camlockMaxStudsSlider','camlockMaxStudsFill','camlockMaxStudsValue',120,0,300,150,'camlock.MaxStuds');
 sliders.scale=createDecimalSlider('scaleSlider','scaleFill','scaleValue',1.0,0.5,2.0,0.1,'camlock.Scale');
 
 async function loadSavedConfigs(){{
