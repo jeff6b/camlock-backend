@@ -35,7 +35,7 @@ init_db()
 DEFAULT_CONFIG = {
     "triggerbot": {"Enabled": True, "Keybind": "Right Mouse", "Delay": 0.05, "MaxStuds": 120,
         "StudCheck": True, "DeathCheck": True, "KnifeCheck": True, "TeamCheck": True,
-        "TargetMode": False, "TargetKeybind": "Middle Mouse", "Prediction": 0.1},
+        "TargetMode": False, "TargetKeybind": "Middle Mouse", "Prediction": 0.1, "FOV": 25},
     "camlock": {"Enabled": True, "Keybind": "Q", "FOV": 280.0, "SmoothX": 14.0, "SmoothY": 14.0,
         "EnableSmoothing": True, "EasingStyle": "Linear", "Prediction": 0.14, "EnablePrediction": True,
         "MaxStuds": 120.0, "UnlockOnDeath": True, "SelfDeathCheck": True, "BodyPart": "Head",
@@ -568,6 +568,13 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 <div class="slider-value" id="predValue">0.10</div>
 </div>
 </div>
+<div class="slider-label" style="top:250px">FOV</div>
+<div class="slider-container" id="triggerbotFovSlider" style="top:264px" data-setting="triggerbot.FOV">
+<div class="slider-track">
+<div class="slider-fill" id="triggerbotFovFill"></div>
+<div class="slider-value" id="triggerbotFovValue">25</div>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -638,6 +645,7 @@ if(config[section]&&config[section][key]!==undefined)picker.textContent=config[s
 if(sliders.delay){{sliders.delay.current=config.triggerbot.Delay;sliders.delay.update();}}
 if(sliders.maxStuds){{sliders.maxStuds.current=config.triggerbot.MaxStuds;sliders.maxStuds.update();}}
 if(sliders.pred){{sliders.pred.current=config.triggerbot.Prediction;sliders.pred.update();}}
+if(sliders.triggerbotFov){{sliders.triggerbotFov.current=config.triggerbot.FOV;sliders.triggerbotFov.update();}}
 if(sliders.fov){{sliders.fov.current=config.camlock.FOV;sliders.fov.update();}}
 if(sliders.smoothX){{sliders.smoothX.current=config.camlock.SmoothX;sliders.smoothX.update();}}
 if(sliders.smoothY){{sliders.smoothY.current=config.camlock.SmoothY;sliders.smoothY.update();}}
@@ -812,6 +820,7 @@ return obj;
 sliders.delay=createDecimalSlider('delaySlider','delayFill','delayValue',0.05,0.01,1.00,0.01,'triggerbot.Delay');
 sliders.maxStuds=createIntSlider('maxStudsSlider','maxStudsFill','maxStudsValue',120,300,150,'triggerbot.MaxStuds');
 sliders.pred=createDecimalSlider('predSlider','predFill','predValue',0.10,0.01,1.00,0.01,'triggerbot.Prediction');
+sliders.triggerbotFov=createIntSlider('triggerbotFovSlider','triggerbotFovFill','triggerbotFovValue',25,1,100,50,'triggerbot.FOV');
 sliders.fov=createIntSlider('fovSlider','fovFill','fovValue',280,500,250,'camlock.FOV');
 sliders.smoothX=createIntSlider('smoothXSlider','smoothXFill','smoothXValue',14,30,15,'camlock.SmoothX');
 sliders.smoothY=createIntSlider('smoothYSlider','smoothYFill','smoothYValue',14,30,15,'camlock.SmoothY');
