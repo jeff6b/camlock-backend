@@ -117,10 +117,16 @@ def init_db():
         db.close()
         print(f"⚠️  SQLite (TEMPORARY - data will be lost on redeploy!)")
 
-def q(query):
-    """Convert SQLite query (?) to PostgreSQL (%s) if needed"""
+def q(query, params=None):
+    """Convert SQLite query to PostgreSQL if needed"""
     if USE_POSTGRES:
-        return query.replace('?', '%s')
+        # Convert parameter placeholders
+        query = query.replace('?', '%s')
+        # Convert INSERT OR IGNORE to PostgreSQL syntax
+        query = query.replace('INSERT OR IGNORE', 'INSERT ... ON CONFLICT DO NOTHING').replace('...', '')
+        # Convert ON CONFLICT(key) syntax
+        if 'ON CONFLICT(key) DO UPDATE' in query:
+            query = query.replace('ON CONFLICT(key)', 'ON CONFLICT (key)')
     return query
 
 init_db()
@@ -165,8 +171,19 @@ def get_expiry_date(duration, from_date=None):
 def get_config(key: str = Path(...)):
     db = get_db()
     cur = db.cursor()
-    cur.execute("INSERT OR IGNORE INTO settings (key, config) VALUES (?, ?)", (key, json.dumps(DEFAULT_CONFIG)))
-    db.commit()
+    
+    # Try to insert default config if not exists (database-agnostic way)
+    try:
+        if USE_POSTGRES:
+            cur.execute("INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING", 
+                       (key, json.dumps(DEFAULT_CONFIG)))
+        else:
+            cur.execute("INSERT OR IGNORE INTO settings (key, config) VALUES (?, ?)", 
+                       (key, json.dumps(DEFAULT_CONFIG)))
+        db.commit()
+    except:
+        db.rollback()
+    
     cur.execute(q("SELECT config FROM settings WHERE key=?"), (key,))
     result = cur.fetchone()
     db.close()
@@ -176,7 +193,14 @@ def get_config(key: str = Path(...)):
 def set_config(key: str, data: dict):
     db = get_db()
     cur = db.cursor()
-    cur.execute("INSERT INTO settings(key, config) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET config=excluded.config", (key, json.dumps(data)))
+    
+    if USE_POSTGRES:
+        cur.execute("INSERT INTO settings(key, config) VALUES(%s, %s) ON CONFLICT (key) DO UPDATE SET config=excluded.config", 
+                   (key, json.dumps(data)))
+    else:
+        cur.execute("INSERT INTO settings(key, config) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET config=excluded.config", 
+                   (key, json.dumps(data)))
+    
     db.commit()
     db.close()
     return {"status": "ok"}
@@ -199,16 +223,17 @@ def save_config(key: str, data: SavedConfig):
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (?, ?, ?, ?)",
+        cur.execute(q("INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (?, ?, ?, ?)"),
                    (key, data.config_name, json.dumps(data.config_data), datetime.now().isoformat()))
         db.commit()
         db.close()
         return {"status": "saved"}
     except:
-        cur.execute("UPDATE saved_configs SET config_data=?, created_at=? WHERE license_key=? AND config_name=?",
+        cur.execute(q("UPDATE saved_configs SET config_data=?, created_at=? WHERE license_key=? AND config_name=?"),
                    (json.dumps(data.config_data), datetime.now().isoformat(), key, data.config_name))
         db.commit()
         db.close()
+        return {"status": "updated"}
         return {"status": "updated"}
 
 @app.get("/api/configs/{key}/load/{config_name}")
