@@ -17,53 +17,88 @@ app = FastAPI()
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+# Determine which database to use
+USE_POSTGRES = False
 if DATABASE_URL and DATABASE_URL.startswith("postgresql"):
-    # PostgreSQL (Supabase/Neon/PlanetScale)
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-    
-    def get_db():
-        return psycopg2.connect(DATABASE_URL)
-    
-    def init_db():
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("""CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY, 
-            config TEXT
-        )""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS keys (
-            key TEXT PRIMARY KEY, 
-            duration TEXT NOT NULL, 
-            created_at TEXT NOT NULL,
-            expires_at TEXT, 
-            redeemed_at TEXT, 
-            redeemed_by TEXT, 
-            hwid TEXT,
-            active INTEGER DEFAULT 0, 
-            created_by TEXT
-        )""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
-            id SERIAL PRIMARY KEY,
-            license_key TEXT NOT NULL,
-            config_name TEXT NOT NULL,
-            config_data TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            UNIQUE(license_key, config_name)
-        )""")
-        db.commit()
-        db.close()
-        print(f"✅ PostgreSQL database connected: {DATABASE_URL.split('@')[1].split('/')[0]}")
-else:
-    # SQLite fallback (will reset on deploy - NOT recommended)
+    try:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        USE_POSTGRES = True
+    except ImportError:
+        print("❌ psycopg2 not installed")
+        USE_POSTGRES = False
+
+if not USE_POSTGRES:
     import sqlite3
-    
-    DB_PATH = os.environ.get("DB_PATH", "database.db")
-    
-    def get_db():
-        return sqlite3.connect(DB_PATH)
-    
-    def init_db():
+
+# Unified database functions
+def get_db():
+    if USE_POSTGRES:
+        return psycopg2.connect(DATABASE_URL, connect_timeout=10)
+    else:
+        return sqlite3.connect(os.environ.get("DB_PATH", "database.db"))
+
+def execute_query(query, params=None, fetch_one=False, fetch_all=False):
+    """Execute query with automatic PostgreSQL/SQLite compatibility"""
+    db = get_db()
+    try:
+        cur = db.cursor()
+        if params:
+            cur.execute(query, params)
+        else:
+            cur.execute(query)
+        
+        if fetch_one:
+            result = cur.fetchone()
+            db.close()
+            return result
+        elif fetch_all:
+            result = cur.fetchall()
+            db.close()
+            return result
+        else:
+            db.commit()
+            db.close()
+            return True
+    except Exception as e:
+        db.close()
+        raise e
+
+def init_db():
+    if USE_POSTGRES:
+        try:
+            db = get_db()
+            cur = db.cursor()
+            cur.execute("""CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY, 
+                config TEXT
+            )""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS keys (
+                key TEXT PRIMARY KEY, 
+                duration TEXT NOT NULL, 
+                created_at TEXT NOT NULL,
+                expires_at TEXT, 
+                redeemed_at TEXT, 
+                redeemed_by TEXT, 
+                hwid TEXT,
+                active INTEGER DEFAULT 0, 
+                created_by TEXT
+            )""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
+                id SERIAL PRIMARY KEY,
+                license_key TEXT NOT NULL,
+                config_name TEXT NOT NULL,
+                config_data TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(license_key, config_name)
+            )""")
+            db.commit()
+            db.close()
+            print(f"✅ PostgreSQL database connected successfully!")
+        except Exception as e:
+            print(f"❌ PostgreSQL connection failed: {e}")
+            raise
+    else:
         db = get_db()
         cur = db.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, config TEXT)")
@@ -80,8 +115,13 @@ else:
             UNIQUE(license_key, config_name))""")
         db.commit()
         db.close()
-        print(f"⚠️  SQLite (TEMPORARY - data will be lost on redeploy!): {os.path.abspath(DB_PATH)}")
-        print("   Set DATABASE_URL environment variable for permanent storage!")
+        print(f"⚠️  SQLite (TEMPORARY - data will be lost on redeploy!)")
+
+def q(query):
+    """Convert SQLite query (?) to PostgreSQL (%s) if needed"""
+    if USE_POSTGRES:
+        return query.replace('?', '%s')
+    return query
 
 init_db()
 
@@ -127,7 +167,7 @@ def get_config(key: str = Path(...)):
     cur = db.cursor()
     cur.execute("INSERT OR IGNORE INTO settings (key, config) VALUES (?, ?)", (key, json.dumps(DEFAULT_CONFIG)))
     db.commit()
-    cur.execute("SELECT config FROM settings WHERE key=?", (key,))
+    cur.execute(q("SELECT config FROM settings WHERE key=?"), (key,))
     result = cur.fetchone()
     db.close()
     return json.loads(result[0]) if result else DEFAULT_CONFIG
@@ -149,7 +189,7 @@ def keepalive():
 def list_saved_configs(key: str):
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT config_name, created_at FROM saved_configs WHERE license_key=? ORDER BY created_at DESC", (key,))
+    cur.execute(q("SELECT config_name, created_at FROM saved_configs WHERE license_key=? ORDER BY created_at DESC"), (key,))
     results = cur.fetchall()
     db.close()
     return {"configs": [{"name": r[0], "created_at": r[1]} for r in results]}
@@ -175,7 +215,7 @@ def save_config(key: str, data: SavedConfig):
 def load_saved_config(key: str, config_name: str):
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT config_data FROM saved_configs WHERE license_key=? AND config_name=?", (key, config_name))
+    cur.execute(q("SELECT config_data FROM saved_configs WHERE license_key=? AND config_name=?"), (key, config_name))
     result = cur.fetchone()
     db.close()
     if not result:
@@ -208,7 +248,7 @@ def create_key(data: KeyCreate):
     cur = db.cursor()
     key = generate_key()
     try:
-        cur.execute("INSERT INTO keys (key, duration, created_at, active, created_by) VALUES (?, ?, ?, 0, ?)", 
+        cur.execute(q("INSERT INTO keys (key, duration, created_at, active, created_by) VALUES (?, ?, ?, 0, ?)"), 
                     (key, data.duration, datetime.now().isoformat(), data.created_by))
         db.commit()
         db.close()
@@ -221,7 +261,7 @@ def create_key(data: KeyCreate):
 def redeem_key(data: KeyRedeem):
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT * FROM keys WHERE key=?", (data.key,))
+    cur.execute(q("SELECT * FROM keys WHERE key=?"), (data.key,))
     result = cur.fetchone()
     if not result:
         db.close()
@@ -242,7 +282,7 @@ def redeem_key(data: KeyRedeem):
 def delete_user_license(user_id: str):
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT key FROM keys WHERE redeemed_by=?", (user_id,))
+    cur.execute(q("SELECT key FROM keys WHERE redeemed_by=?"), (user_id,))
     result = cur.fetchone()
     if not result:
         db.close()
@@ -257,7 +297,7 @@ def delete_user_license(user_id: str):
 def get_user_license(user_id: str):
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT * FROM keys WHERE redeemed_by=?", (user_id,))
+    cur.execute(q("SELECT * FROM keys WHERE redeemed_by=?"), (user_id,))
     result = cur.fetchone()
     db.close()
     if not result:
@@ -273,7 +313,7 @@ def get_user_license(user_id: str):
 def reset_user_hwid(user_id: str):
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT hwid FROM keys WHERE redeemed_by=?", (user_id,))
+    cur.execute(q("SELECT hwid FROM keys WHERE redeemed_by=?"), (user_id,))
     result = cur.fetchone()
     if not result:
         db.close()
@@ -288,7 +328,7 @@ def reset_user_hwid(user_id: str):
 def get_key_info(key: str):
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT * FROM keys WHERE key=?", (key,))
+    cur.execute(q("SELECT * FROM keys WHERE key=?"), (key,))
     result = cur.fetchone()
     db.close()
     if not result:
@@ -313,7 +353,7 @@ def list_keys():
 def validate_key(data: KeyValidate):
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT * FROM keys WHERE key=?", (data.key,))
+    cur.execute(q("SELECT * FROM keys WHERE key=?"), (data.key,))
     result = cur.fetchone()
     if not result:
         db.close()
