@@ -2,7 +2,6 @@
 from fastapi import FastAPI, Path, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-import sqlite3
 import json
 import random
 import os
@@ -10,32 +9,79 @@ from datetime import datetime, timedelta
 
 app = FastAPI()
 
-# Database path - use persistent disk on Render
-# In Render: Add a persistent disk at /mnt/data
-# Then set DB_PATH=/mnt/data/database.db in environment variables
-DB_PATH = os.environ.get("DB_PATH", "database.db")
+# FREE Database Options (no paid plan needed):
+# 1. Use environment variable DATABASE_URL for external database
+# 2. Supabase (free tier): https://supabase.com
+# 3. PlanetScale (free tier): https://planetscale.com
+# 4. Neon (free tier): https://neon.tech
 
-def get_db():
-    return sqlite3.connect(DB_PATH)
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-def init_db():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, config TEXT)")
-    cur.execute("""CREATE TABLE IF NOT EXISTS keys (
-        key TEXT PRIMARY KEY, duration TEXT NOT NULL, created_at TEXT NOT NULL,
-        expires_at TEXT, redeemed_at TEXT, redeemed_by TEXT, hwid TEXT,
-        active INTEGER DEFAULT 0, created_by TEXT)""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        license_key TEXT NOT NULL,
-        config_name TEXT NOT NULL,
-        config_data TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        UNIQUE(license_key, config_name))""")
-    db.commit()
-    db.close()
-    print(f"✅ Database initialized at: {os.path.abspath(DB_PATH)}")
+if DATABASE_URL and DATABASE_URL.startswith("postgresql"):
+    # PostgreSQL (Supabase/Neon/PlanetScale)
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    
+    def get_db():
+        return psycopg2.connect(DATABASE_URL)
+    
+    def init_db():
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY, 
+            config TEXT
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS keys (
+            key TEXT PRIMARY KEY, 
+            duration TEXT NOT NULL, 
+            created_at TEXT NOT NULL,
+            expires_at TEXT, 
+            redeemed_at TEXT, 
+            redeemed_by TEXT, 
+            hwid TEXT,
+            active INTEGER DEFAULT 0, 
+            created_by TEXT
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
+            id SERIAL PRIMARY KEY,
+            license_key TEXT NOT NULL,
+            config_name TEXT NOT NULL,
+            config_data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(license_key, config_name)
+        )""")
+        db.commit()
+        db.close()
+        print(f"✅ PostgreSQL database connected: {DATABASE_URL.split('@')[1].split('/')[0]}")
+else:
+    # SQLite fallback (will reset on deploy - NOT recommended)
+    import sqlite3
+    
+    DB_PATH = os.environ.get("DB_PATH", "database.db")
+    
+    def get_db():
+        return sqlite3.connect(DB_PATH)
+    
+    def init_db():
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, config TEXT)")
+        cur.execute("""CREATE TABLE IF NOT EXISTS keys (
+            key TEXT PRIMARY KEY, duration TEXT NOT NULL, created_at TEXT NOT NULL,
+            expires_at TEXT, redeemed_at TEXT, redeemed_by TEXT, hwid TEXT,
+            active INTEGER DEFAULT 0, created_by TEXT)""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            license_key TEXT NOT NULL,
+            config_name TEXT NOT NULL,
+            config_data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(license_key, config_name))""")
+        db.commit()
+        db.close()
+        print(f"⚠️  SQLite (TEMPORARY - data will be lost on redeploy!): {os.path.abspath(DB_PATH)}")
+        print("   Set DATABASE_URL environment variable for permanent storage!")
 
 init_db()
 
