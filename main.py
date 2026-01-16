@@ -251,7 +251,7 @@ def load_saved_config(key: str, config_name: str):
 def delete_saved_config(key: str, config_name: str):
     db = get_db()
     cur = db.cursor()
-    cur.execute("DELETE FROM saved_configs WHERE license_key=? AND config_name=?", (key, config_name))
+    cur.execute(q("DELETE FROM saved_configs WHERE license_key=? AND config_name=?"), (key, config_name))
     db.commit()
     db.close()
     return {"status": "deleted"}
@@ -262,7 +262,7 @@ def rename_saved_config(key: str, data: dict):
     new_name = data.get("new_name")
     db = get_db()
     cur = db.cursor()
-    cur.execute("UPDATE saved_configs SET config_name=? WHERE license_key=? AND config_name=?", (new_name, key, old_name))
+    cur.execute(q("UPDATE saved_configs SET config_name=? WHERE license_key=? AND config_name=?"), (new_name, key, old_name))
     db.commit()
     db.close()
     return {"status": "renamed"}
@@ -297,7 +297,7 @@ def redeem_key(data: KeyRedeem):
         raise HTTPException(status_code=400, detail="Key already redeemed by another user")
     now = datetime.now()
     expiry = get_expiry_date(duration, now)
-    cur.execute("UPDATE keys SET redeemed_at=?, redeemed_by=?, expires_at=?, active=1 WHERE key=?", 
+    cur.execute(q("UPDATE keys SET redeemed_at=?, redeemed_by=?, expires_at=?, active=1 WHERE key=?"), 
                 (now.isoformat(), data.user_id, expiry, data.key))
     db.commit()
     db.close()
@@ -313,7 +313,7 @@ def delete_user_license(user_id: str):
         db.close()
         raise HTTPException(status_code=404, detail="No license found for this user")
     key = result[0]
-    cur.execute("DELETE FROM keys WHERE redeemed_by=?", (user_id,))
+    cur.execute(q("DELETE FROM keys WHERE redeemed_by=?"), (user_id,))
     db.commit()
     db.close()
     return {"status": "deleted", "key": key, "user_id": user_id}
@@ -344,7 +344,7 @@ def reset_user_hwid(user_id: str):
         db.close()
         raise HTTPException(status_code=404, detail="No license found for this user")
     old_hwid = result[0]
-    cur.execute("UPDATE keys SET hwid=NULL WHERE redeemed_by=?", (user_id,))
+    cur.execute(q("UPDATE keys SET hwid=NULL WHERE redeemed_by=?"), (user_id,))
     db.commit()
     db.close()
     return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
@@ -365,7 +365,7 @@ def get_key_info(key: str):
 def list_keys():
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT * FROM keys ORDER BY created_at DESC")
+    cur.execute(q("SELECT * FROM keys ORDER BY created_at DESC"))
     results = cur.fetchall()
     db.close()
     keys = []
@@ -391,7 +391,7 @@ def validate_key(data: KeyValidate):
         db.close()
         return {"valid": False, "error": "Key expired"}, 401
     if hwid is None:
-        cur.execute("UPDATE keys SET hwid=? WHERE key=?", (data.hwid, data.key))
+        cur.execute(q("UPDATE keys SET hwid=? WHERE key=?"), (data.hwid, data.key))
         db.commit()
         db.close()
         return {"valid": True, "message": "HWID bound successfully", "key": key, "expires_at": expires_at}
