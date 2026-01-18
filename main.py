@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Path, HTTPException, Depends, Header, Annotated, Request
+from fastapi import FastAPI, Path, HTTPException, Depends, Header, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,7 +7,7 @@ import random
 import os
 import secrets
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Annotated  # ← Annotated is here
 
 app = FastAPI(title="Axion Backend")
 
