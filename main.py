@@ -1401,6 +1401,85 @@ await loadSavedConfigs();
 loadSavedConfigs();
 loadConfig();
 setInterval(loadConfig,1000);
+// ================================================
+//     QUICK HEADER AUTH SNIPPET (add at bottom)
+// ================================================
+
+const STORAGE_KEY = 'axion_license_key';
+let currentLicenseKey = localStorage.getItem(STORAGE_KEY) || null;
+
+// Add Bearer header to EVERY fetch automatically
+const originalFetch = window.fetch;
+window.fetch = async function(url, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers
+  };
+
+  if (currentLicenseKey && url.startsWith(API_URL)) {
+    headers['Authorization'] = `Bearer ${currentLicenseKey}`;
+  }
+
+  return originalFetch(url, { ...options, headers });
+};
+
+// Simple feedback helper (if you don't have showFeedback yet)
+function showFeedback(msg, type = 'info') {
+  const div = document.createElement('div');
+  div.style.cssText = `
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    padding: 12px 24px; border-radius: 8px; color: white; z-index: 9999;
+    background: ${type === 'success' ? '#28a745' : type === 'error' ? '#dc3545' : '#17a2b8'};
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  `;
+  div.textContent = msg;
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), 3500);
+}
+
+// Override submitLogin (only if you want simple local storage login)
+const originalSubmitLogin = submitLogin;
+submitLogin = function() {
+  const key = document.getElementById('licenseKeyInput')?.value?.trim();
+  
+  if (!key) {
+    showFeedback('Enter a license key', 'error');
+    return;
+  }
+
+  currentLicenseKey = key;
+  localStorage.setItem(STORAGE_KEY, key);
+  
+  showFeedback('Key saved! Making requests with Bearer header...', 'success');
+  
+  updateAuthUI?.(); // if you have this function
+  closeLoginModal?.(); // if you have this
+  
+  // Optional: refresh current view
+  if (document.getElementById('configs')?.classList.contains('active')) {
+    loadConfigs?.();
+  }
+};
+
+// Quick logout override (if you have logout function)
+const originalLogout = logout || function(){};
+logout = function() {
+  currentLicenseKey = null;
+  localStorage.removeItem(STORAGE_KEY);
+  showFeedback('Logged out', 'success');
+  updateAuthUI?.();
+  originalLogout();
+};
+
+// Show current status on page load
+window.addEventListener('load', () => {
+  if (currentLicenseKey) {
+    console.log("Using stored license key:", currentLicenseKey.substring(0,12) + "...");
+    updateAuthUI?.();
+  }
+});
+
+console.log("Bearer header auth patch loaded ✓");
 </script>
 </body>
 </html>
