@@ -749,7 +749,7 @@ def serve_ui(key: str):
         </head>
         <body>
             <div class="error-box">
-                <h1>❌ Invalid License Key</h1>
+                <h1>invalid license LOL</h1>
                 <p>The license key you entered does not exist.</p>
             </div>
         </body>
