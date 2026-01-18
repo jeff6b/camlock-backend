@@ -739,7 +739,7 @@ def serve_configs_page():
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>AXION Configs</title>
+  <title>AXION — Configs</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     
@@ -749,6 +749,18 @@ def serve_configs_page():
       color: #fff;
       font-family: system-ui, -apple-system, sans-serif;
       overflow-x: hidden;
+    }
+
+    .image-container {
+      width: 100%;
+      height: 100vh;
+      background-image: url('https://image2url.com/r2/default/images/1768674767693-4fff24d5-abfa-4be9-a3ee-bd44454bad9f.blob');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.01;
+      position: fixed;
+      inset: 0;
+      z-index: 1;
     }
 
     .navbar {
@@ -762,25 +774,36 @@ def serve_configs_page():
       padding: 12px 48px 12px 40px;
       border: 1px solid #1f1f1f;
       border-radius: 12px;
-      background: rgba(20,20,25,0.8);
-      backdrop-filter: blur(8px);
+      background: transparent;
+      backdrop-filter: blur(3px);
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 40px;
       font-size: 15px;
+      letter-spacing: 0.8px;
     }
 
-    .nav-title {
-      font-size: 20px;
-      font-weight: 700;
-      color: #fff;
+    .nav-links {
+      display: flex;
+      gap: 50px;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: #ffffff;
+      cursor: pointer;
+      transition: color 0.3s ease;
+    }
+
+    .nav-links a:hover {
+      color: #ccc;
     }
 
     .user-info {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       padding: 6px 12px;
       background: rgba(255,255,255,0.05);
       border-radius: 8px;
@@ -792,23 +815,67 @@ def serve_configs_page():
     }
 
     .content {
-      padding-top: 140px;
-      max-width: 1200px;
-      margin: 0 auto;
-      padding-left: 20px;
-      padding-right: 20px;
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      overflow-y: auto;
+      pointer-events: none;
     }
 
-    .title {
-      font-size: 48px;
+    .page {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.6s ease;
+    }
+
+    .page.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .about-page, .configs-page {
+      justify-content: flex-start;
+      padding-top: 15vh;
+    }
+
+    .title-wrapper {
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .title-word {
+      font-size: 3.8rem;
       font-weight: 900;
+      letter-spacing: -1.5px;
+      text-shadow: 0 0 25px rgba(0,0,0,0.7);
+    }
+
+    .description {
+      font-size: 1.15rem;
+      max-width: 680px;
       text-align: center;
-      margin-bottom: 40px;
+      line-height: 1.55;
+      color: #ffffff;
+      margin-top: 20px;
+    }
+
+    .configs-container {
+      width: 90%;
+      max-width: 1200px;
+      margin-top: 60px;
     }
 
     .login-box {
       max-width: 400px;
-      margin: 60px auto;
+      margin: 0 auto;
       padding: 40px;
       background: rgba(25,25,30,0.6);
       border: 1px solid rgba(255,255,255,0.08);
@@ -825,6 +892,11 @@ def serve_configs_page():
       color: #fff;
       font-size: 15px;
       margin: 20px 0;
+    }
+
+    .login-input:focus {
+      outline: none;
+      border-color: rgba(255,255,255,0.3);
     }
 
     .btn {
@@ -855,7 +927,6 @@ def serve_configs_page():
       border-radius: 12px;
       padding: 24px;
       transition: all 0.3s;
-      cursor: pointer;
     }
 
     .config-card:hover {
@@ -916,18 +987,60 @@ def serve_configs_page():
   </style>
 </head>
 <body>
+  <div class="image-container"></div>
+
   <nav class="navbar">
-    <div class="nav-title">AXION Configs</div>
+    <div class="nav-links">
+      <a onclick="showPage('home')">Home</a>
+      <a onclick="showPage('about')">About</a>
+      <a onclick="showPage('configs')">Configs</a>
+    </div>
     <div id="userArea"></div>
   </nav>
 
   <div class="content">
-    <h1 class="title">Community Configs</h1>
-    <div id="mainContent"></div>
+    <!-- Home -->
+    <div id="home" class="page active">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">WELCOME</span>
+        <span class="title-word" style="color:#ffffff;">TO</span>
+        <span class="title-word" style="color:#888888;">AXION</span>
+      </div>
+    </div>
+
+    <!-- About -->
+    <div id="about" class="page about-page">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">About</span>
+        <span class="title-word" style="color:#888888;">Axion</span>
+      </div>
+      <div class="description">
+        Axion is a Da Hood external designed to integrate seamlessly in-game. It delivers smooth, reliable performance while bypassing PC checks, giving you a consistent edge during star tryouts and competitive play.
+      </div>
+    </div>
+
+    <!-- Configs -->
+    <div id="configs" class="page configs-page">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">Community</span>
+        <span class="title-word" style="color:#888888;">Configs</span>
+      </div>
+      
+      <div class="configs-container" id="configsContent"></div>
+    </div>
   </div>
 
   <script>
     let currentUser = null;
+
+    function showPage(pageId) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById(pageId).classList.add('active');
+      
+      if (pageId === 'configs') {
+        checkAuth();
+      }
+    }
 
     async function checkAuth() {
       const licenseKey = localStorage.getItem('license_key');
@@ -949,7 +1062,7 @@ def serve_configs_page():
     }
 
     function showLogin() {
-      document.getElementById('mainContent').innerHTML = `
+      document.getElementById('configsContent').innerHTML = `
         <div class="login-box">
           <h2 style="margin-bottom: 12px;">Login Required</h2>
           <p style="color: #888; margin-bottom: 20px;">Enter your license key to view configs</p>
@@ -967,24 +1080,36 @@ def serve_configs_page():
       }
 
       try {
+        console.log('Logging in...');
+        
         const res = await fetch('/auth/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
           body: JSON.stringify({ license_key: licenseKey })
         });
 
-        const data = await res.json();
-
-        if (res.ok) {
-          localStorage.setItem('session_id', data.session_id);
-          localStorage.setItem('license_key', data.license_key);
-          currentUser = { license_key: data.license_key };
-          updateUI();
-          loadConfigs();
-        } else {
-          alert('Login failed: ' + data.detail);
+        console.log('Response status:', res.status);
+        
+        if (!res.ok) {
+          const text = await res.text();
+          console.error('Error response:', text);
+          alert('Login failed: ' + text);
+          return;
         }
+
+        const data = await res.json();
+        console.log('Login successful:', data);
+
+        localStorage.setItem('session_id', data.session_id);
+        localStorage.setItem('license_key', data.license_key);
+        currentUser = { license_key: data.license_key };
+        updateUI();
+        loadConfigs();
       } catch (e) {
+        console.error('Login error:', e);
         alert('Error: ' + e.message);
       }
     }
@@ -1023,9 +1148,10 @@ def serve_configs_page():
         }
         
         html += '</div>';
-        document.getElementById('mainContent').innerHTML = html;
+        document.getElementById('configsContent').innerHTML = html;
       } catch (e) {
-        document.getElementById('mainContent').innerHTML = '<p>Error loading configs</p>';
+        console.error('Load error:', e);
+        document.getElementById('configsContent').innerHTML = '<p>Error loading configs</p>';
       }
     }
 
@@ -1038,8 +1164,6 @@ def serve_configs_page():
         alert('Error downloading config');
       }
     }
-
-    checkAuth();
   </script>
 </body>
 </html>
