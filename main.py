@@ -9,11 +9,10 @@ import os
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
-import requests as req
 
 app = FastAPI()
 
-# CORS for OAuth2
+# CORS for cross-origin requests
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,16 +20,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Discord OAuth2 Config
-DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
-DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
-# Backend URL should be your Render URL, NOT Vercel
-BACKEND_URL = os.environ.get("BACKEND_URL", "https://dashboard.getaxion.lol")
-DISCORD_REDIRECT_URI = "https://dashboard.getaxion.lol/auth/callback"
-DISCORD_API_ENDPOINT = "https://discord.com/api/v10"
-# Frontend URL is your Vercel website
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://bibbobg.vercel.app")
 
 # Session storage (in-memory for now, use Redis in production)
 sessions = {}
@@ -125,16 +114,13 @@ def init_db():
                 game_name TEXT NOT NULL,
                 description TEXT,
                 config_data TEXT NOT NULL,
-                discord_id TEXT NOT NULL,
+                license_key TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 downloads INTEGER DEFAULT 0
             )""")
             cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
                 session_id TEXT PRIMARY KEY,
-                discord_id TEXT NOT NULL,
-                discord_username TEXT,
-                discord_avatar TEXT,
-                license_key TEXT,
+                license_key TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL
             )""")
@@ -166,16 +152,13 @@ def init_db():
             game_name TEXT NOT NULL,
             description TEXT,
             config_data TEXT NOT NULL,
-            discord_id TEXT NOT NULL,
+            license_key TEXT NOT NULL,
             created_at TEXT NOT NULL,
             downloads INTEGER DEFAULT 0
         )""")
         cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
             session_id TEXT PRIMARY KEY,
-            discord_id TEXT NOT NULL,
-            discord_username TEXT,
-            discord_avatar TEXT,
-            license_key TEXT,
+            license_key TEXT NOT NULL,
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL
         )""")
@@ -197,99 +180,73 @@ def q(query, params=None):
 
 init_db()
 
-# === DISCORD OAUTH2 ENDPOINTS ===
+# === LICENSE KEY AUTHENTICATION ===
 
-@app.get("/auth/login")
-def discord_login():
-    """Redirect to Discord OAuth2"""
-    oauth_url = (
-        f"https://discord.com/api/oauth2/authorize"
-        f"?client_id={DISCORD_CLIENT_ID}"
-        f"&redirect_uri={DISCORD_REDIRECT_URI}"
-        f"&response_type=code"
-        f"&scope=identify"
-    )
-    return RedirectResponse(oauth_url)
+class LicenseLogin(BaseModel):
+    license_key: str
 
-@app.get("/auth/callback")
-def discord_callback(code: str):
-    print("=== DEBUG OAUTH CALLBACK START ===")
-    print("Received code (first 10 chars):", code[:10] + "...")
-    print("Using REDIRECT_URI:", DISCORD_REDIRECT_URI)
-    print("Client ID:", DISCORD_CLIENT_ID)
-    print("Client Secret (first 8):", DISCORD_CLIENT_SECRET[:8] + "...")
-
-    data = {
-        "client_id": DISCORD_CLIENT_ID,
-        "client_secret": DISCORD_CLIENT_SECRET,
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": DISCORD_REDIRECT_URI
-    }
-
-    print("Token request payload:", data)
-
-    token_response = req.post(
-        f"{DISCORD_API_ENDPOINT}/oauth2/token",
-        data=data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"}
-    )
-
-    print("Discord status code:", token_response.status_code)
-    print("Discord full response:", token_response.text)  # ← this is the gold — will show exact error like {"error":"invalid_grant","error_description":"Invalid \"redirect_uri\" in request."}
-
-    print("=== DEBUG END ===")
-
-    # ... rest of your code
-        token_data = token_response.json()
-        
-        if "access_token" not in token_data:
-            raise HTTPException(status_code=400, detail="Failed to get access token")
-        
-        access_token = token_data["access_token"]
-        
-        # Get user info
-        user_response = req.get(
-            f"{DISCORD_API_ENDPOINT}/users/@me",
-            headers={"Authorization": f"Bearer {access_token}"}
-        )
-        user = user_response.json()
-        
-        discord_id = user["id"]
-        discord_username = f"{user['username']}#{user['discriminator']}" if user.get('discriminator') != '0' else user['username']
-        discord_avatar = f"https://cdn.discordapp.com/avatars/{discord_id}/{user['avatar']}.png" if user.get('avatar') else None
-        
-        # Check if user has redeemed a license
-        db = get_db()
-        cur = db.cursor()
-        cur.execute(q("SELECT key FROM keys WHERE redeemed_by=?"), (discord_id,))
-        result = cur.fetchone()
-        license_key = result[0] if result else None
-        
-        # Create session
-        session_id = secrets.token_urlsafe(32)
-        expires_at = (datetime.now() + timedelta(days=30)).isoformat()
-        
-        cur.execute(q("INSERT INTO user_sessions (session_id, discord_id, discord_username, discord_avatar, license_key, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)"),
-                   (session_id, discord_id, discord_username, discord_avatar, license_key, datetime.now().isoformat(), expires_at))
-        db.commit()
+@app.post("/auth/login")
+def license_login(data: LicenseLogin, response: Response):
+    """Login with license key"""
+    license_key = data.license_key.strip()
+    
+    if not license_key:
+        raise HTTPException(status_code=400, detail="License key required")
+    
+    # Verify license exists and is active
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT key, redeemed_by, active, expires_at FROM keys WHERE key=?"), (license_key,))
+    result = cur.fetchone()
+    
+    if not result:
         db.close()
-        
-        # Redirect to Vercel frontend with session cookie
-        response = RedirectResponse(url=FRONTEND_URL)
-        response.set_cookie(
-            key="session_id",
-            value=session_id,
-            max_age=30 * 24 * 60 * 60,  # 30 days
-            httponly=True,
-            samesite="none",  # Required for cross-domain cookies
-            secure=True,      # Required with samesite=none
-            domain=".getaxion.lol"  # Share cookie across subdomains
-        )
-        return response
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=404, detail="Invalid license key")
+    
+    key, redeemed_by, active, expires_at = result
+    
+    if not redeemed_by:
+        db.close()
+        raise HTTPException(status_code=403, detail="License not redeemed yet")
+    
+    if not active:
+        db.close()
+        raise HTTPException(status_code=403, detail="License is inactive")
+    
+    # Check if expired
+    if expires_at:
+        try:
+            exp_date = datetime.fromisoformat(expires_at)
+            if exp_date < datetime.now():
+                db.close()
+                raise HTTPException(status_code=403, detail="License has expired")
+        except:
+            pass
+    
+    # Create session
+    session_id = secrets.token_urlsafe(32)
+    expires_at_session = (datetime.now() + timedelta(days=30)).isoformat()
+    
+    cur.execute(q("INSERT INTO user_sessions (session_id, license_key, created_at, expires_at) VALUES (?, ?, ?, ?)"),
+               (session_id, license_key, datetime.now().isoformat(), expires_at_session))
+    db.commit()
+    db.close()
+    
+    # Set cookie
+    response.set_cookie(
+        key="session_id",
+        value=session_id,
+        max_age=30 * 24 * 60 * 60,  # 30 days
+        httponly=True,
+        samesite="none",
+        secure=True
+    )
+    
+    return {
+        "success": True,
+        "license_key": license_key,
+        "session_id": session_id
+    }
 
 @app.get("/auth/me")
 def get_current_user(session_id: Optional[str] = Cookie(None)):
@@ -299,25 +256,22 @@ def get_current_user(session_id: Optional[str] = Cookie(None)):
     
     db = get_db()
     cur = db.cursor()
-    cur.execute(q("SELECT discord_id, discord_username, discord_avatar, license_key, expires_at FROM user_sessions WHERE session_id=?"), (session_id,))
+    cur.execute(q("SELECT license_key, expires_at FROM user_sessions WHERE session_id=?"), (session_id,))
     result = cur.fetchone()
     db.close()
     
     if not result:
         raise HTTPException(status_code=401, detail="Invalid session")
     
-    discord_id, username, avatar, license_key, expires_at = result
+    license_key, expires_at = result
     
     # Check if session expired
     if datetime.fromisoformat(expires_at) < datetime.now():
         raise HTTPException(status_code=401, detail="Session expired")
     
     return {
-        "discord_id": discord_id,
-        "username": username,
-        "avatar": avatar,
         "license_key": license_key,
-        "has_license": license_key is not None
+        "authenticated": True
     }
 
 @app.post("/auth/logout")
@@ -348,7 +302,7 @@ def get_public_configs():
     """Get all public configs"""
     db = get_db()
     cur = db.cursor()
-    cur.execute(q("SELECT id, config_name, author_name, game_name, description, config_data, discord_id, created_at, downloads FROM public_configs ORDER BY created_at DESC"))
+    cur.execute(q("SELECT id, config_name, author_name, game_name, description, config_data, license_key, created_at, downloads FROM public_configs ORDER BY created_at DESC"))
     results = cur.fetchall()
     db.close()
     
@@ -361,7 +315,7 @@ def get_public_configs():
                 "game_name": r[3],
                 "description": r[4],
                 "config_data": json.loads(r[5]),
-                "discord_id": r[6],
+                "created_by": r[6][:8] + "...",  # Hide full license key
                 "created_at": r[7],
                 "downloads": r[8]
             } for r in results
@@ -377,22 +331,18 @@ def create_public_config(data: PublicConfig, session_id: Optional[str] = Cookie(
     # Get user from session
     db = get_db()
     cur = db.cursor()
-    cur.execute(q("SELECT discord_id, license_key FROM user_sessions WHERE session_id=?"), (session_id,))
+    cur.execute(q("SELECT license_key FROM user_sessions WHERE session_id=?"), (session_id,))
     result = cur.fetchone()
     
     if not result:
         raise HTTPException(status_code=401, detail="Invalid session")
     
-    discord_id, license_key = result
-    
-    if not license_key:
-        db.close()
-        raise HTTPException(status_code=403, detail="You need a redeemed license to create public configs")
+    license_key = result[0]
     
     # Insert public config
     try:
-        cur.execute(q("INSERT INTO public_configs (config_name, author_name, game_name, description, config_data, discord_id, created_at, downloads) VALUES (?, ?, ?, ?, ?, ?, ?, 0)"),
-                   (data.config_name, data.author_name, data.game_name, data.description, json.dumps(data.config_data), discord_id, datetime.now().isoformat()))
+        cur.execute(q("INSERT INTO public_configs (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads) VALUES (?, ?, ?, ?, ?, ?, ?, 0)"),
+                   (data.config_name, data.author_name, data.game_name, data.description, json.dumps(data.config_data), license_key, datetime.now().isoformat()))
         db.commit()
         db.close()
         return {"success": True, "message": "Config published successfully"}
@@ -421,7 +371,7 @@ def get_my_saved_configs(session_id: Optional[str] = Cookie(None)):
     cur.execute(q("SELECT license_key FROM user_sessions WHERE session_id=?"), (session_id,))
     result = cur.fetchone()
     
-    if not result or not result[0]:
+    if not result:
         db.close()
         raise HTTPException(status_code=403, detail="No license found")
     
@@ -752,6 +702,51 @@ def validate_key(data: KeyValidate):
 
 @app.get("/{key}", response_class=HTMLResponse)
 def serve_ui(key: str):
+    # Validate license key exists
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT key, redeemed_by, active FROM keys WHERE key=?"), (key,))
+    result = cur.fetchone()
+    db.close()
+    
+    if not result:
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Invalid License</title>
+            <style>
+                body {
+                    margin: 0;
+                    padding: 0;
+                    height: 100vh;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    background: #0c0c0c;
+                    color: #fff;
+                    font-family: system-ui, sans-serif;
+                }
+                .error-box {
+                    text-align: center;
+                    padding: 40px;
+                    background: rgba(255,255,255,0.05);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    border-radius: 12px;
+                }
+                h1 { margin: 0 0 20px 0; color: #ff4444; }
+                p { margin: 0; color: #888; }
+            </style>
+        </head>
+        <body>
+            <div class="error-box">
+                <h1>❌ Invalid License Key</h1>
+                <p>The license key you entered does not exist.</p>
+            </div>
+        </body>
+        </html>
+        """
+    
     return f"""
 <!DOCTYPE html>
 <html lang="en">
