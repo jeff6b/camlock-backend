@@ -25,8 +25,12 @@ app.add_middleware(
 # Discord OAuth2 Config
 DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
 DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
-DISCORD_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "https://your-app.onrender.com/auth/callback")
+# Backend URL should be your Render URL, NOT Vercel
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://dashboard.getaxion.lol")
+DISCORD_REDIRECT_URI = f"{BACKEND_URL}/auth/callback"
 DISCORD_API_ENDPOINT = "https://discord.com/api/v10"
+# Frontend URL is your Vercel website
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://bibbobg.vercel.app")
 
 # Session storage (in-memory for now, use Redis in production)
 sessions = {}
@@ -256,14 +260,16 @@ def discord_callback(code: str):
         db.commit()
         db.close()
         
-        # Redirect to website with session cookie
-        response = RedirectResponse(url="/")
+        # Redirect to Vercel frontend with session cookie
+        response = RedirectResponse(url=FRONTEND_URL)
         response.set_cookie(
             key="session_id",
             value=session_id,
             max_age=30 * 24 * 60 * 60,  # 30 days
             httponly=True,
-            samesite="lax"
+            samesite="none",  # Required for cross-domain cookies
+            secure=True,      # Required with samesite=none
+            domain=".getaxion.lol"  # Share cookie across subdomains
         )
         return response
         
