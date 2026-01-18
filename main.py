@@ -27,7 +27,7 @@ DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
 DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
 # Backend URL should be your Render URL, NOT Vercel
 BACKEND_URL = os.environ.get("BACKEND_URL", "https://dashboard.getaxion.lol")
-DISCORD_REDIRECT_URI = f"{BACKEND_URL}/auth/callback"
+DISCORD_REDIRECT_URI = "https://dashboard.getaxion.lol/auth/callback"
 DISCORD_API_ENDPOINT = "https://discord.com/api/v10"
 # Frontend URL is your Vercel website
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://bibbobg.vercel.app")
