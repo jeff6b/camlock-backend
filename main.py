@@ -186,7 +186,7 @@ class LicenseLogin(BaseModel):
     license_key: str
 
 @app.post("/auth/login")
-def license_login(data: LicenseLogin, response: Response):
+def license_login(data: LicenseLogin):
     """Login with license key"""
     license_key = data.license_key.strip()
     
@@ -232,7 +232,13 @@ def license_login(data: LicenseLogin, response: Response):
     db.commit()
     db.close()
     
-    # Set cookie
+    # Return response with cookie
+    response = JSONResponse({
+        "success": True,
+        "license_key": license_key,
+        "session_id": session_id
+    })
+    
     response.set_cookie(
         key="session_id",
         value=session_id,
@@ -242,11 +248,7 @@ def license_login(data: LicenseLogin, response: Response):
         secure=True
     )
     
-    return {
-        "success": True,
-        "license_key": license_key,
-        "session_id": session_id
-    }
+    return response
 
 @app.get("/auth/me")
 def get_current_user(session_id: Optional[str] = Cookie(None)):
