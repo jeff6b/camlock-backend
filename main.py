@@ -12,13 +12,21 @@ from typing import Optional
 
 app = FastAPI()
 
-# CORS for cross-origin requests
+# CORS - Allow requests from Vercel frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://bibbobg.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5500",
+        "*"  # Allow all as fallback
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # Session storage (in-memory for now, use Redis in production)
@@ -179,6 +187,19 @@ def q(query, params=None):
     return query
 
 init_db()
+
+# === CORS PREFLIGHT HANDLERS ===
+@app.options("/auth/login")
+async def options_login():
+    return {"message": "OK"}
+
+@app.options("/api/public-configs/create")
+async def options_create_config():
+    return {"message": "OK"}
+
+@app.options("/api/my-configs")
+async def options_my_configs():
+    return {"message": "OK"}
 
 # === HEALTH CHECK ===
 @app.get("/health")
