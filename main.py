@@ -11,7 +11,7 @@ app = FastAPI()
 
 # FREE Database Options (no paid plan needed):
 # 1. Use environment variable DATABASE_URL for external database
-# 2. Supabase (free tier): https://supabase.com
+# 2. Supabase (free tier): https://supabase.co
 # 3. PlanetScale (free tier): https://planetscale.com
 # 4. Neon (free tier): https://neon.tech
 
