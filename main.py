@@ -730,6 +730,321 @@ def validate_key(data: KeyValidate):
         db.close()
         return {"valid": False, "error": "HWID mismatch"}, 401
 
+@app.get("/configs", response_class=HTMLResponse)
+def serve_configs_page():
+    """Public configs marketplace page"""
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AXION Configs</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body, html {
+      height: 100%;
+      background-color: rgb(12, 12, 12);
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow-x: hidden;
+    }
+
+    .navbar {
+      position: fixed;
+      top: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: 82%;
+      max-width: 950px;
+      padding: 12px 48px 12px 40px;
+      border: 1px solid #1f1f1f;
+      border-radius: 12px;
+      background: rgba(20,20,25,0.8);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 40px;
+      font-size: 15px;
+    }
+
+    .nav-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 12px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .user-info:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    .content {
+      padding-top: 140px;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding-left: 20px;
+      padding-right: 20px;
+    }
+
+    .title {
+      font-size: 48px;
+      font-weight: 900;
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .login-box {
+      max-width: 400px;
+      margin: 60px auto;
+      padding: 40px;
+      background: rgba(25,25,30,0.6);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .login-input {
+      width: 100%;
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 15px;
+      margin: 20px 0;
+    }
+
+    .btn {
+      padding: 12px 32px;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+      margin-bottom: 100px;
+    }
+
+    .config-card {
+      background: rgba(25,25,30,0.6);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+
+    .config-card:hover {
+      background: rgba(30,30,35,0.7);
+      border-color: rgba(255,255,255,0.15);
+      transform: translateY(-4px);
+    }
+
+    .config-name {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .config-game {
+      font-size: 12px;
+      color: #888;
+      background: rgba(255,255,255,0.05);
+      padding: 4px 10px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 12px;
+    }
+
+    .config-description {
+      font-size: 14px;
+      color: #aaa;
+      line-height: 1.5;
+      margin: 12px 0;
+    }
+
+    .config-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+      color: #666;
+    }
+
+    .download-btn {
+      margin-top: 12px;
+      width: 100%;
+      padding: 10px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .download-btn:hover {
+      background: rgba(255,255,255,0.15);
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-title">AXION Configs</div>
+    <div id="userArea"></div>
+  </nav>
+
+  <div class="content">
+    <h1 class="title">Community Configs</h1>
+    <div id="mainContent"></div>
+  </div>
+
+  <script>
+    let currentUser = null;
+
+    async function checkAuth() {
+      const licenseKey = localStorage.getItem('license_key');
+      if (licenseKey) {
+        currentUser = { license_key: licenseKey };
+        updateUI();
+        loadConfigs();
+      } else {
+        showLogin();
+      }
+    }
+
+    function updateUI() {
+      document.getElementById('userArea').innerHTML = `
+        <div class="user-info" onclick="logout()">
+          <span>${currentUser.license_key.substring(0, 12)}...</span>
+        </div>
+      `;
+    }
+
+    function showLogin() {
+      document.getElementById('mainContent').innerHTML = `
+        <div class="login-box">
+          <h2 style="margin-bottom: 12px;">Login Required</h2>
+          <p style="color: #888; margin-bottom: 20px;">Enter your license key to view configs</p>
+          <input type="text" id="licenseInput" class="login-input" placeholder="AXION-XXXX-XXXX-XXXX">
+          <button class="btn" onclick="submitLogin()">Login</button>
+        </div>
+      `;
+    }
+
+    async function submitLogin() {
+      const licenseKey = document.getElementById('licenseInput').value.trim();
+      if (!licenseKey) {
+        alert('Please enter your license key');
+        return;
+      }
+
+      try {
+        const res = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ license_key: licenseKey })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          localStorage.setItem('session_id', data.session_id);
+          localStorage.setItem('license_key', data.license_key);
+          currentUser = { license_key: data.license_key };
+          updateUI();
+          loadConfigs();
+        } else {
+          alert('Login failed: ' + data.detail);
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem('session_id');
+      localStorage.removeItem('license_key');
+      currentUser = null;
+      location.reload();
+    }
+
+    async function loadConfigs() {
+      try {
+        const res = await fetch('/api/public-configs');
+        const data = await res.json();
+        
+        let html = '<div class="config-grid">';
+        
+        if (data.configs && data.configs.length > 0) {
+          data.configs.forEach(config => {
+            html += `
+              <div class="config-card">
+                <div class="config-name">${config.config_name}</div>
+                <div class="config-game">${config.game_name}</div>
+                <div class="config-description">${config.description}</div>
+                <div class="config-footer">
+                  <div>by ${config.author_name}</div>
+                  <div>${config.downloads} downloads</div>
+                </div>
+                <button class="download-btn" onclick="downloadConfig(${config.id})">Download</button>
+              </div>
+            `;
+          });
+        } else {
+          html += '<p style="color: #888; text-align: center; padding: 40px;">No configs yet!</p>';
+        }
+        
+        html += '</div>';
+        document.getElementById('mainContent').innerHTML = html;
+      } catch (e) {
+        document.getElementById('mainContent').innerHTML = '<p>Error loading configs</p>';
+      }
+    }
+
+    async function downloadConfig(id) {
+      try {
+        await fetch(`/api/public-configs/${id}/download`, { method: 'POST' });
+        alert('Config downloaded!');
+        loadConfigs();
+      } catch (e) {
+        alert('Error downloading config');
+      }
+    }
+
+    checkAuth();
+  </script>
+</body>
+</html>
+"""
+
 @app.get("/{key}", response_class=HTMLResponse)
 def serve_ui(key: str):
     # Validate license key exists
