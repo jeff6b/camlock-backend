@@ -180,6 +180,12 @@ def q(query, params=None):
 
 init_db()
 
+# === HEALTH CHECK ===
+@app.get("/health")
+def health_check():
+    """Simple health check"""
+    return {"status": "ok", "message": "Backend is running"}
+
 # === LICENSE KEY AUTHENTICATION ===
 
 class LicenseLogin(BaseModel):
@@ -243,9 +249,10 @@ def license_login(data: LicenseLogin):
         key="session_id",
         value=session_id,
         max_age=30 * 24 * 60 * 60,  # 30 days
-        httponly=True,
+        httponly=False,  # Allow JavaScript access for cross-origin
         samesite="none",
-        secure=True
+        secure=True,
+        path="/"
     )
     
     return response
