@@ -213,19 +213,34 @@ def discord_login():
 
 @app.get("/auth/callback")
 def discord_callback(code: str):
-    """Handle Discord OAuth2 callback"""
-    try:
-        # Exchange code for token
-        data = {
-            "client_id": DISCORD_CLIENT_ID,
-            "client_secret": DISCORD_CLIENT_SECRET,
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": DISCORD_REDIRECT_URI
-        }
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        
-        token_response = req.post(f"{DISCORD_API_ENDPOINT}/oauth2/token", data=data, headers=headers)
+    print("=== DEBUG OAUTH CALLBACK START ===")
+    print("Received code (first 10 chars):", code[:10] + "...")
+    print("Using REDIRECT_URI:", DISCORD_REDIRECT_URI)
+    print("Client ID:", DISCORD_CLIENT_ID)
+    print("Client Secret (first 8):", DISCORD_CLIENT_SECRET[:8] + "...")
+
+    data = {
+        "client_id": DISCORD_CLIENT_ID,
+        "client_secret": DISCORD_CLIENT_SECRET,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": DISCORD_REDIRECT_URI
+    }
+
+    print("Token request payload:", data)
+
+    token_response = req.post(
+        f"{DISCORD_API_ENDPOINT}/oauth2/token",
+        data=data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+
+    print("Discord status code:", token_response.status_code)
+    print("Discord full response:", token_response.text)  # ← this is the gold — will show exact error like {"error":"invalid_grant","error_description":"Invalid \"redirect_uri\" in request."}
+
+    print("=== DEBUG END ===")
+
+    # ... rest of your code
         token_data = token_response.json()
         
         if "access_token" not in token_data:
