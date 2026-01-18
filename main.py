@@ -1,17 +1,39 @@
 # main.py - FULL BACKEND ON RENDER
-from fastapi import FastAPI, Path, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Path, HTTPException, Request, Response, Cookie
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 import random
 import os
+import secrets
 from datetime import datetime, timedelta
+from typing import Optional
+import requests as req
 
 app = FastAPI()
 
+# CORS for OAuth2
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Discord OAuth2 Config
+DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
+DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
+DISCORD_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "https://your-app.onrender.com/auth/callback")
+DISCORD_API_ENDPOINT = "https://discord.com/api/v10"
+
+# Session storage (in-memory for now, use Redis in production)
+sessions = {}
+
 # FREE Database Options (no paid plan needed):
 # 1. Use environment variable DATABASE_URL for external database
-# 2. Supabase (free tier): https://supabase.co
+# 2. Supabase (free tier): https://supabase.com
 # 3. PlanetScale (free tier): https://planetscale.com
 # 4. Neon (free tier): https://neon.tech
 
@@ -92,6 +114,26 @@ def init_db():
                 created_at TEXT NOT NULL,
                 UNIQUE(license_key, config_name)
             )""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS public_configs (
+                id SERIAL PRIMARY KEY,
+                config_name TEXT NOT NULL,
+                author_name TEXT NOT NULL,
+                game_name TEXT NOT NULL,
+                description TEXT,
+                config_data TEXT NOT NULL,
+                discord_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                downloads INTEGER DEFAULT 0
+            )""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
+                session_id TEXT PRIMARY KEY,
+                discord_id TEXT NOT NULL,
+                discord_username TEXT,
+                discord_avatar TEXT,
+                license_key TEXT,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )""")
             db.commit()
             db.close()
             print(f"✅ PostgreSQL database connected successfully!")
@@ -113,6 +155,26 @@ def init_db():
             config_data TEXT NOT NULL,
             created_at TEXT NOT NULL,
             UNIQUE(license_key, config_name))""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS public_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_name TEXT NOT NULL,
+            author_name TEXT NOT NULL,
+            game_name TEXT NOT NULL,
+            description TEXT,
+            config_data TEXT NOT NULL,
+            discord_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            downloads INTEGER DEFAULT 0
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
+            session_id TEXT PRIMARY KEY,
+            discord_id TEXT NOT NULL,
+            discord_username TEXT,
+            discord_avatar TEXT,
+            license_key TEXT,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        )""")
         db.commit()
         db.close()
         print(f"⚠️  SQLite (TEMPORARY - data will be lost on redeploy!)")
@@ -130,6 +192,233 @@ def q(query, params=None):
     return query
 
 init_db()
+
+# === DISCORD OAUTH2 ENDPOINTS ===
+
+@app.get("/auth/login")
+def discord_login():
+    """Redirect to Discord OAuth2"""
+    oauth_url = (
+        f"https://discord.com/api/oauth2/authorize"
+        f"?client_id={DISCORD_CLIENT_ID}"
+        f"&redirect_uri={DISCORD_REDIRECT_URI}"
+        f"&response_type=code"
+        f"&scope=identify"
+    )
+    return RedirectResponse(oauth_url)
+
+@app.get("/auth/callback")
+def discord_callback(code: str):
+    """Handle Discord OAuth2 callback"""
+    try:
+        # Exchange code for token
+        data = {
+            "client_id": DISCORD_CLIENT_ID,
+            "client_secret": DISCORD_CLIENT_SECRET,
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": DISCORD_REDIRECT_URI
+        }
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        
+        token_response = req.post(f"{DISCORD_API_ENDPOINT}/oauth2/token", data=data, headers=headers)
+        token_data = token_response.json()
+        
+        if "access_token" not in token_data:
+            raise HTTPException(status_code=400, detail="Failed to get access token")
+        
+        access_token = token_data["access_token"]
+        
+        # Get user info
+        user_response = req.get(
+            f"{DISCORD_API_ENDPOINT}/users/@me",
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        user = user_response.json()
+        
+        discord_id = user["id"]
+        discord_username = f"{user['username']}#{user['discriminator']}" if user.get('discriminator') != '0' else user['username']
+        discord_avatar = f"https://cdn.discordapp.com/avatars/{discord_id}/{user['avatar']}.png" if user.get('avatar') else None
+        
+        # Check if user has redeemed a license
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(q("SELECT key FROM keys WHERE redeemed_by=?"), (discord_id,))
+        result = cur.fetchone()
+        license_key = result[0] if result else None
+        
+        # Create session
+        session_id = secrets.token_urlsafe(32)
+        expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+        
+        cur.execute(q("INSERT INTO user_sessions (session_id, discord_id, discord_username, discord_avatar, license_key, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)"),
+                   (session_id, discord_id, discord_username, discord_avatar, license_key, datetime.now().isoformat(), expires_at))
+        db.commit()
+        db.close()
+        
+        # Redirect to website with session cookie
+        response = RedirectResponse(url="/")
+        response.set_cookie(
+            key="session_id",
+            value=session_id,
+            max_age=30 * 24 * 60 * 60,  # 30 days
+            httponly=True,
+            samesite="lax"
+        )
+        return response
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/auth/me")
+def get_current_user(session_id: Optional[str] = Cookie(None)):
+    """Get current logged in user"""
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not logged in")
+    
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT discord_id, discord_username, discord_avatar, license_key, expires_at FROM user_sessions WHERE session_id=?"), (session_id,))
+    result = cur.fetchone()
+    db.close()
+    
+    if not result:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    
+    discord_id, username, avatar, license_key, expires_at = result
+    
+    # Check if session expired
+    if datetime.fromisoformat(expires_at) < datetime.now():
+        raise HTTPException(status_code=401, detail="Session expired")
+    
+    return {
+        "discord_id": discord_id,
+        "username": username,
+        "avatar": avatar,
+        "license_key": license_key,
+        "has_license": license_key is not None
+    }
+
+@app.post("/auth/logout")
+def logout(session_id: Optional[str] = Cookie(None)):
+    """Logout user"""
+    if session_id:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(q("DELETE FROM user_sessions WHERE session_id=?"), (session_id,))
+        db.commit()
+        db.close()
+    
+    response = JSONResponse({"success": True})
+    response.delete_cookie("session_id")
+    return response
+
+# === PUBLIC CONFIGS ENDPOINTS ===
+
+class PublicConfig(BaseModel):
+    config_name: str
+    author_name: str
+    game_name: str
+    description: str
+    config_data: dict
+
+@app.get("/api/public-configs")
+def get_public_configs():
+    """Get all public configs"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT id, config_name, author_name, game_name, description, config_data, discord_id, created_at, downloads FROM public_configs ORDER BY created_at DESC"))
+    results = cur.fetchall()
+    db.close()
+    
+    return {
+        "configs": [
+            {
+                "id": r[0],
+                "config_name": r[1],
+                "author_name": r[2],
+                "game_name": r[3],
+                "description": r[4],
+                "config_data": json.loads(r[5]),
+                "discord_id": r[6],
+                "created_at": r[7],
+                "downloads": r[8]
+            } for r in results
+        ]
+    }
+
+@app.post("/api/public-configs/create")
+def create_public_config(data: PublicConfig, session_id: Optional[str] = Cookie(None)):
+    """Create a public config (requires login)"""
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not logged in")
+    
+    # Get user from session
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT discord_id, license_key FROM user_sessions WHERE session_id=?"), (session_id,))
+    result = cur.fetchone()
+    
+    if not result:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    
+    discord_id, license_key = result
+    
+    if not license_key:
+        db.close()
+        raise HTTPException(status_code=403, detail="You need a redeemed license to create public configs")
+    
+    # Insert public config
+    try:
+        cur.execute(q("INSERT INTO public_configs (config_name, author_name, game_name, description, config_data, discord_id, created_at, downloads) VALUES (?, ?, ?, ?, ?, ?, ?, 0)"),
+                   (data.config_name, data.author_name, data.game_name, data.description, json.dumps(data.config_data), discord_id, datetime.now().isoformat()))
+        db.commit()
+        db.close()
+        return {"success": True, "message": "Config published successfully"}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/public-configs/{config_id}/download")
+def download_public_config(config_id: int):
+    """Increment download count"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("UPDATE public_configs SET downloads = downloads + 1 WHERE id=?"), (config_id,))
+    db.commit()
+    db.close()
+    return {"success": True}
+
+@app.get("/api/my-configs")
+def get_my_saved_configs(session_id: Optional[str] = Cookie(None)):
+    """Get current user's saved configs (for dropdown)"""
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not logged in")
+    
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT license_key FROM user_sessions WHERE session_id=?"), (session_id,))
+    result = cur.fetchone()
+    
+    if not result or not result[0]:
+        db.close()
+        raise HTTPException(status_code=403, detail="No license found")
+    
+    license_key = result[0]
+    
+    # Get user's saved configs
+    cur.execute(q("SELECT config_name, config_data FROM saved_configs WHERE license_key=?"), (license_key,))
+    configs = cur.fetchall()
+    db.close()
+    
+    return {
+        "configs": [
+            {
+                "name": c[0],
+                "data": json.loads(c[1])
+            } for c in configs
+        ]
+    }
 
 DEFAULT_CONFIG = {
     "triggerbot": {"Enabled": True, "Keybind": "Right Mouse", "Delay": 0.05, "MaxStuds": 120,
@@ -208,6 +497,44 @@ def set_config(key: str, data: dict):
 @app.get("/api/keepalive")
 def keepalive():
     return {"status": "alive"}
+
+@app.get("/api/debug/database")
+def debug_database():
+    """Debug endpoint to check database contents"""
+    try:
+        db = get_db()
+        cur = db.cursor()
+        
+        # Count keys
+        cur.execute(q("SELECT COUNT(*) FROM keys"))
+        key_count = cur.fetchone()[0] if not USE_POSTGRES else cur.fetchone()[0]
+        
+        # Count configs
+        cur.execute(q("SELECT COUNT(*) FROM saved_configs"))
+        config_count = cur.fetchone()[0] if not USE_POSTGRES else cur.fetchone()[0]
+        
+        # List all keys
+        cur.execute(q("SELECT key, duration, created_by, redeemed_by, active FROM keys"))
+        keys = cur.fetchall()
+        
+        db.close()
+        
+        return {
+            "database_type": "PostgreSQL" if USE_POSTGRES else "SQLite",
+            "total_keys": key_count,
+            "total_configs": config_count,
+            "keys": [
+                {
+                    "key": k[0][:8] + "...",
+                    "duration": k[1],
+                    "created_by": k[2],
+                    "redeemed_by": k[3],
+                    "active": k[4]
+                } for k in keys
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/api/configs/{key}/list")
 def list_saved_configs(key: str):
