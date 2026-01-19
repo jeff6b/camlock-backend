@@ -126,12 +126,25 @@ def init_db():
                 created_at TEXT NOT NULL,
                 downloads INTEGER DEFAULT 0
             )""")
-            # Add license_key column if it doesn't exist (for existing tables)
+            # Drop old table if it has discord_id column, recreate with license_key
             try:
-                cur.execute("ALTER TABLE public_configs ADD COLUMN IF NOT EXISTS license_key TEXT")
+                cur.execute("SELECT discord_id FROM public_configs LIMIT 1")
+                # If this works, old schema exists - drop and recreate
+                cur.execute("DROP TABLE IF EXISTS public_configs")
+                cur.execute("""CREATE TABLE public_configs (
+                    id SERIAL PRIMARY KEY,
+                    config_name TEXT NOT NULL,
+                    author_name TEXT NOT NULL,
+                    game_name TEXT NOT NULL,
+                    description TEXT,
+                    config_data TEXT NOT NULL,
+                    license_key TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    downloads INTEGER DEFAULT 0
+                )""")
                 db.commit()
             except:
-                pass  # Column already exists or other error
+                pass  # Table already has correct schema
             cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
                 session_id TEXT PRIMARY KEY,
                 license_key TEXT NOT NULL,
