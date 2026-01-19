@@ -349,27 +349,32 @@ class PublicConfig(BaseModel):
 @app.get("/api/public-configs")
 def get_public_configs():
     """Get all public configs"""
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(q("SELECT id, config_name, author_name, game_name, description, config_data, license_key, created_at, downloads FROM public_configs ORDER BY created_at DESC"))
-    results = cur.fetchall()
-    db.close()
-    
-    return {
-        "configs": [
-            {
-                "id": r[0],
-                "config_name": r[1],
-                "author_name": r[2],
-                "game_name": r[3],
-                "description": r[4],
-                "config_data": json.loads(r[5]),
-                "created_by": r[6][:8] + "...",  # Hide full license key
-                "created_at": r[7],
-                "downloads": r[8]
-            } for r in results
-        ]
-    }
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(q("SELECT id, config_name, author_name, game_name, description, config_data, license_key, created_at, downloads FROM public_configs ORDER BY created_at DESC"))
+        results = cur.fetchall()
+        db.close()
+        
+        return {
+            "configs": [
+                {
+                    "id": r[0],
+                    "config_name": r[1],
+                    "author_name": r[2],
+                    "game_name": r[3],
+                    "description": r[4],
+                    "config_data": json.loads(r[5]),
+                    "created_by": r[6][:8] + "...",  # Hide full license key
+                    "created_at": r[7],
+                    "downloads": r[8]
+                } for r in results
+            ]
+        }
+    except Exception as e:
+        print(f"Public configs error: {e}")
+        # Return empty list if table doesn't exist
+        return {"configs": []}
 
 @app.post("/api/public-configs/create")
 def create_public_config(data: PublicConfig, session_id: Optional[str] = Cookie(None)):
@@ -453,6 +458,9 @@ DEFAULT_CONFIG = {
 class KeyCreate(BaseModel):
     duration: str
     created_by: str
+
+class FreemiumToggle(BaseModel):
+    enabled: int
 
 class KeyRedeem(BaseModel):
     key: str
@@ -722,22 +730,27 @@ def list_keys():
     return {"keys": keys}
 
 @app.post("/admin/freemium")
-def toggle_freemium(data: dict):
+def toggle_freemium(data: FreemiumToggle):
     """Toggle freemium mode"""
-    enabled = data.get("enabled", 0)
+    enabled = data.enabled
     
     db = get_db()
     cur = db.cursor()
     
     # Update or insert freemium setting
-    if USE_POSTGRES:
-        cur.execute("UPDATE freemium_settings SET enabled = %s, updated_at = %s WHERE id = 1", 
-                   (enabled, datetime.now().isoformat()))
-    else:
-        cur.execute("UPDATE freemium_settings SET enabled = ?, updated_at = ? WHERE id = 1", 
-                   (enabled, datetime.now().isoformat()))
+    try:
+        if USE_POSTGRES:
+            cur.execute("UPDATE freemium_settings SET enabled = %s, updated_at = %s WHERE id = 1", 
+                       (enabled, datetime.now().isoformat()))
+        else:
+            cur.execute("UPDATE freemium_settings SET enabled = ?, updated_at = ? WHERE id = 1", 
+                       (enabled, datetime.now().isoformat()))
+        
+        db.commit()
+    except Exception as e:
+        print(f"Freemium update error: {e}")
+        db.rollback()
     
-    db.commit()
     db.close()
     
     return {
