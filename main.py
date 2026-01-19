@@ -132,6 +132,13 @@ def init_db():
                 created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL
             )""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS freemium_settings (
+                id SERIAL PRIMARY KEY,
+                enabled BOOLEAN DEFAULT FALSE,
+                updated_at TEXT NOT NULL
+            )""")
+            # Initialize freemium as disabled
+            cur.execute("INSERT INTO freemium_settings (enabled, updated_at) VALUES (FALSE, %s) ON CONFLICT DO NOTHING", (datetime.now().isoformat(),))
             db.commit()
             db.close()
             print(f"✅ PostgreSQL database connected successfully!")
@@ -170,6 +177,13 @@ def init_db():
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL
         )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS freemium_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            enabled INTEGER DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )""")
+        # Initialize freemium as disabled
+        cur.execute("INSERT OR IGNORE INTO freemium_settings (enabled, updated_at) VALUES (0, ?)", (datetime.now().isoformat(),))
         db.commit()
         db.close()
         print(f"⚠️  SQLite (TEMPORARY - data will be lost on redeploy!)")
@@ -236,7 +250,7 @@ def license_login(data: LicenseLogin):
         db.close()
         raise HTTPException(status_code=403, detail="License not redeemed yet")
     
-    if not active:
+    if active == 0:  # Check for 0 instead of falsy value
         db.close()
         raise HTTPException(status_code=403, detail="License is inactive")
     
@@ -702,10 +716,62 @@ def list_keys():
                      "redeemed_at": r[4], "redeemed_by": r[5], "hwid": r[6], "active": r[7], "created_by": r[8]})
     return {"keys": keys}
 
+@app.post("/admin/freemium")
+def toggle_freemium(data: dict):
+    """Toggle freemium mode"""
+    enabled = data.get("enabled", 0)
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    # Update or insert freemium setting
+    if USE_POSTGRES:
+        cur.execute("UPDATE freemium_settings SET enabled = %s, updated_at = %s WHERE id = 1", 
+                   (enabled, datetime.now().isoformat()))
+    else:
+        cur.execute("UPDATE freemium_settings SET enabled = ?, updated_at = ? WHERE id = 1", 
+                   (enabled, datetime.now().isoformat()))
+    
+    db.commit()
+    db.close()
+    
+    return {
+        "success": True,
+        "enabled": enabled,
+        "message": f"Freemium mode {'enabled' if enabled else 'disabled'}"
+    }
+
+@app.get("/admin/freemium/status")
+def freemium_status():
+    """Check freemium status"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT enabled FROM freemium_settings LIMIT 1"))
+    result = cur.fetchone()
+    db.close()
+    
+    enabled = result[0] if result else 0
+    return {
+        "enabled": enabled == 1 or enabled == True,
+        "status": "enabled" if (enabled == 1 or enabled == True) else "disabled"
+    }
+
 @app.post("/api/validate")
 def validate_key(data: KeyValidate):
     db = get_db()
     cur = db.cursor()
+    
+    # Check if freemium is enabled
+    cur.execute(q("SELECT enabled FROM freemium_settings LIMIT 1"))
+    freemium_result = cur.fetchone()
+    freemium_enabled = freemium_result[0] if freemium_result else 0
+    
+    if freemium_enabled == 1 or freemium_enabled == True:
+        # Freemium mode - any key works
+        db.close()
+        return {"valid": True, "message": "Freemium mode enabled - access granted", "key": data.key, "expires_at": None, "freemium": True}
+    
+    # Normal validation
     cur.execute(q("SELECT * FROM keys WHERE key=?"), (data.key,))
     result = cur.fetchone()
     if not result:
@@ -995,7 +1061,10 @@ def serve_configs_page():
       <a onclick="showPage('about')">About</a>
       <a onclick="showPage('configs')">Configs</a>
     </div>
-    <div id="userArea"></div>
+    <div style="display: flex; gap: 20px; align-items: center;">
+      <img src="https://img.icons8.com/?size=100&id=30888&format=png&color=FFFFFF" alt="Discord" style="width: 22px; height: 22px; cursor: pointer; opacity: 0.9;" onclick="window.open('https://discord.gg/yourserver', '_blank')">
+      <div id="userArea"></div>
+    </div>
   </nav>
 
   <div class="content">
