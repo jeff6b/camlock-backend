@@ -126,6 +126,12 @@ def init_db():
                 created_at TEXT NOT NULL,
                 downloads INTEGER DEFAULT 0
             )""")
+            # Add license_key column if it doesn't exist (for existing tables)
+            try:
+                cur.execute("ALTER TABLE public_configs ADD COLUMN IF NOT EXISTS license_key TEXT")
+                db.commit()
+            except:
+                pass  # Column already exists or other error
             cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
                 session_id TEXT PRIMARY KEY,
                 license_key TEXT NOT NULL,
@@ -171,6 +177,12 @@ def init_db():
             created_at TEXT NOT NULL,
             downloads INTEGER DEFAULT 0
         )""")
+        # Add license_key column if it doesn't exist
+        try:
+            cur.execute("ALTER TABLE public_configs ADD COLUMN license_key TEXT")
+            db.commit()
+        except:
+            pass  # Column already exists
         cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
             session_id TEXT PRIMARY KEY,
             license_key TEXT NOT NULL,
@@ -841,7 +853,7 @@ def validate_key(data: KeyValidate):
         db.close()
         return {"valid": False, "error": "HWID mismatch"}, 401
 
-@app.get("/configs", response_class=HTMLResponse)
+@app.get("/home", response_class=HTMLResponse)
 def serve_configs_page():
     """Public configs marketplace page"""
     return """
