@@ -190,12 +190,25 @@ def init_db():
             created_at TEXT NOT NULL,
             downloads INTEGER DEFAULT 0
         )""")
-        # Add license_key column if it doesn't exist
+        # Drop old table if it has discord_id, recreate with license_key
         try:
-            cur.execute("ALTER TABLE public_configs ADD COLUMN license_key TEXT")
+            cur.execute("SELECT discord_id FROM public_configs LIMIT 1")
+            # Old schema exists - drop and recreate
+            cur.execute("DROP TABLE IF EXISTS public_configs")
+            cur.execute("""CREATE TABLE public_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                config_name TEXT NOT NULL,
+                author_name TEXT NOT NULL,
+                game_name TEXT NOT NULL,
+                description TEXT,
+                config_data TEXT NOT NULL,
+                license_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                downloads INTEGER DEFAULT 0
+            )""")
             db.commit()
         except:
-            pass  # Column already exists
+            pass  # Table already has correct schema
         cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
             session_id TEXT PRIMARY KEY,
             license_key TEXT NOT NULL,
@@ -1123,19 +1136,58 @@ def serve_configs_page():
 
     .create-btn {
       padding: 14px 32px;
-      background: rgba(255,255,255,0.15);
-      border: 1px solid rgba(255,255,255,0.25);
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
       border-radius: 8px;
       color: #fff;
       font-size: 15px;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.3s ease;
       margin-bottom: 30px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
     }
 
     .create-btn:hover {
-      background: rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
       transform: translateY(-2px);
+    }
+
+    /* Pagination */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 30px;
+      margin-bottom: 60px;
+    }
+
+    .page-btn {
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      backdrop-filter: blur(10px);
+    }
+
+    .page-btn:hover:not(:disabled) {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
+    }
+
+    .page-btn.active {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.3);
+    }
+
+    .page-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
     }
 
     /* Modal */
@@ -1148,26 +1200,41 @@ def serve_configs_page():
       z-index: 100;
       justify-content: center;
       align-items: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
     }
 
     .modal.active {
       display: flex;
+      animation: fadeIn 0.3s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
 
     .modal-content {
-      background: rgba(18,18,22,0.98);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 12px;
-      padding: 28px 32px;
+      background: #1a1a1f;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 24px;
       width: 90%;
-      max-width: 480px;
+      max-width: 460px;
       max-height: 80vh;
       overflow-y: auto;
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      transform: scale(0.95);
+      animation: modalZoom 0.3s ease forwards;
+    }
+
+    @keyframes modalZoom {
+      from { transform: scale(0.95); }
+      to { transform: scale(1); }
     }
 
     .modal-title {
-      font-size: 22px;
+      font-size: 20px;
       font-weight: 600;
       margin-bottom: 20px;
       color: #fff;
@@ -1180,7 +1247,7 @@ def serve_configs_page():
     .form-label {
       display: block;
       font-size: 13px;
-      color: #999;
+      color: #888;
       margin-bottom: 6px;
       font-weight: 500;
     }
@@ -1188,8 +1255,8 @@ def serve_configs_page():
     .form-input, .form-select, .form-textarea {
       width: 100%;
       padding: 10px 14px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.12);
       border-radius: 6px;
       color: #fff;
       font-size: 14px;
@@ -1199,13 +1266,22 @@ def serve_configs_page():
 
     .form-input:focus, .form-select:focus, .form-textarea:focus {
       outline: none;
-      border-color: rgba(255,255,255,0.25);
-      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.02);
     }
 
     .form-textarea {
       resize: vertical;
       min-height: 90px;
+    }
+
+    .form-select {
+      cursor: pointer;
+    }
+
+    .form-select option {
+      background: #1a1a1f;
+      color: #fff;
     }
 
     .modal-actions {
@@ -1217,60 +1293,78 @@ def serve_configs_page():
     .modal-btn {
       flex: 1;
       padding: 11px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
       border-radius: 6px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s;
-      border: 1px solid rgba(255,255,255,0.15);
-    }
-
-    .modal-btn-cancel {
-      background: rgba(255,255,255,0.04);
       color: #fff;
+      backdrop-filter: blur(5px);
     }
 
-    .modal-btn-cancel:hover {
-      background: rgba(255,255,255,0.08);
+    .modal-btn:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
     }
 
-    .modal-btn-submit {
-      background: rgba(255,255,255,0.12);
-      color: #fff;
-    }
-
-    .modal-btn-submit:hover {
-      background: rgba(255,255,255,0.18);
-    }
-
-    /* View Config Modal */
+    /* View Config Modal - Darker theme */
     .config-detail-modal .modal-content {
-      max-width: 700px;
+      max-width: 600px;
+      background: #16161a;
+      padding: 28px;
     }
 
     .config-stats {
-      display: flex;
-      gap: 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
       margin: 20px 0;
-      padding: 16px;
-      background: rgba(255,255,255,0.03);
+      padding: 20px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
       border-radius: 8px;
     }
 
     .stat-item {
-      flex: 1;
       text-align: center;
     }
 
     .stat-label {
-      font-size: 12px;
-      color: #888;
-      margin-bottom: 4px;
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
     .stat-value {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 700;
+      color: #fff;
+    }
+
+    .detail-section {
+      margin: 20px 0;
+    }
+
+    .detail-label {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-content {
+      color: #aaa;
+      line-height: 1.6;
+      font-size: 14px;
+      padding: 12px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 6px;
     }
   </style>
 </head>
@@ -1380,14 +1474,13 @@ def serve_configs_page():
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Description</label>
-        <p id="viewDescription" style="color: #aaa; line-height: 1.6;">-</p>
+      <div class="detail-section">
+        <div class="detail-label">Description</div>
+        <div class="detail-content" id="viewDescription">-</div>
       </div>
 
       <div class="modal-actions">
-        <button class="modal-btn modal-btn-cancel" onclick="closeViewModal()">Close</button>
-        <button class="modal-btn modal-btn-submit" onclick="saveConfigToMenu()">Save to My Menu</button>
+        <button class="modal-btn" onclick="saveConfigToMenu()">Load to Menu</button>
       </div>
     </div>
   </div>
@@ -1395,6 +1488,9 @@ def serve_configs_page():
   <script>
     let currentUser = null;
     let currentViewConfig = null;
+    let allConfigs = [];
+    let currentPage = 1;
+    const CONFIGS_PER_PAGE = 4;
 
     function showPage(pageId) {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -1489,33 +1585,64 @@ def serve_configs_page():
         const res = await fetch('/api/public-configs');
         const data = await res.json();
         
-        let html = '<button class="create-btn" onclick="openCreateModal()">+ Create Config</button>';
-        html += '<div class="config-grid">';
-        
-        if (data.configs && data.configs.length > 0) {
-          data.configs.forEach(config => {
-            html += `
-              <div class="config-card" onclick="viewConfig(${config.id})">
-                <div class="config-name">${config.config_name}</div>
-                <div class="config-game">${config.game_name}</div>
-                <div class="config-description">${config.description}</div>
-                <div class="config-footer">
-                  <div>by ${config.author_name}</div>
-                  <div>${config.downloads} downloads</div>
-                </div>
-              </div>
-            `;
-          });
-        } else {
-          html += '<p style="color: #888; text-align: center; padding: 40px;">No configs yet! Be the first to create one.</p>';
-        }
-        
-        html += '</div>';
-        document.getElementById('configsContent').innerHTML = html;
+        allConfigs = data.configs || [];
+        renderConfigsPage();
       } catch (e) {
         console.error('Load error:', e);
         document.getElementById('configsContent').innerHTML = '<p>Error loading configs</p>';
       }
+    }
+
+    function renderConfigsPage() {
+      const startIndex = (currentPage - 1) * CONFIGS_PER_PAGE;
+      const endIndex = startIndex + CONFIGS_PER_PAGE;
+      const pageConfigs = allConfigs.slice(startIndex, endIndex);
+      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
+
+      let html = '<button class="create-btn" onclick="openCreateModal()">+ Create Config</button>';
+      html += '<div class="config-grid">';
+      
+      if (pageConfigs.length > 0) {
+        pageConfigs.forEach(config => {
+          html += `
+            <div class="config-card" onclick="viewConfig(${config.id})">
+              <div class="config-name">${config.config_name}</div>
+              <div class="config-game">${config.game_name}</div>
+              <div class="config-description">${config.description}</div>
+              <div class="config-footer">
+                <div>by ${config.author_name}</div>
+                <div>${config.downloads} downloads</div>
+              </div>
+            </div>
+          `;
+        });
+      } else {
+        html += '<p style="color: #888; text-align: center; padding: 40px;">No configs yet! Be the first to create one.</p>';
+      }
+      
+      html += '</div>';
+
+      // Add pagination
+      if (totalPages > 1) {
+        html += '<div class="pagination">';
+        html += `<button class="page-btn" onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>`;
+        
+        for (let i = 1; i <= totalPages; i++) {
+          html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
+        }
+        
+        html += `<button class="page-btn" onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>`;
+        html += '</div>';
+      }
+      
+      document.getElementById('configsContent').innerHTML = html;
+    }
+
+    function changePage(page) {
+      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
+      if (page < 1 || page > totalPages) return;
+      currentPage = page;
+      renderConfigsPage();
     }
 
     async function openCreateModal() {
