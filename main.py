@@ -268,9 +268,14 @@ def license_login(data: LicenseLogin):
     session_id = secrets.token_urlsafe(32)
     expires_at_session = (datetime.now() + timedelta(days=30)).isoformat()
     
-    cur.execute(q("INSERT INTO user_sessions (session_id, license_key, created_at, expires_at) VALUES (?, ?, ?, ?)"),
-               (session_id, license_key, datetime.now().isoformat(), expires_at_session))
-    db.commit()
+    try:
+        cur.execute(q("INSERT INTO user_sessions (session_id, license_key, created_at, expires_at) VALUES (?, ?, ?, ?)"),
+                   (session_id, license_key, datetime.now().isoformat(), expires_at_session))
+        db.commit()
+    except Exception as e:
+        print(f"Session creation error: {e}")
+        # Continue anyway, session not critical for config page
+    
     db.close()
     
     # Return response with cookie
@@ -761,12 +766,19 @@ def validate_key(data: KeyValidate):
     db = get_db()
     cur = db.cursor()
     
-    # Check if freemium is enabled
-    cur.execute(q("SELECT enabled FROM freemium_settings LIMIT 1"))
-    freemium_result = cur.fetchone()
-    freemium_enabled = freemium_result[0] if freemium_result else 0
+    # Check if freemium is enabled (handle missing table)
+    freemium_enabled = False
+    try:
+        cur.execute(q("SELECT enabled FROM freemium_settings LIMIT 1"))
+        freemium_result = cur.fetchone()
+        freemium_enabled = freemium_result[0] if freemium_result else False
+        if freemium_enabled == 1 or freemium_enabled == True:
+            freemium_enabled = True
+    except:
+        # Table doesn't exist yet, freemium disabled
+        freemium_enabled = False
     
-    if freemium_enabled == 1 or freemium_enabled == True:
+    if freemium_enabled:
         # Freemium mode - any key works
         db.close()
         return {"valid": True, "message": "Freemium mode enabled - access granted", "key": data.key, "expires_at": None, "freemium": True}
