@@ -143,8 +143,9 @@ def init_db():
                     downloads INTEGER DEFAULT 0
                 )""")
                 db.commit()
-            except:
-                pass  # Table already has correct schema
+            except Exception as e:
+                # Rollback failed transaction and continue
+                db.rollback()
             cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
                 session_id TEXT PRIMARY KEY,
                 license_key TEXT NOT NULL,
@@ -207,8 +208,12 @@ def init_db():
                 downloads INTEGER DEFAULT 0
             )""")
             db.commit()
-        except:
-            pass  # Table already has correct schema
+        except Exception as e:
+            # Rollback and continue
+            try:
+                db.rollback()
+            except:
+                pass
         cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
             session_id TEXT PRIMARY KEY,
             license_key TEXT NOT NULL,
