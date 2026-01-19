@@ -386,41 +386,42 @@ def create_public_config(data: PublicConfig, authorization: Optional[str] = None
     elif session_id:
         token = session_id
     
-    if not token:
-        raise HTTPException(status_code=401, detail="Not logged in")
+    license_key = "website-user"  # Default
     
-    # Get license key from session
+    if token:
+        # Get license key from session
+        db = get_db()
+        cur = db.cursor()
+        
+        try:
+            cur.execute(q("SELECT license_key FROM user_sessions WHERE session_id=?"), (token,))
+            result = cur.fetchone()
+            
+            if result:
+                license_key = result[0]
+            
+            db.close()
+        except:
+            try:
+                db.close()
+            except:
+                pass
+    
+    # Insert public config with fresh connection
     db = get_db()
     cur = db.cursor()
     
     try:
-        cur.execute(q("SELECT license_key FROM user_sessions WHERE session_id=?"), (token,))
-        result = cur.fetchone()
-        
-        if not result:
-            # Session doesn't exist, just use the data's license key if provided
-            # For now, we'll create configs without session requirement
-            db.close()
-            
-            # Get license from request data if available
-            # Since we don't have it, let's use a placeholder
-            # In production, you'd want proper session management
-            license_key = "website-user"
-        else:
-            license_key = result[0]
-    except:
-        license_key = "website-user"
-    
-    # Insert public config
-    try:
-        cur = db.cursor()
         cur.execute(q("INSERT INTO public_configs (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads) VALUES (?, ?, ?, ?, ?, ?, ?, 0)"),
                    (data.config_name, data.author_name, data.game_name, data.description, json.dumps(data.config_data), license_key, datetime.now().isoformat()))
         db.commit()
         db.close()
         return {"success": True, "message": "Config published successfully"}
     except Exception as e:
-        db.close()
+        try:
+            db.close()
+        except:
+            pass
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/public-configs/{config_id}/download")
@@ -1117,8 +1118,8 @@ def serve_configs_page():
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.8);
-      backdrop-filter: blur(8px);
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(10px);
       z-index: 100;
       justify-content: center;
       align-items: center;
@@ -1129,82 +1130,78 @@ def serve_configs_page():
     }
 
     .modal-content {
-      background: rgba(20,20,25,0.95);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 16px;
-      padding: 32px;
+      background: rgba(18,18,22,0.98);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 28px 32px;
       width: 90%;
-      max-width: 600px;
+      max-width: 480px;
       max-height: 80vh;
       overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     }
 
     .modal-title {
-      font-size: 28px;
-      font-weight: 700;
-      margin-bottom: 24px;
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #fff;
     }
 
     .form-group {
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
 
     .form-label {
       display: block;
-      font-size: 14px;
-      color: #aaa;
-      margin-bottom: 8px;
+      font-size: 13px;
+      color: #999;
+      margin-bottom: 6px;
+      font-weight: 500;
     }
 
     .form-input, .form-select, .form-textarea {
       width: 100%;
-      padding: 12px 16px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 8px;
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
       color: #fff;
-      font-size: 15px;
+      font-size: 14px;
       font-family: inherit;
+      transition: all 0.2s;
     }
 
     .form-input:focus, .form-select:focus, .form-textarea:focus {
       outline: none;
-      border-color: rgba(255,255,255,0.3);
+      border-color: rgba(255,255,255,0.25);
+      background: rgba(255,255,255,0.06);
     }
 
     .form-textarea {
       resize: vertical;
-      min-height: 100px;
-    }
-
-    .form-select {
-      cursor: pointer;
-    }
-
-    .form-select option {
-      background: #1a1a1f;
-      color: #fff;
+      min-height: 90px;
     }
 
     .modal-actions {
       display: flex;
-      gap: 12px;
-      margin-top: 24px;
+      gap: 10px;
+      margin-top: 20px;
     }
 
     .modal-btn {
       flex: 1;
-      padding: 14px;
-      border-radius: 8px;
-      font-size: 15px;
+      padding: 11px;
+      border-radius: 6px;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s;
-      border: 1px solid rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.15);
     }
 
     .modal-btn-cancel {
-      background: rgba(255,255,255,0.05);
+      background: rgba(255,255,255,0.04);
       color: #fff;
     }
 
@@ -1213,12 +1210,12 @@ def serve_configs_page():
     }
 
     .modal-btn-submit {
-      background: rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.12);
       color: #fff;
     }
 
     .modal-btn-submit:hover {
-      background: rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.18);
     }
 
     /* View Config Modal */
@@ -1323,12 +1320,7 @@ def serve_configs_page():
 
       <div class="form-group">
         <label class="form-label">Game</label>
-        <select class="form-select" id="gameName">
-          <option value="Da Hood">Da Hood</option>
-          <option value="Hood Modded">Hood Modded</option>
-          <option value="Da Downhill">Da Downhill</option>
-          <option value="Other">Other</option>
-        </select>
+        <input type="text" class="form-input" id="gameName" placeholder="e.g., Da Hood, Hood Modded, etc.">
       </div>
 
       <div class="form-group">
