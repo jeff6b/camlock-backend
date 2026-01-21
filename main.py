@@ -63,9 +63,17 @@ def init_db():
             redeemed_at TEXT,
             redeemed_by TEXT,
             hwid TEXT,
+            hwid_resets INTEGER DEFAULT 0,
             active INTEGER DEFAULT 0,
             created_by TEXT
         )""")
+        
+        # Add hwid_resets column if it doesn't exist
+        try:
+            cur.execute("ALTER TABLE keys ADD COLUMN IF NOT EXISTS hwid_resets INTEGER DEFAULT 0")
+            db.commit()
+        except:
+            pass
         
         cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
             id SERIAL PRIMARY KEY,
@@ -116,9 +124,17 @@ def init_db():
             redeemed_at TEXT,
             redeemed_by TEXT,
             hwid TEXT,
+            hwid_resets INTEGER DEFAULT 0,
             active INTEGER DEFAULT 0,
             created_by TEXT
         )""")
+        
+        # Add hwid_resets column if it doesn't exist
+        try:
+            cur.execute("ALTER TABLE keys ADD COLUMN hwid_resets INTEGER DEFAULT 0")
+            db.commit()
+        except:
+            pass
         
         cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,6 +178,10 @@ class UserRegister(BaseModel):
 class UserLogin(BaseModel):
     username: str
     password: str
+
+class RedeemRequest(BaseModel):
+    key: str
+    discord_id: str
 
 class KeyValidate(BaseModel):
     username: str
@@ -947,17 +967,123 @@ def serve_dashboard():
 
 # === DASHBOARD HTML ===
 
-@app.get("/dashboard", response_class=HTMLResponse)
-def serve_dashboard():
-    """Serve dashboard page"""
-    return """<!DOCTYPE html>
+# === DASHBOARD API ENDPOINTS ===
+
+@app.get("/api/dashboard/{license_key}")
+def get_dashboard_data_by_license(license_key: str):
+    """Get dashboard data by license key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("SELECT key, duration, expires_at, active, hwid, redeemed_by, hwid_resets FROM keys WHERE key=%s"), (license_key,))
+    result = cur.fetchone()
+    
+    db.close()
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="License not found")
+    
+    key, duration, expires_at, active, hwid, discord_id, hwid_resets = result
+    
+    return {
+        "license_key": key,
+        "duration": duration,
+        "expires_at": expires_at,
+        "active": active,
+        "hwid": hwid,
+        "discord_id": discord_id,
+        "hwid_resets": hwid_resets if hwid_resets else 0
+    }
+
+@app.post("/api/redeem")
+def redeem_license_key(data: RedeemRequest):
+    """Redeem a license key with Discord ID"""
+    db = get_db()
+    cur = db.cursor()
+    
+    # Check if key exists and is not redeemed
+    cur.execute(q("SELECT key, duration, redeemed_at, active FROM keys WHERE key=%s"), (data.key,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="Invalid key")
+    
+    key, duration, redeemed_at, active = result
+    
+    if redeemed_at:
+        db.close()
+        raise HTTPException(status_code=400, detail="Key already redeemed")
+    
+    # Calculate expiry
+    now = datetime.now()
+    if duration == "lifetime":
+        expires_at = None
+    elif duration == "monthly":
+        expires_at = (now + timedelta(days=30)).isoformat()
+    elif duration == "weekly":
+        expires_at = (now + timedelta(days=7)).isoformat()
+    else:
+        expires_at = None
+    
+    # Redeem key
+    cur.execute(q("UPDATE keys SET redeemed_at=%s, redeemed_by=%s, expires_at=%s, active=1 WHERE key=%s"),
+               (now.isoformat(), data.discord_id, expires_at, data.key))
+    db.commit()
+    db.close()
+    
+    return {
+        "success": True,
+        "message": "Key redeemed successfully",
+        "license_key": data.key
+    }
+
+@app.post("/api/reset-hwid/{license_key}")
+def reset_hwid_by_license(license_key: str):
+    """Reset HWID for a license key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    # Get current hwid_resets count
+    cur.execute(q("SELECT hwid_resets FROM keys WHERE key=%s"), (license_key,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="License not found")
+    
+    hwid_resets = result[0] if result[0] else 0
+    
+    # Reset HWID and increment counter
+    cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE key=%s"),
+               (hwid_resets + 1, license_key))
+    db.commit()
+    db.close()
+    
+    return {
+        "success": True,
+        "hwid_resets": hwid_resets + 1,
+        "message": "HWID reset successfully"
+    }
+
+# === DASHBOARD HTML ===
+
+@app.get("/dashboard/{license_key}", response_class=HTMLResponse)
+def serve_dashboard_page(license_key: str):
+    """Serve dashboard HTML"""
+    return """
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Axion</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
             background: rgb(12,12,12);
             background-image: radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
@@ -975,6 +1101,7 @@ def serve_dashboard():
             position: fixed;
             top: 0;
             bottom: 0;
+            overflow-y: auto;
             text-align: center;
         }
         .logo {
@@ -983,8 +1110,12 @@ def serve_dashboard():
             color: white;
             margin-bottom: 40px;
         }
-        nav ul { list-style: none; }
-        nav li { margin: 12px 0; }
+        nav ul {
+            list-style: none;
+        }
+        nav li {
+            margin: 12px 0;
+        }
         nav a {
             display: block;
             color: #888;
@@ -994,19 +1125,43 @@ def serve_dashboard():
             transition: color 0.2s;
             cursor: pointer;
         }
-        nav a:hover { color: white; }
-        nav a.active { color: white; }
+        nav a:hover {
+            color: white;
+        }
+        nav a.active {
+            color: white;
+        }
         .main-content {
             margin-left: 180px;
             flex: 1;
             padding: 32px 24px 40px 200px;
         }
-        .container { max-width: 1300px; margin: 0 auto; }
-        h1 { font-size: 28px; font-weight: 600; color: white; margin-bottom: 8px; }
-        .subtitle { font-size: 15px; color: #888; margin-bottom: 28px; }
-        .divider { height: 1px; background: rgb(35,35,35); margin: 0 0 36px 0; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            font-size: 15px;
+            color: #888;
+            margin-bottom: 28px;
+        }
+        .divider {
+            height: 1px;
+            background: rgb(35,35,35);
+            margin: 0 0 36px 0;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
         .stats {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -1020,19 +1175,94 @@ def serve_dashboard():
             padding: 24px 20px;
             text-align: center;
         }
-        .stat-label { font-size: 14px; color: #777; margin-bottom: 12px; }
-        .stat-value { font-size: 32px; font-weight: bold; color: white; }
-        .stat-sub { font-size: 13px; color: #666; margin-top: 6px; }
+        .stat-label {
+            font-size: 14px;
+            color: #777;
+            margin-bottom: 12px;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: white;
+        }
+        .stat-sub {
+            font-size: 13px;
+            color: #666;
+            margin-top: 6px;
+        }
+        .manage-grid, .security-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 28px;
+        }
         .card {
             background: rgb(18,18,18);
             border: 1px solid rgb(35,35,35);
             border-radius: 12px;
             padding: 28px;
+            overflow: hidden;
         }
-        .card-title { font-size: 20px; font-weight: 600; color: white; margin-bottom: 8px; }
-        .card-subtitle { font-size: 14px; color: #888; margin-bottom: 28px; }
-        .info-item { margin-bottom: 24px; }
-        .info-label { font-size: 14px; color: #aaa; margin-bottom: 8px; display: block; }
+        .card-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 8px;
+        }
+        .card-subtitle {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 28px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        .input-label {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 8px;
+            display: block;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 14px 16px;
+            background: rgb(25,25,25);
+            border: 1px solid rgb(45,45,45);
+            border-radius: 8px;
+            color: white;
+            font-family: monospace;
+            font-size: 15px;
+        }
+        input::placeholder {
+            color: #666;
+            opacity: 1;
+        }
+        .redeem-btn {
+            width: 100%;
+            padding: 14px;
+            background: white;
+            border: none;
+            border-radius: 8px;
+            color: black;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            transform: scale(1);
+        }
+        .redeem-btn:hover {
+            transform: scale(1.03);
+            background: rgb(240,240,240);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .info-item {
+            margin-bottom: 24px;
+        }
+        .info-label {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 8px;
+            display: block;
+        }
         .info-value {
             width: 100%;
             padding: 14px 16px;
@@ -1046,8 +1276,19 @@ def serve_dashboard():
             transition: filter 0.3s ease;
             user-select: none;
             cursor: pointer;
+            position: relative;
         }
-        .info-value:hover { filter: blur(0); }
+        .info-value:hover {
+            filter: blur(0);
+        }
+        .info-value.clickable {
+            cursor: pointer;
+        }
+        .info-value.clickable:hover {
+            border-color: rgb(65,65,65);
+        }
+        
+        /* Modal */
         .modal {
             display: none;
             position: fixed;
@@ -1058,41 +1299,57 @@ def serve_dashboard():
             justify-content: center;
             align-items: center;
         }
-        .modal.active { display: flex; }
+        .modal.active {
+            display: flex;
+        }
         .modal-content {
             background: #1a1a1f;
             border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px;
-            padding: 32px;
+            border-radius: 8px;
+            padding: 28px;
             width: 90%;
-            max-width: 450px;
-            text-align: center;
+            max-width: 420px;
         }
-        .modal-title { font-size: 22px; font-weight: 600; color: white; margin-bottom: 12px; }
-        .modal-text { font-size: 15px; color: #aaa; margin-bottom: 28px; line-height: 1.5; }
-        .modal-actions { display: flex; gap: 12px; }
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 12px;
+        }
+        .modal-text {
+            color: #aaa;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+        }
         .modal-btn {
             flex: 1;
             padding: 12px;
-            border-radius: 8px;
-            font-size: 15px;
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            font-size: 14px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
-            border: none;
+            color: #fff;
         }
-        .modal-btn-cancel {
-            background: transparent;
-            border: 1px solid rgb(45,45,45);
-            color: #ccc;
+        .modal-btn:hover {
+            background: rgba(255,255,255,0.05);
+            border-color: rgba(255,255,255,0.25);
         }
-        .modal-btn-cancel:hover { background: rgb(25,25,25); }
-        .modal-btn-confirm {
-            background: #d32f2f;
-            border: 1px solid #d32f2f;
-            color: white;
+        .modal-btn-danger {
+            background: rgba(220,53,69,0.1);
+            border-color: rgba(220,53,69,0.3);
         }
-        .modal-btn-confirm:hover { background: #b71c1c; }
+        .modal-btn-danger:hover {
+            background: rgba(220,53,69,0.2);
+            border-color: rgba(220,53,69,0.5);
+        }
+
         @media (max-width: 900px) {
             .sidebar {
                 width: 100%;
@@ -1100,9 +1357,27 @@ def serve_dashboard():
                 position: relative;
                 border-right: none;
                 border-bottom: 1px solid rgb(35,35,35);
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
             }
-            .main-content { margin-left: 0; padding: 24px 16px; }
-            .stats { grid-template-columns: 1fr; }
+            .logo {
+                margin-bottom: 20px;
+            }
+            nav ul {
+                display: flex;
+                justify-content: center;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .main-content {
+                margin-left: 0;
+                padding: 24px 16px;
+            }
+            .stats {
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            }
         }
     </style>
 </head>
@@ -1111,130 +1386,263 @@ def serve_dashboard():
         <div class="logo">Axion</div>
         <nav>
             <ul>
-                <li><a href="#subscriptions" class="active">Subscriptions</a></li>
-                <li><a href="#security">Security</a></li>
+                <li><a class="active" data-tab="subscriptions">Subscriptions</a></li>
+                <li><a data-tab="manage">Manage</a></li>
+                <li><a data-tab="security">Security</a></li>
             </ul>
         </nav>
     </aside>
+
     <main class="main-content">
         <div class="container">
             <h1 id="page-title">Subscriptions</h1>
-            <div class="subtitle">Manage and view your active subscriptions</div>
+            <div class="subtitle" id="subtitle">Manage and view your active subscriptions</div>
             <div class="divider"></div>
+
+            <!-- Subscriptions Tab -->
             <div id="subscriptions" class="tab-content active">
                 <div class="stats">
                     <div class="stat-card">
-                        <div class="stat-label">Active</div>
-                        <div class="stat-value" id="stat-active">1</div>
+                        <div class="stat-label">Active Subscriptions</div>
+                        <div class="stat-value" id="activeCount">1</div>
                         <div class="stat-sub">subscriptions</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">Total HWID Resets</div>
-                        <div class="stat-value" id="stat-resets">0</div>
-                        <div class="stat-sub">All time</div>
+                        <div class="stat-value" id="hwidResets">0</div>
+                        <div class="stat-sub">all time</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-label">Subscription</div>
-                        <div class="stat-value" id="stat-status">Active</div>
-                        <div class="stat-sub" id="stat-type">Lifetime</div>
+                        <div class="stat-label">License Status</div>
+                        <div class="stat-value" id="licenseStatus">Active</div>
+                        <div class="stat-sub" id="licenseExpiry">Lifetime</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Your Subscription</div>
+                    <div class="card-subtitle">License key information</div>
+                    <div class="info-item">
+                        <div class="info-label">License Key</div>
+                        <div class="info-value" id="displayLicenseKey">Loading...</div>
                     </div>
                 </div>
             </div>
+
+            <!-- Manage Tab -->
+            <div id="manage" class="tab-content">
+                <div class="manage-grid">
+                    <div class="card">
+                        <div class="card-title">Redeem Key</div>
+                        <div class="card-subtitle">Activate a new subscription</div>
+                        <div class="input-group">
+                            <div class="input-label">Subscription Key</div>
+                            <input type="text" id="redeemKeyInput" placeholder="XXXX-XXXX-XXXX-XXXX">
+                        </div>
+                        <div class="input-group">
+                            <div class="input-label">Discord User ID</div>
+                            <input type="text" id="discordIdInput" placeholder="123456789012345678">
+                        </div>
+                        <button class="redeem-btn" onclick="redeemKey()">Redeem Key</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Tab -->
             <div id="security" class="tab-content">
-                <div class="card">
-                    <div class="card-title">Account Information</div>
-                    <div class="card-subtitle">View and manage your account details</div>
-                    <div class="info-item">
-                        <div class="info-label">Username</div>
-                        <div class="info-value" id="display-username">Loading...</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">License Key</div>
-                        <div class="info-value" id="display-license">Loading...</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">HWID (Click to reset)</div>
-                        <div class="info-value" id="display-hwid" onclick="openResetModal()">Loading...</div>
+                <div class="security-grid">
+                    <div class="card">
+                        <div class="card-title">Account Security</div>
+                        <div class="card-subtitle">View and manage your security details</div>
+
+                        <div class="info-item">
+                            <div class="info-label">License Key</div>
+                            <div class="info-value" id="securityLicenseKey">Loading...</div>
+                        </div>
+
+                        <div class="info-item">
+                            <div class="info-label">HWID <span style="font-size: 12px; color: #666;">(Click to reset)</span></div>
+                            <div class="info-value clickable" id="hwidDisplay" onclick="openResetModal()">Loading...</div>
+                        </div>
+
+                        <div class="info-item">
+                            <div class="info-label">Discord ID</div>
+                            <div class="info-value" id="discordIdDisplay">Loading...</div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </main>
+
+    <!-- HWID Reset Confirmation Modal -->
     <div class="modal" id="resetModal">
         <div class="modal-content">
-            <div class="modal-title">⚠️ Reset HWID</div>
-            <div class="modal-text">Are you sure you want to reset your HWID? This will unbind your account from the current device.</div>
+            <div class="modal-title">Reset HWID</div>
+            <div class="modal-text">
+                Are you sure you want to reset your HWID? This action cannot be undone and will log you out from all devices.
+            </div>
             <div class="modal-actions">
-                <button class="modal-btn modal-btn-cancel" onclick="closeResetModal()">Cancel</button>
-                <button class="modal-btn modal-btn-confirm" onclick="confirmReset()">Reset HWID</button>
+                <button class="modal-btn" onclick="closeResetModal()">Cancel</button>
+                <button class="modal-btn modal-btn-danger" onclick="confirmReset()">Reset HWID</button>
             </div>
         </div>
     </div>
+
     <script>
-        let currentUsername = null;
-        document.querySelectorAll('nav a').forEach(link => {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                const targetId = this.getAttribute('href').substring(1);
-                document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-                document.getElementById(targetId).classList.add('active');
-                document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
-                this.classList.add('active');
-                document.getElementById('page-title').textContent = this.textContent;
-                const subtitleEl = document.querySelector('.subtitle');
-                if (targetId === 'subscriptions') {
-                    subtitleEl.textContent = 'Manage and view your active subscriptions';
-                } else if (targetId === 'security') {
-                    subtitleEl.textContent = 'Manage account security and HWID';
-                }
-            });
-        });
-        async function loadDashboard() {
-            const urlParams = new URLSearchParams(window.location.search);
-            currentUsername = urlParams.get('user');
-            if (!currentUsername) { alert('No user specified'); return; }
+        let userData = null;
+
+        // Get license key from URL
+        const licenseKey = window.location.pathname.split('/dashboard/')[1];
+
+        if (!licenseKey) {
+            alert('No license key provided');
+            window.location.href = '/home';
+        }
+
+        // Load user data
+        async function loadUserData() {
             try {
-                const res = await fetch(`/api/dashboard/${currentUsername}`);
+                const res = await fetch(`/api/dashboard/${licenseKey}`);
+                if (res.status === 404) {
+                    alert('License not found');
+                    window.location.href = '/home';
+                    return;
+                }
                 const data = await res.json();
-                document.getElementById('stat-active').textContent = data.subscription_status === 'Active' ? '1' : '0';
-                document.getElementById('stat-resets').textContent = data.hwid_reset_count;
-                document.getElementById('stat-status').textContent = data.subscription_status;
-                document.getElementById('stat-type').textContent = data.subscription_type;
-                document.getElementById('display-username').textContent = data.username;
-                document.getElementById('display-license').textContent = data.license_key_full;
-                document.getElementById('display-hwid').textContent = data.hwid || 'Not bound';
+                userData = data;
+                updateUI();
             } catch (e) {
-                console.error('Error loading dashboard:', e);
+                console.error('Error loading data:', e);
                 alert('Error loading dashboard');
             }
         }
-        function openResetModal() { document.getElementById('resetModal').classList.add('active'); }
-        function closeResetModal() { document.getElementById('resetModal').classList.remove('active'); }
-        async function confirmReset() {
+
+        function updateUI() {
+            // Subscriptions tab
+            document.getElementById('activeCount').textContent = userData.active ? '1' : '0';
+            document.getElementById('hwidResets').textContent = userData.hwid_resets || 0;
+            document.getElementById('licenseStatus').textContent = userData.active ? 'Active' : 'Inactive';
+            
+            // Calculate expiry
+            if (userData.expires_at) {
+                const expiry = new Date(userData.expires_at);
+                const now = new Date();
+                const daysLeft = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+                document.getElementById('licenseExpiry').textContent = daysLeft > 0 ? `${daysLeft} days left` : 'Expired';
+            } else {
+                document.getElementById('licenseExpiry').textContent = 'Lifetime';
+            }
+
+            // Display license keys
+            document.getElementById('displayLicenseKey').textContent = userData.license_key;
+            document.getElementById('securityLicenseKey').textContent = userData.license_key;
+            
+            // HWID
+            document.getElementById('hwidDisplay').textContent = userData.hwid || 'Not set';
+            
+            // Discord ID
+            document.getElementById('discordIdDisplay').textContent = userData.discord_id || 'Not set';
+        }
+
+        // Tab switching
+        document.querySelectorAll('nav a').forEach(link => {
+            link.addEventListener('click', function() {
+                const targetTab = this.getAttribute('data-tab');
+                
+                // Remove active from all tabs and links
+                document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+                document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+                
+                // Add active to clicked
+                document.getElementById(targetTab).classList.add('active');
+                this.classList.add('active');
+                
+                // Update title
+                const titles = {
+                    'subscriptions': 'Subscriptions',
+                    'manage': 'Manage',
+                    'security': 'Security'
+                };
+                const subtitles = {
+                    'subscriptions': 'Manage and view your active subscriptions',
+                    'manage': 'Redeem keys and manage your account',
+                    'security': 'Manage account security and HWID'
+                };
+                document.getElementById('page-title').textContent = titles[targetTab];
+                document.getElementById('subtitle').textContent = subtitles[targetTab];
+            });
+        });
+
+        // Redeem key function
+        async function redeemKey() {
+            const key = document.getElementById('redeemKeyInput').value.trim();
+            const discordId = document.getElementById('discordIdInput').value.trim();
+
+            if (!key) {
+                alert('Please enter a key');
+                return;
+            }
+            if (!discordId) {
+                alert('Please enter your Discord User ID');
+                return;
+            }
+
             try {
-                const res = await fetch('/api/hwid/reset', {
+                const res = await fetch('/api/redeem', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: currentUsername })
+                    body: JSON.stringify({ key, discord_id: discordId })
                 });
+
                 const data = await res.json();
+                
+                if (res.ok) {
+                    alert('Key redeemed successfully!');
+                    // Reload to new license key dashboard
+                    window.location.href = `/dashboard/${key}`;
+                } else {
+                    alert(data.error || 'Failed to redeem key');
+                }
+            } catch (e) {
+                alert('Error redeeming key');
+            }
+        }
+
+        // HWID Reset Modal
+        function openResetModal() {
+            document.getElementById('resetModal').classList.add('active');
+        }
+
+        function closeResetModal() {
+            document.getElementById('resetModal').classList.remove('active');
+        }
+
+        async function confirmReset() {
+            try {
+                const res = await fetch(`/api/reset-hwid/${licenseKey}`, {
+                    method: 'POST'
+                });
+
+                const data = await res.json();
+                
                 if (res.ok) {
                     alert('HWID reset successfully!');
                     closeResetModal();
-                    loadDashboard();
+                    loadUserData(); // Reload data
                 } else {
-                    alert('Error resetting HWID');
+                    alert(data.error || 'Failed to reset HWID');
                 }
             } catch (e) {
                 alert('Error resetting HWID');
             }
         }
-        loadDashboard();
+
+        // Load data on page load
+        loadUserData();
     </script>
 </body>
 </html>
 """
-
 # === HOME PAGE WITH CONFIGS AND MENU ===
 
 @app.get("/home", response_class=HTMLResponse)
@@ -1617,7 +2025,7 @@ def serve_home():
     </div>
     <div class="nav-right">
       <a style="cursor: pointer;" onclick="openMenuLoader()">Menu</a>
-      <a style="cursor: pointer;" id="dashboardLink" style="display: none;" onclick="goToDashboard()">Dashboard</a>
+      <a style="cursor: pointer;" onclick="goToDashboard()">Dashboard</a>
       <div id="userArea"></div>
     </div>
   </nav>
@@ -1714,8 +2122,13 @@ def serve_home():
     }
 
     function goToDashboard() {
-      if (currentUser) {
-        window.location.href = `/dashboard?user=${currentUser.username}`;
+      if (currentUser && currentUser.license_key) {
+        window.location.href = `/dashboard/${currentUser.license_key}`;
+      } else {
+        const license = prompt('Enter your license key to access dashboard:');
+        if (license && license.trim()) {
+          window.location.href = `/dashboard/${license.trim()}`;
+        }
       }
     }
 
