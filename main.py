@@ -184,8 +184,7 @@ class RedeemRequest(BaseModel):
     discord_id: str
 
 class KeyValidate(BaseModel):
-    username: str
-    password: str
+    key: str
     hwid: str
 
 class ConfigData(BaseModel):
@@ -297,120 +296,47 @@ def login_user(data: UserLogin):
 
 @app.post("/api/validate")
 def validate_user(data: KeyValidate):
-    """Validate user for test.py login"""
+    """Validate license key"""
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT password_hash, hwid, license_key FROM users WHERE username=?"), (data.username,))
+    # Check if key exists and is active
+    cur.execute(q("SELECT key, active, expires_at, hwid FROM keys WHERE key=%s"), (data.key,))
     result = cur.fetchone()
     
     if not result:
         db.close()
-        return {"valid": False, "error": "Invalid username"}, 401
+        return {"valid": False, "error": "Invalid license key"}
     
-    password_hash, hwid, license_key = result
+    key, active, expires_at, hwid = result
     
-    if not verify_password(data.password, password_hash):
+    # Check if active
+    if active == 0:
         db.close()
-        return {"valid": False, "error": "Invalid password"}, 401
+        return {"valid": False, "error": "License inactive"}
     
-    # Check license status
-    cur.execute(q("SELECT active, expires_at FROM keys WHERE key=?"), (license_key,))
-    key_result = cur.fetchone()
-    
-    if not key_result or key_result[0] == 0:
-        db.close()
-        return {"valid": False, "error": "License inactive"}, 401
-    
-    expires_at = key_result[1]
+    # Check expiry
     if expires_at and datetime.now() > datetime.fromisoformat(expires_at):
         db.close()
-        return {"valid": False, "error": "License expired"}, 401
+        return {"valid": False, "error": "License expired"}
     
-    # HWID check
-    if hwid is None:
-        cur.execute(q("UPDATE users SET hwid=? WHERE username=?"), (data.hwid, data.username))
-        db.commit()
-        db.close()
-        return {"valid": True, "message": "HWID bound successfully"}
-    elif hwid == data.hwid:
-        db.close()
-        return {"valid": True, "message": "Authentication successful"}
-    else:
-        db.close()
-        return {"valid": False, "error": "HWID mismatch"}, 401
-
-@app.get("/api/dashboard/{username}")
-def get_dashboard_data(username: str):
-    """Get dashboard data for user"""
-    db = get_db()
-    cur = db.cursor()
-    
-    cur.execute(q("SELECT license_key, hwid, hwid_reset_count, created_at, discord_id FROM users WHERE username=?"), (username,))
-    user_result = cur.fetchone()
-    
-    if not user_result:
-        db.close()
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    license_key, hwid, hwid_reset_count, created_at, discord_id = user_result
-    
-    # Get license info
-    cur.execute(q("SELECT duration, expires_at, active FROM keys WHERE key=?"), (license_key,))
-    key_result = cur.fetchone()
+    # HWID check (for test.py, not web)
+    if data.hwid != 'web-login':
+        if hwid is None:
+            # Bind HWID
+            cur.execute(q("UPDATE keys SET hwid=%s WHERE key=%s"), (data.hwid, data.key))
+            db.commit()
+            db.close()
+            return {"valid": True, "message": "HWID bound successfully"}
+        elif hwid == data.hwid:
+            db.close()
+            return {"valid": True, "message": "Authentication successful"}
+        else:
+            db.close()
+            return {"valid": False, "error": "HWID mismatch"}
     
     db.close()
-    
-    if not key_result:
-        subscription_status = "Inactive"
-        subscription_type = "None"
-        expires_at = None
-    else:
-        duration, expires_at, active = key_result
-        subscription_status = "Active" if active == 1 else "Inactive"
-        subscription_type = duration.capitalize() if duration else "Lifetime"
-    
-    return {
-        "username": username,
-        "license_key": license_key[:8] + "..." if license_key else "N/A",
-        "license_key_full": license_key,
-        "hwid": hwid if hwid else "Not bound",
-        "hwid_reset_count": hwid_reset_count,
-        "subscription_status": subscription_status,
-        "subscription_type": subscription_type,
-        "expires_at": expires_at,
-        "created_at": created_at,
-        "discord_id": discord_id
-    }
-
-@app.post("/api/hwid/reset")
-def reset_hwid(data: dict):
-    """Reset HWID for user"""
-    username = data.get("username")
-    
-    db = get_db()
-    cur = db.cursor()
-    
-    cur.execute(q("SELECT hwid_reset_count FROM users WHERE username=?"), (username,))
-    result = cur.fetchone()
-    
-    if not result:
-        db.close()
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    reset_count = result[0]
-    
-    # Reset HWID and increment counter
-    cur.execute(q("UPDATE users SET hwid=NULL, hwid_reset_count=? WHERE username=?"),
-               (reset_count + 1, username))
-    db.commit()
-    db.close()
-    
-    return {
-        "success": True,
-        "reset_count": reset_count + 1,
-        "message": "HWID reset successfully"
-    }
+    return {"valid": True, "message": "Authentication successful"}
 
 # === CONFIG ENDPOINTS ===
 
