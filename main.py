@@ -8,7 +8,6 @@ import sqlite3
 import os
 import json
 import secrets
-import bcrypt
 from datetime import datetime, timedelta
 
 app = FastAPI()
@@ -43,18 +42,7 @@ def init_db():
     cur = db.cursor()
     
     if USE_POSTGRES:
-        # Users table with username/password
-        cur.execute("""CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            license_key TEXT NOT NULL,
-            discord_id TEXT,
-            created_at TEXT NOT NULL,
-            hwid TEXT,
-            hwid_reset_count INTEGER DEFAULT 0
-        )""")
-        
+        # PostgreSQL setup
         cur.execute("""CREATE TABLE IF NOT EXISTS keys (
             key TEXT PRIMARY KEY,
             duration TEXT NOT NULL,
@@ -77,11 +65,11 @@ def init_db():
         
         cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
             id SERIAL PRIMARY KEY,
-            username TEXT NOT NULL,
+            license_key TEXT NOT NULL,
             config_name TEXT NOT NULL,
             config_data TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            UNIQUE(username, config_name)
+            UNIQUE(license_key, config_name)
         )""")
         
         cur.execute("""CREATE TABLE IF NOT EXISTS public_configs (
@@ -91,31 +79,39 @@ def init_db():
             game_name TEXT NOT NULL,
             description TEXT,
             config_data TEXT NOT NULL,
-            username TEXT NOT NULL,
+            license_key TEXT NOT NULL,
             created_at TEXT NOT NULL,
             downloads INTEGER DEFAULT 0
         )""")
         
+        # Drop old table if it has discord_id column, recreate with license_key
+        try:
+            cur.execute("SELECT discord_id FROM public_configs LIMIT 1")
+            # If this works, old schema exists - drop and recreate
+            cur.execute("DROP TABLE IF EXISTS public_configs")
+            cur.execute("""CREATE TABLE public_configs (
+                id SERIAL PRIMARY KEY,
+                config_name TEXT NOT NULL,
+                author_name TEXT NOT NULL,
+                game_name TEXT NOT NULL,
+                description TEXT,
+                config_data TEXT NOT NULL,
+                license_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                downloads INTEGER DEFAULT 0
+            )""")
+            db.commit()
+        except Exception as e:
+            # Rollback failed transaction and continue
+            db.rollback()
         cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
             session_id TEXT PRIMARY KEY,
-            username TEXT NOT NULL,
+            license_key TEXT NOT NULL,
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL
         )""")
-        
     else:
-        # SQLite
-        cur.execute("""CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            license_key TEXT NOT NULL,
-            discord_id TEXT,
-            created_at TEXT NOT NULL,
-            hwid TEXT,
-            hwid_reset_count INTEGER DEFAULT 0
-        )""")
-        
+        # SQLite setup
         cur.execute("""CREATE TABLE IF NOT EXISTS keys (
             key TEXT PRIMARY KEY,
             duration TEXT NOT NULL,
@@ -138,11 +134,11 @@ def init_db():
         
         cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
+            license_key TEXT NOT NULL,
             config_name TEXT NOT NULL,
             config_data TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            UNIQUE(username, config_name)
+            UNIQUE(license_key, config_name)
         )""")
         
         cur.execute("""CREATE TABLE IF NOT EXISTS public_configs (
@@ -152,14 +148,37 @@ def init_db():
             game_name TEXT NOT NULL,
             description TEXT,
             config_data TEXT NOT NULL,
-            username TEXT NOT NULL,
+            license_key TEXT NOT NULL,
             created_at TEXT NOT NULL,
             downloads INTEGER DEFAULT 0
         )""")
         
+        # Drop old table if it has discord_id, recreate with license_key
+        try:
+            cur.execute("SELECT discord_id FROM public_configs LIMIT 1")
+            # Old schema exists - drop and recreate
+            cur.execute("DROP TABLE IF EXISTS public_configs")
+            cur.execute("""CREATE TABLE public_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                config_name TEXT NOT NULL,
+                author_name TEXT NOT NULL,
+                game_name TEXT NOT NULL,
+                description TEXT,
+                config_data TEXT NOT NULL,
+                license_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                downloads INTEGER DEFAULT 0
+            )""")
+            db.commit()
+        except Exception as e:
+            # Rollback and continue
+            try:
+                db.rollback()
+            except:
+                pass
         cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
             session_id TEXT PRIMARY KEY,
-            username TEXT NOT NULL,
+            license_key TEXT NOT NULL,
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL
         )""")
@@ -169,27 +188,17 @@ def init_db():
     print("✅ Database initialized")
 
 # Pydantic models
-class UserRegister(BaseModel):
-    username: str
-    password: str
-    license_key: str
-    discord_id: Optional[str] = None
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
-class RedeemRequest(BaseModel):
-    key: str
-    discord_id: str
-
 class KeyValidate(BaseModel):
     key: str
     hwid: str
 
 class ConfigData(BaseModel):
-    config_name: str
-    config_data: dict
+    name: str
+    data: dict
+
+class KeyCreate(BaseModel):
+    duration: str
+    created_by: str
 
 class PublicConfig(BaseModel):
     config_name: str
@@ -198,101 +207,15 @@ class PublicConfig(BaseModel):
     description: str
     config_data: dict
 
-class KeyCreate(BaseModel):
-    duration: str
-    created_by: str
+class SaveConfig(BaseModel):
+    name: str
+    data: dict
 
-# Password hashing
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+class RedeemRequest(BaseModel):
+    key: str
+    discord_id: str
 
-def verify_password(password: str, hash: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hash.encode())
-
-# === AUTH ENDPOINTS ===
-
-@app.post("/api/auth/register")
-def register_user(data: UserRegister):
-    """Register new user (called by Discord bot)"""
-    db = get_db()
-    cur = db.cursor()
-    
-    # Check if license exists and not redeemed
-    cur.execute(q("SELECT * FROM keys WHERE key=?"), (data.license_key,))
-    key_result = cur.fetchone()
-    
-    if not key_result:
-        db.close()
-        raise HTTPException(status_code=404, detail="Invalid license key")
-    
-    _, duration, created_at, expires_at, redeemed_at, redeemed_by, hwid, active, created_by = key_result
-    
-    if redeemed_by:
-        db.close()
-        raise HTTPException(status_code=400, detail="License already redeemed")
-    
-    # Check if username exists
-    cur.execute(q("SELECT * FROM users WHERE username=?"), (data.username,))
-    if cur.fetchone():
-        db.close()
-        raise HTTPException(status_code=400, detail="Username already exists")
-    
-    # Hash password
-    password_hash = hash_password(data.password)
-    
-    # Create user
-    cur.execute(q("INSERT INTO users (username, password_hash, license_key, discord_id, created_at, hwid_reset_count) VALUES (?, ?, ?, ?, ?, 0)"),
-               (data.username, password_hash, data.license_key, data.discord_id, datetime.now().isoformat()))
-    
-    # Mark key as redeemed
-    cur.execute(q("UPDATE keys SET redeemed_by=?, redeemed_at=?, active=1 WHERE key=?"),
-               (data.username, datetime.now().isoformat(), data.license_key))
-    
-    db.commit()
-    db.close()
-    
-    return {"success": True, "username": data.username}
-
-@app.post("/api/auth/login")
-def login_user(data: UserLogin):
-    """Login with username/password"""
-    db = get_db()
-    cur = db.cursor()
-    
-    cur.execute(q("SELECT password_hash FROM users WHERE username=?"), (data.username,))
-    result = cur.fetchone()
-    
-    if not result:
-        db.close()
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    password_hash = result[0]
-    
-    if not verify_password(data.password, password_hash):
-        db.close()
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    # Create session
-    session_id = secrets.token_urlsafe(32)
-    expires_at = (datetime.now() + timedelta(days=30)).isoformat()
-    
-    cur.execute(q("INSERT INTO user_sessions (session_id, username, created_at, expires_at) VALUES (?, ?, ?, ?)"),
-               (session_id, data.username, datetime.now().isoformat(), expires_at))
-    db.commit()
-    db.close()
-    
-    response = JSONResponse({"success": True, "username": data.username})
-    response.set_cookie(
-        key="session_id",
-        value=session_id,
-        max_age=30 * 24 * 60 * 60,
-        httponly=False,
-        samesite="none",
-        secure=True,
-        path="/"
-    )
-    
-    return response
+# === VALIDATION ===
 
 @app.post("/api/validate")
 def validate_user(data: KeyValidate):
@@ -340,37 +263,86 @@ def validate_user(data: KeyValidate):
 
 # === CONFIG ENDPOINTS ===
 
-@app.get("/api/configs/{username}/list")
-def list_configs(username: str):
-    """Get user's saved configs"""
+@app.get("/api/configs/{license_key}/list")
+def list_configs(license_key: str):
+    """List saved configs for a license key"""
     db = get_db()
     cur = db.cursor()
-    cur.execute(q("SELECT config_name, config_data FROM saved_configs WHERE username=? ORDER BY created_at DESC"), (username,))
-    results = cur.fetchall()
+    cur.execute(q("SELECT config_name FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC"), (license_key,))
+    rows = cur.fetchall()
     db.close()
     
-    return {
-        "configs": [
-            {"name": r[0], "data": json.loads(r[1])}
-            for r in results
-        ]
-    }
+    configs = [row[0] for row in rows]
+    return {"configs": configs}
 
-@app.post("/api/configs/{username}/save")
-def save_config(username: str, data: ConfigData):
-    """Save config for user"""
+@app.post("/api/configs/{license_key}/save")
+def save_config(license_key: str, data: ConfigData):
+    """Save a config"""
     db = get_db()
     cur = db.cursor()
     
     try:
-        cur.execute(q("INSERT INTO saved_configs (username, config_name, config_data, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(username, config_name) DO UPDATE SET config_data=?, created_at=?"),
-                   (username, data.config_name, json.dumps(data.config_data), datetime.now().isoformat(), json.dumps(data.config_data), datetime.now().isoformat()))
+        # Check if config exists
+        cur.execute(q("SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, data.name))
+        existing = cur.fetchone()
+        
+        if existing:
+            # Update existing
+            cur.execute(q("UPDATE saved_configs SET config_data=%s WHERE license_key=%s AND config_name=%s"),
+                       (json.dumps(data.data), license_key, data.name))
+        else:
+            # Insert new
+            cur.execute(q("INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (%s, %s, %s, %s)"),
+                       (license_key, data.name, json.dumps(data.data), datetime.now().isoformat()))
+        
         db.commit()
         db.close()
-        return {"success": True}
+        return {"success": True, "message": "Config saved"}
     except Exception as e:
         db.close()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/configs/{license_key}/load/{config_name}")
+def load_config(license_key: str, config_name: str):
+    """Load a saved config"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
+    row = cur.fetchone()
+    db.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Config not found")
+    
+    return {"config_data": json.loads(row[0])}
+
+@app.post("/api/configs/{license_key}/rename")
+def rename_config(license_key: str, data: dict):
+    """Rename a config"""
+    old_name = data.get("old_name")
+    new_name = data.get("new_name")
+    
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("UPDATE saved_configs SET config_name=%s WHERE license_key=%s AND config_name=%s"),
+               (new_name, license_key, old_name))
+    db.commit()
+    db.close()
+    
+    return {"success": True}
+
+@app.post("/api/configs/{license_key}/delete/{config_name}")
+def delete_config(license_key: str, config_name: str):
+    """Delete a config"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("DELETE FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
+    db.commit()
+    db.close()
+    
+    return {"success": True}
+
+# === PUBLIC CONFIGS ===
 
 @app.get("/api/public-configs")
 def get_public_configs():
@@ -378,74 +350,79 @@ def get_public_configs():
     try:
         db = get_db()
         cur = db.cursor()
-        cur.execute(q("SELECT id, config_name, author_name, game_name, description, config_data, username, created_at, downloads FROM public_configs ORDER BY created_at DESC"))
-        results = cur.fetchall()
+        cur.execute(q("SELECT id, config_name, author_name, game_name, description, downloads, created_at FROM public_configs ORDER BY created_at DESC"))
+        rows = cur.fetchall()
         db.close()
         
-        return {
-            "configs": [
-                {
-                    "id": r[0],
-                    "config_name": r[1],
-                    "author_name": r[2],
-                    "game_name": r[3],
-                    "description": r[4],
-                    "config_data": json.loads(r[5]),
-                    "created_by": r[6][:8] + "...",
-                    "created_at": r[7],
-                    "downloads": r[8]
-                } for r in results
-            ]
-        }
-    except:
+        configs = []
+        for row in rows:
+            configs.append({
+                "id": row[0],
+                "config_name": row[1],
+                "author_name": row[2],
+                "game_name": row[3],
+                "description": row[4],
+                "downloads": row[5],
+                "created_at": row[6]
+            })
+        
+        return {"configs": configs}
+    except Exception as e:
+        print(f"Error loading configs: {e}")
         return {"configs": []}
 
 @app.post("/api/public-configs/create")
-def create_public_config(data: PublicConfig, session_id: Optional[str] = Cookie(None)):
-    """Create public config"""
-    username = "website-user"
+def create_public_config(data: PublicConfig, authorization: Optional[str] = None, session_id: Optional[str] = Cookie(None)):
+    """Create a public config"""
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+    elif session_id:
+        token = session_id
     
-    if session_id:
+    license_key = "website-user"
+    
+    if token:
         db = get_db()
         cur = db.cursor()
+        
         try:
-            cur.execute(q("SELECT username FROM user_sessions WHERE session_id=?"), (session_id,))
+            cur.execute(q("SELECT license_key FROM user_sessions WHERE session_id=%s"), (token,))
             result = cur.fetchone()
+            
             if result:
-                username = result[0]
+                license_key = result[0]
+            
             db.close()
         except:
-            pass
+            try:
+                db.close()
+            except:
+                pass
     
+    # Insert public config with fresh connection
     db = get_db()
     cur = db.cursor()
     
     try:
-        cur.execute(q("INSERT INTO public_configs (config_name, author_name, game_name, description, config_data, username, created_at, downloads) VALUES (?, ?, ?, ?, ?, ?, ?, 0)"),
-                   (data.config_name, data.author_name, data.game_name, data.description, json.dumps(data.config_data), username, datetime.now().isoformat()))
+        cur.execute(q("INSERT INTO public_configs (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads) VALUES (%s, %s, %s, %s, %s, %s, %s, 0)"),
+                   (data.config_name, data.author_name, data.game_name, data.description, json.dumps(data.config_data), license_key, datetime.now().isoformat()))
         db.commit()
         db.close()
-        return {"success": True}
+        return {"success": True, "message": "Config published successfully"}
     except Exception as e:
-        db.close()
+        try:
+            db.close()
+        except:
+            pass
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/public-configs/{config_id}/download")
-def download_config(config_id: int):
-    """Increment download count"""
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(q("UPDATE public_configs SET downloads = downloads + 1 WHERE id=?"), (config_id,))
-    db.commit()
-    db.close()
-    return {"success": True}
 
 @app.get("/api/public-configs/{config_id}")
 def get_public_config(config_id: int):
     """Get a single public config"""
     db = get_db()
     cur = db.cursor()
-    cur.execute(q("SELECT id, config_name, author_name, game_name, description, config_data, downloads FROM public_configs WHERE id=?"), (config_id,))
+    cur.execute(q("SELECT id, config_name, author_name, game_name, description, config_data, downloads FROM public_configs WHERE id=%s"), (config_id,))
     row = cur.fetchone()
     db.close()
     
@@ -462,460 +439,47 @@ def get_public_config(config_id: int):
         "downloads": row[6]
     }
 
+@app.post("/api/public-configs/{config_id}/download")
+def download_config(config_id: int):
+    """Increment download count"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("UPDATE public_configs SET downloads = downloads + 1 WHERE id=%s"), (config_id,))
+    db.commit()
+    db.close()
+    return {"success": True}
+
 # === KEY MANAGEMENT ===
 
 @app.post("/api/keys/create")
 def create_key(data: KeyCreate):
-    """Create new license key"""
-    key = f"{secrets.token_hex(2).upper()}-{secrets.token_hex(2).upper()}-{secrets.token_hex(2).upper()}-{secrets.token_hex(2).upper()}"
-    
-    expires_at = None
-    if data.duration != "lifetime":
-        days = int(data.duration.replace("days", ""))
-        expires_at = (datetime.now() + timedelta(days=days)).isoformat()
+    """Create a new license key"""
+    key = f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}"
     
     db = get_db()
     cur = db.cursor()
-    cur.execute(q("INSERT INTO keys (key, duration, created_at, expires_at, active, created_by) VALUES (?, ?, ?, ?, 0, ?)"),
-               (key, data.duration, datetime.now().isoformat(), expires_at, data.created_by))
-    db.commit()
-    db.close()
     
-    return {"key": key, "duration": data.duration, "expires_at": expires_at}
-
-@app.get("/users/{discord_id}/info")
-def get_user_info(discord_id: str):
-    """Get user info by Discord ID"""
-    db = get_db()
-    cur = db.cursor()
-    
-    cur.execute(q("SELECT username, license_key, hwid FROM users WHERE discord_id=?"), (discord_id,))
-    result = cur.fetchone()
-    db.close()
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="No user found")
-    
-    return {
-        "username": result[0],
-        "license_key": result[1],
-        "hwid": result[2]
-    }
-
-@app.post("/users/{discord_id}/reset-hwid")
-def admin_reset_hwid(discord_id: str):
-    """Admin reset HWID"""
-    db = get_db()
-    cur = db.cursor()
-    
-    cur.execute(q("SELECT hwid, hwid_reset_count, username FROM users WHERE discord_id=?"), (discord_id,))
-    result = cur.fetchone()
-    
-    if not result:
+    try:
+        cur.execute(q("INSERT INTO keys (key, duration, created_at, active, created_by) VALUES (%s, %s, %s, 0, %s)"),
+                   (key, data.duration, datetime.now().isoformat(), data.created_by))
+        db.commit()
         db.close()
-        raise HTTPException(status_code=404, detail="No user found")
-    
-    old_hwid, reset_count, username = result
-    
-    cur.execute(q("UPDATE users SET hwid=NULL, hwid_reset_count=? WHERE discord_id=?"),
-               (reset_count + 1, discord_id))
+        return {"key": key, "duration": data.duration}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/keys/{license_key}")
+def delete_key(license_key: str):
+    """Delete a license key"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("DELETE FROM keys WHERE key=%s"), (license_key,))
     db.commit()
     db.close()
-    
-    return {"success": True, "old_hwid": old_hwid, "reset_count": reset_count + 1}
+    return {"success": True}
 
-# Initialize DB
-init_db()
-
-# === HTML PAGES ===
-
-DASHBOARD_HTML = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Axion</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            background: rgb(12,12,12);
-            background-image: radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
-            background-size: 6px 6px;
-            color: #ccc;
-            font-family: 'Segoe UI', system-ui, sans-serif;
-            min-height: 100vh;
-            display: flex;
-        }
-        .sidebar {
-            width: 180px;
-            background: rgb(13,13,13);
-            border-right: 1px solid rgb(35,35,35);
-            padding: 32px 16px;
-            position: fixed;
-            top: 0;
-            bottom: 0;
-            text-align: center;
-        }
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: white;
-            margin-bottom: 40px;
-        }
-        nav ul { list-style: none; }
-        nav li { margin: 12px 0; }
-        nav a {
-            display: block;
-            color: #888;
-            text-decoration: none;
-            padding: 10px 14px;
-            border-radius: 6px;
-            transition: color 0.2s;
-            cursor: pointer;
-        }
-        nav a:hover { color: white; }
-        nav a.active { color: white; }
-        .main-content {
-            margin-left: 180px;
-            flex: 1;
-            padding: 32px 24px 40px 200px;
-        }
-        .container { max-width: 1300px; margin: 0 auto; }
-        h1 {
-            font-size: 28px;
-            font-weight: 600;
-            color: white;
-            margin-bottom: 8px;
-        }
-        .subtitle {
-            font-size: 15px;
-            color: #888;
-            margin-bottom: 28px;
-        }
-        .divider {
-            height: 1px;
-            background: rgb(35,35,35);
-            margin: 0 0 36px 0;
-        }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
-            margin-bottom: 48px;
-        }
-        .stat-card {
-            background: rgb(18,18,18);
-            border: 1px solid rgb(35,35,35);
-            border-radius: 10px;
-            padding: 24px 20px;
-            text-align: center;
-        }
-        .stat-label {
-            font-size: 14px;
-            color: #777;
-            margin-bottom: 12px;
-        }
-        .stat-value {
-            font-size: 32px;
-            font-weight: bold;
-            color: white;
-        }
-        .stat-sub {
-            font-size: 13px;
-            color: #666;
-            margin-top: 6px;
-        }
-        .card {
-            background: rgb(18,18,18);
-            border: 1px solid rgb(35,35,35);
-            border-radius: 12px;
-            padding: 28px;
-        }
-        .card-title {
-            font-size: 20px;
-            font-weight: 600;
-            color: white;
-            margin-bottom: 8px;
-        }
-        .card-subtitle {
-            font-size: 14px;
-            color: #888;
-            margin-bottom: 28px;
-        }
-        .info-item { margin-bottom: 24px; }
-        .info-label {
-            font-size: 14px;
-            color: #aaa;
-            margin-bottom: 8px;
-            display: block;
-        }
-        .info-value {
-            width: 100%;
-            padding: 14px 16px;
-            background: rgb(25,25,25);
-            border: 1px solid rgb(45,45,45);
-            border-radius: 8px;
-            color: white;
-            font-family: monospace;
-            font-size: 15px;
-            filter: blur(6px);
-            transition: filter 0.3s ease;
-            user-select: none;
-            cursor: pointer;
-        }
-        .info-value:hover { filter: blur(0); }
-        
-        /* Modal */
-        .modal {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.85);
-            backdrop-filter: blur(10px);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-        .modal.active { display: flex; }
-        .modal-content {
-            background: #1a1a1f;
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px;
-            padding: 32px;
-            width: 90%;
-            max-width: 450px;
-            text-align: center;
-        }
-        .modal-title {
-            font-size: 22px;
-            font-weight: 600;
-            color: white;
-            margin-bottom: 12px;
-        }
-        .modal-text {
-            font-size: 15px;
-            color: #aaa;
-            margin-bottom: 28px;
-            line-height: 1.5;
-        }
-        .modal-actions {
-            display: flex;
-            gap: 12px;
-        }
-        .modal-btn {
-            flex: 1;
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .modal-btn-cancel {
-            background: transparent;
-            border: 1px solid rgb(45,45,45);
-            color: #ccc;
-        }
-        .modal-btn-cancel:hover {
-            background: rgb(25,25,25);
-        }
-        .modal-btn-confirm {
-            background: #d32f2f;
-            border: 1px solid #d32f2f;
-            color: white;
-        }
-        .modal-btn-confirm:hover {
-            background: #b71c1c;
-        }
-    </style>
-</head>
-<body>
-    <aside class="sidebar">
-        <div class="logo">Axion</div>
-        <nav>
-            <ul>
-                <li><a href="#subscriptions" class="active">Subscriptions</a></li>
-                <li><a href="#security">Security</a></li>
-            </ul>
-        </nav>
-    </aside>
-
-    <main class="main-content">
-        <div class="container">
-            <h1 id="page-title">Subscriptions</h1>
-            <div class="subtitle">Manage and view your active subscriptions</div>
-            <div class="divider"></div>
-
-            <!-- Subscriptions Tab -->
-            <div id="subscriptions" class="tab-content active">
-                <div class="stats">
-                    <div class="stat-card">
-                        <div class="stat-label">Active</div>
-                        <div class="stat-value" id="stat-active">1</div>
-                        <div class="stat-sub">subscriptions</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Total HWID Resets</div>
-                        <div class="stat-value" id="stat-resets">0</div>
-                        <div class="stat-sub">All time</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Subscription</div>
-                        <div class="stat-value" id="stat-status">Active</div>
-                        <div class="stat-sub" id="stat-type">Lifetime</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Security Tab -->
-            <div id="security" class="tab-content">
-                <div class="card">
-                    <div class="card-title">Account Information</div>
-                    <div class="card-subtitle">View and manage your account details</div>
-
-                    <div class="info-item">
-                        <div class="info-label">Username</div>
-                        <div class="info-value" id="display-username">Loading...</div>
-                    </div>
-
-                    <div class="info-item">
-                        <div class="info-label">License Key</div>
-                        <div class="info-value" id="display-license">Loading...</div>
-                    </div>
-
-                    <div class="info-item">
-                        <div class="info-label">HWID (Click to reset)</div>
-                        <div class="info-value" id="display-hwid" style="cursor:pointer;" onclick="openResetModal()">Loading...</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </main>
-
-    <!-- Reset HWID Modal -->
-    <div class="modal" id="resetModal">
-        <div class="modal-content">
-            <div class="modal-title">⚠️ Reset HWID</div>
-            <div class="modal-text">
-                Are you sure you want to reset your HWID? This will unbind your account from the current device.
-            </div>
-            <div class="modal-actions">
-                <button class="modal-btn modal-btn-cancel" onclick="closeResetModal()">Cancel</button>
-                <button class="modal-btn modal-btn-confirm" onclick="confirmReset()">Reset HWID</button>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        let currentUsername = null;
-
-        // Tab switching
-        document.querySelectorAll('nav a').forEach(link => {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                const targetId = this.getAttribute('href').substring(1);
-                
-                document.querySelectorAll('.tab-content').forEach(tab => {
-                    tab.classList.remove('active');
-                });
-                
-                document.getElementById(targetId).classList.add('active');
-                
-                document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
-                this.classList.add('active');
-                
-                document.getElementById('page-title').textContent = this.textContent;
-                
-                const subtitleEl = document.querySelector('.subtitle');
-                if (targetId === 'subscriptions') {
-                    subtitleEl.textContent = 'Manage and view your active subscriptions';
-                } else if (targetId === 'security') {
-                    subtitleEl.textContent = 'Manage account security and HWID';
-                }
-            });
-        });
-
-        // Load dashboard data
-        async function loadDashboard() {
-            // Get username from URL
-            const urlParams = new URLSearchParams(window.location.search);
-            currentUsername = urlParams.get('user');
-            
-            if (!currentUsername) {
-                alert('No user specified');
-                return;
-            }
-
-            try {
-                const res = await fetch(`/api/dashboard/${currentUsername}`);
-                const data = await res.json();
-
-                // Update stats
-                document.getElementById('stat-active').textContent = data.subscription_status === 'Active' ? '1' : '0';
-                document.getElementById('stat-resets').textContent = data.hwid_reset_count;
-                document.getElementById('stat-status').textContent = data.subscription_status;
-                document.getElementById('stat-type').textContent = data.subscription_type;
-
-                // Update security info
-                document.getElementById('display-username').textContent = data.username;
-                document.getElementById('display-license').textContent = data.license_key_full;
-                document.getElementById('display-hwid').textContent = data.hwid || 'Not bound';
-            } catch (e) {
-                console.error('Error loading dashboard:', e);
-                alert('Error loading dashboard');
-            }
-        }
-
-        function openResetModal() {
-            document.getElementById('resetModal').classList.add('active');
-        }
-
-        function closeResetModal() {
-            document.getElementById('resetModal').classList.remove('active');
-        }
-
-        async function confirmReset() {
-            try {
-                const res = await fetch('/api/hwid/reset', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: currentUsername })
-                });
-
-                const data = await res.json();
-
-                if (res.ok) {
-                    alert('HWID reset successfully!');
-                    closeResetModal();
-                    loadDashboard(); // Reload data
-                } else {
-                    alert('Error resetting HWID');
-                }
-            } catch (e) {
-                alert('Error resetting HWID');
-            }
-        }
-
-        // Load on page load
-        loadDashboard();
-    </script>
-</body>
-</html>
-"""
-
-@app.get("/dashboard", response_class=HTMLResponse)
-def serve_dashboard():
-    """Serve dashboard page"""
-    return DASHBOARD_HTML
-
-# Home page HTML continues in next message due to length...
-
-# === DASHBOARD HTML ===
-
-# === DASHBOARD API ENDPOINTS ===
+# === DASHBOARD API ===
 
 @app.get("/api/dashboard/{license_key}")
 def get_dashboard_data_by_license(license_key: str):
@@ -949,7 +513,6 @@ def redeem_license_key(data: RedeemRequest):
     db = get_db()
     cur = db.cursor()
     
-    # Check if key exists and is not redeemed
     cur.execute(q("SELECT key, duration, redeemed_at, active FROM keys WHERE key=%s"), (data.key,))
     result = cur.fetchone()
     
@@ -963,7 +526,6 @@ def redeem_license_key(data: RedeemRequest):
         db.close()
         raise HTTPException(status_code=400, detail="Key already redeemed")
     
-    # Calculate expiry
     now = datetime.now()
     if duration == "lifetime":
         expires_at = None
@@ -974,7 +536,6 @@ def redeem_license_key(data: RedeemRequest):
     else:
         expires_at = None
     
-    # Redeem key
     cur.execute(q("UPDATE keys SET redeemed_at=%s, redeemed_by=%s, expires_at=%s, active=1 WHERE key=%s"),
                (now.isoformat(), data.discord_id, expires_at, data.key))
     db.commit()
@@ -992,7 +553,6 @@ def reset_hwid_by_license(license_key: str):
     db = get_db()
     cur = db.cursor()
     
-    # Get current hwid_resets count
     cur.execute(q("SELECT hwid_resets FROM keys WHERE key=%s"), (license_key,))
     result = cur.fetchone()
     
@@ -1002,7 +562,6 @@ def reset_hwid_by_license(license_key: str):
     
     hwid_resets = result[0] if result[0] else 0
     
-    # Reset HWID and increment counter
     cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE key=%s"),
                (hwid_resets + 1, license_key))
     db.commit()
@@ -1014,11 +573,2086 @@ def reset_hwid_by_license(license_key: str):
         "message": "HWID reset successfully"
     }
 
-# === DASHBOARD HTML ===
+# === HTML PAGES ===
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AXION — Home</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body, html {
+      height: 100%;
+      background-color: rgb(12, 12, 12);
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow-x: hidden;
+    }
+
+    .image-container {
+      width: 100%;
+      height: 100vh;
+      background-image: url('https://image2url.com/r2/default/images/1768674767693-4fff24d5-abfa-4be9-a3ee-bd44454bad9f.blob');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.01;
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+    }
+
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 1.2rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      background: rgba(12, 12, 12, 0.6);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+    }
+
+    .nav-links a {
+      color: rgba(255, 255, 255, 0.6);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.3s;
+      cursor: pointer;
+    }
+
+    .nav-links a:hover {
+      color: rgba(255, 255, 255, 1);
+    }
+
+    .nav-right {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    .nav-right a {
+      color: rgba(255, 255, 255, 0.7);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.3s;
+    }
+
+    .nav-right a:hover {
+      color: rgba(255, 255, 255, 1);
+    }
+
+    .login-btn {
+      padding: 8px 20px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.9rem;
+    }
+
+    .login-btn:hover {
+      background: rgba(255,255,255,0.15);
+    }
+
+    .user-info {
+      padding: 8px 20px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.9rem;
+    }
+
+    .user-info:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .content {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      overflow-y: auto;
+      pointer-events: none;
+    }
+
+    .content > * {
+      pointer-events: auto;
+    }
+
+    .page {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.6s ease;
+    }
+
+    .page.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .configs-page {
+      justify-content: flex-start;
+      padding-top: 15vh;
+    }
+
+    .about-page {
+      padding: 20px;
+    }
+
+    .about-page .description {
+      max-width: 600px;
+      text-align: center;
+      font-size: 18px;
+      line-height: 1.8;
+      color: #aaa;
+      margin-top: 40px;
+    }
+
+    .pricing-page {
+      justify-content: flex-start;
+      padding-top: 15vh;
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 30px;
+      width: 90%;
+      max-width: 1000px;
+      margin-top: 60px;
+    }
+
+    .pricing-card {
+      background: rgba(18,18,22,0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+      transition: all 0.3s;
+    }
+
+    .pricing-card:hover {
+      transform: translateY(-8px);
+      border-color: rgba(255,255,255,0.2);
+      background: rgba(22,22,26,0.7);
+    }
+
+    .pricing-card.featured {
+      border-color: rgba(255,255,255,0.3);
+      background: rgba(25,25,30,0.8);
+    }
+
+    .plan-name {
+      font-size: 24px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 16px;
+    }
+
+    .plan-price {
+      font-size: 48px;
+      font-weight: 900;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+
+    .plan-duration {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 24px;
+    }
+
+    .plan-features {
+      list-style: none;
+      text-align: left;
+      margin-top: 24px;
+    }
+
+    .plan-features li {
+      padding: 10px 0;
+      color: #aaa;
+      font-size: 15px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .plan-features li:last-child {
+      border-bottom: none;
+    }
+
+    .title-wrapper {
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .title-word {
+      font-size: 3.8rem;
+      font-weight: 900;
+      letter-spacing: -1.5px;
+      text-shadow: 0 0 25px rgba(0,0,0,0.7);
+    }
+
+    .configs-container {
+      width: 90%;
+      max-width: 1200px;
+      margin-top: 60px;
+    }
+
+    .login-required {
+      text-align: center;
+      padding: 60px 20px;
+      background: rgba(18,18,22,0.5);
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .create-btn {
+      padding: 14px 32px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 30px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .create-btn:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
+      transform: translateY(-2px);
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 30px;
+      margin-bottom: 60px;
+    }
+
+    .page-btn {
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      backdrop-filter: blur(10px);
+    }
+
+    .page-btn:hover:not(:disabled) {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
+    }
+
+    .page-btn.active {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.3);
+    }
+
+    .page-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+
+    .config-card {
+      background: rgba(25,25,30,0.6);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+
+    .config-card:hover {
+      background: rgba(30,30,35,0.7);
+      border-color: rgba(255,255,255,0.15);
+      transform: translateY(-4px);
+    }
+
+    .config-name {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .config-game {
+      font-size: 12px;
+      color: #888;
+      background: rgba(255,255,255,0.05);
+      padding: 4px 10px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 12px;
+    }
+
+    .config-description {
+      font-size: 14px;
+      color: #aaa;
+      line-height: 1.5;
+      margin: 12px 0;
+    }
+
+    .config-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+      color: #666;
+    }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(10px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .modal.active {
+      display: flex;
+      animation: fadeIn 0.3s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .modal-content {
+      background: #1a1a1f;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 24px;
+      width: 90%;
+      max-width: 460px;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      transform: scale(0.95);
+      animation: modalZoom 0.3s ease forwards;
+    }
+
+    @keyframes modalZoom {
+      from { transform: scale(0.95); }
+      to { transform: scale(1); }
+    }
+
+    .modal-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #fff;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      padding: 10px 14px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      outline: none;
+      border-color: rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.02);
+    }
+
+    .form-textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
+
+    .form-select {
+      cursor: pointer;
+    }
+
+    .form-select option {
+      background: #1a1a1f;
+      color: #fff;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .modal-btn {
+      flex: 1;
+      padding: 11px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: #fff;
+      backdrop-filter: blur(5px);
+    }
+
+    .modal-btn:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
+    }
+
+    .config-detail-modal .modal-content {
+      max-width: 600px;
+      background: #16161a;
+      padding: 28px;
+    }
+
+    .config-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin: 20px 0;
+      padding: 20px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .detail-section {
+      margin: 20px 0;
+    }
+
+    .detail-label {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-content {
+      color: #aaa;
+      line-height: 1.6;
+      font-size: 14px;
+      padding: 12px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 6px;
+    }
+
+    @media (max-width: 768px) {
+      .title-word {
+        font-size: 2.5rem;
+      }
+      
+      .config-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .pricing-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="image-container"></div>
+
+  <nav class="navbar">
+    <div class="nav-links">
+      <a onclick="showPage('home')">Home</a>
+      <a onclick="showPage('about')">About</a>
+      <a onclick="showPage('pricing')">Pricing</a>
+      <a onclick="showPage('configs')">Configs</a>
+    </div>
+    <div class="nav-right">
+      <a href="">Menu</a>
+      <a href="/dashboard">Dashboard</a>
+      <div id="userArea"></div>
+    </div>
+  </nav>
+
+  <div class="content">
+    <!-- Home Page -->
+    <div id="home" class="page active">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">WELCOME</span>
+        <span class="title-word" style="color:#ffffff;">TO</span>
+        <span class="title-word" style="color:#888888;">AXION</span>
+      </div>
+    </div>
+
+    <!-- About Page -->
+    <div id="about" class="page about-page">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">About</span>
+        <span class="title-word" style="color:#888888;">Axion</span>
+      </div>
+      <div class="description">
+        Axion is a Da Hood external designed to integrate seamlessly in-game. It delivers smooth, reliable performance while bypassing PC checks, giving you a consistent edge during star tryouts and competitive play.
+      </div>
+    </div>
+
+    <!-- Pricing Page -->
+    <div id="pricing" class="page pricing-page">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">Pricing</span>
+      </div>
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <div class="plan-name">Weekly</div>
+          <div class="plan-price">$5</div>
+          <div class="plan-duration">7 days</div>
+          <ul class="plan-features">
+            <li>✓ Full access to Axion</li>
+            <li>✓ All features unlocked</li>
+            <li>✓ Discord support</li>
+          </ul>
+        </div>
+        <div class="pricing-card">
+          <div class="plan-name">Monthly</div>
+          <div class="plan-price">$15</div>
+          <div class="plan-duration">30 days</div>
+          <ul class="plan-features">
+            <li>✓ Full access to Axion</li>
+            <li>✓ All features unlocked</li>
+            <li>✓ Priority support</li>
+          </ul>
+        </div>
+        <div class="pricing-card featured">
+          <div class="plan-name">Lifetime</div>
+          <div class="plan-price">$40</div>
+          <div class="plan-duration">forever</div>
+          <ul class="plan-features">
+            <li>✓ Full access to Axion</li>
+            <li>✓ All features unlocked</li>
+            <li>✓ VIP support</li>
+            <li>✓ Best value</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Configs Page -->
+    <div id="configs" class="page configs-page">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">Community</span>
+        <span class="title-word" style="color:#888888;">Configs</span>
+      </div>
+      
+      <div class="configs-container" id="configsContent">
+        <div class="login-required">
+          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
+          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
+          <button class="login-btn" onclick="showLoginModal()">Login</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Modal -->
+  <div class="modal" id="loginModal">
+    <div class="modal-content">
+      <h2 class="modal-title">Login to Axion</h2>
+      
+      <div class="form-group">
+        <label class="form-label">License Key</label>
+        <input type="text" class="form-input" id="licenseKeyInput" placeholder="XXXX-XXXX-XXXX-XXXX">
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="closeLoginModal()">Cancel</button>
+        <button class="modal-btn" onclick="submitLogin()">Login</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Config Modal -->
+  <div class="modal" id="createModal">
+    <div class="modal-content">
+      <h2 class="modal-title">Create Public Config</h2>
+      
+      <div class="form-group">
+        <label class="form-label">Select Your Saved Config</label>
+        <select class="form-select" id="savedConfigSelect">
+          <option value="">Loading your configs...</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Config Name</label>
+        <input type="text" class="form-input" id="configName" placeholder="e.g., Pro Camlock Settings">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Author Name</label>
+        <input type="text" class="form-input" id="authorName" placeholder="Your name">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Game</label>
+        <input type="text" class="form-input" id="gameName" placeholder="e.g., Da Hood, Hood Modded, etc.">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea class="form-textarea" id="configDescription" placeholder="Describe your config..."></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="closeCreateModal()">Cancel</button>
+        <button class="modal-btn" onclick="publishConfig()">Publish Config</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- View Config Modal -->
+  <div class="modal config-detail-modal" id="viewModal">
+    <div class="modal-content">
+      <h2 class="modal-title" id="viewConfigName">Config Name</h2>
+      
+      <div class="config-stats">
+        <div class="stat-item">
+          <div class="stat-label">Game</div>
+          <div class="stat-value" id="viewGame">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Author</div>
+          <div class="stat-value" id="viewAuthor">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Downloads</div>
+          <div class="stat-value" id="viewDownloads">0</div>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-label">Description</div>
+        <div class="detail-content" id="viewDescription">-</div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="saveConfigToMenu()">Load to Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let allConfigs = [];
+    let currentPage = 1;
+    let currentViewConfig = null;
+    const CONFIGS_PER_PAGE = 4;
+
+    function showPage(pageId) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById(pageId).classList.add('active');
+      
+      if (pageId === 'configs' && currentUser) {
+        loadConfigs();
+      }
+    }
+
+    function showLoginModal() {
+      document.getElementById('loginModal').classList.add('active');
+    }
+
+    function closeLoginModal() {
+      document.getElementById('loginModal').classList.remove('active');
+    }
+
+    async function submitLogin() {
+      const licenseKey = document.getElementById('licenseKeyInput').value.trim();
+
+      if (!licenseKey) {
+        alert('Please enter your license key');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/validate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: licenseKey, hwid: 'web-login' })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          
+          if (data.valid) {
+            currentUser = { 
+              license_key: licenseKey
+            };
+            
+            // Update UI - show first 12 chars of license
+            document.getElementById('userArea').innerHTML = `
+              <div class="user-info" onclick="logout()">
+                <span>${licenseKey.substring(0, 12)}...</span>
+              </div>
+            `;
+            
+            closeLoginModal();
+            loadConfigs();
+          } else {
+            alert('Invalid or expired license key');
+          }
+        } else {
+          alert('Invalid license key');
+        }
+      } catch (e) {
+        alert('Connection error. Please check your internet connection.');
+        console.error('Login error:', e);
+      }
+    }
+
+    function logout() {
+      currentUser = null;
+      document.getElementById('userArea').innerHTML = `
+        <button class="login-btn" onclick="showLoginModal()">Login</button>
+      `;
+      document.getElementById('configsContent').innerHTML = `
+        <div class="login-required">
+          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
+          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
+          <button class="login-btn" onclick="showLoginModal()">Login</button>
+        </div>
+      `;
+    }
+
+    async function loadConfigs() {
+      try {
+        const res = await fetch('/api/public-configs');
+        const data = await res.json();
+        
+        allConfigs = data.configs || [];
+        renderConfigsPage();
+      } catch (e) {
+        console.error('Load error:', e);
+        document.getElementById('configsContent').innerHTML = '<p>Error loading configs</p>';
+      }
+    }
+
+    function renderConfigsPage() {
+      const startIndex = (currentPage - 1) * CONFIGS_PER_PAGE;
+      const endIndex = startIndex + CONFIGS_PER_PAGE;
+      const pageConfigs = allConfigs.slice(startIndex, endIndex);
+      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
+
+      let html = '<button class="create-btn" onclick="openCreateModal()">+ Create Config</button>';
+      html += '<div class="config-grid">';
+      
+      if (pageConfigs.length > 0) {
+        pageConfigs.forEach(config => {
+          html += `
+            <div class="config-card" onclick="viewConfig(${config.id})">
+              <div class="config-name">${config.config_name}</div>
+              <div class="config-game">${config.game_name}</div>
+              <div class="config-description">${config.description}</div>
+              <div class="config-footer">
+                <div>by ${config.author_name}</div>
+                <div>${config.downloads} downloads</div>
+              </div>
+            </div>
+          `;
+        });
+      } else {
+        html += '<p style="color: #888; text-align: center; padding: 40px;">No configs yet! Be the first to create one.</p>';
+      }
+      
+      html += '</div>';
+
+      // Add pagination
+      if (totalPages > 1) {
+        html += '<div class="pagination">';
+        html += `<button class="page-btn" onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>`;
+        
+        for (let i = 1; i <= totalPages; i++) {
+          html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
+        }
+        
+        html += `<button class="page-btn" onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>`;
+        html += '</div>';
+      }
+      
+      document.getElementById('configsContent').innerHTML = html;
+    }
+
+    function changePage(page) {
+      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
+      if (page < 1 || page > totalPages) return;
+      currentPage = page;
+      renderConfigsPage();
+    }
+
+    async function openCreateModal() {
+      document.getElementById('createModal').classList.add('active');
+      
+      // Load user's saved configs from dashboard backend
+      try {
+        const res = await fetch(`/api/configs/${currentUser.license_key}/list`);
+        const data = await res.json();
+        
+        const select = document.getElementById('savedConfigSelect');
+        select.innerHTML = '<option value="">Select a config...</option>';
+        
+        if (data.configs && data.configs.length > 0) {
+          data.configs.forEach(name => {
+            select.innerHTML += `<option value="${name}">${name}</option>`;
+          });
+        } else {
+          select.innerHTML = '<option value="">No saved configs found</option>';
+        }
+      } catch (e) {
+        console.error('Error loading configs:', e);
+      }
+    }
+
+    function closeCreateModal() {
+      document.getElementById('createModal').classList.remove('active');
+    }
+
+    async function publishConfig() {
+      const selectedConfig = document.getElementById('savedConfigSelect').value;
+      const configName = document.getElementById('configName').value.trim();
+      const authorName = document.getElementById('authorName').value.trim();
+      const gameName = document.getElementById('gameName').value.trim();
+      const description = document.getElementById('configDescription').value.trim();
+
+      if (!selectedConfig) {
+        alert('Please select a config');
+        return;
+      }
+      if (!configName || !authorName || !gameName || !description) {
+        alert('Please fill in all fields');
+        return;
+      }
+
+      try {
+        // Load the actual config data
+        const configRes = await fetch(`/api/configs/${currentUser.license_key}/load/${selectedConfig}`, {
+          method: 'POST'
+        });
+        const configData = await configRes.json();
+
+        // Publish to public configs
+        const res = await fetch('/api/public-configs/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            config_name: configName,
+            author_name: authorName,
+            game_name: gameName,
+            description: description,
+            config_data: configData.config_data
+          })
+        });
+
+        if (res.ok) {
+          alert('Config published successfully!');
+          closeCreateModal();
+          loadConfigs();
+        } else {
+          const error = await res.json();
+          alert('Error: ' + (error.detail || 'Failed to publish'));
+        }
+      } catch (e) {
+        alert('Error publishing config: ' + e.message);
+      }
+    }
+
+    async function viewConfig(configId) {
+      try {
+        const res = await fetch(`/api/public-configs/${configId}`);
+        const data = await res.json();
+        
+        currentViewConfig = data;
+        
+        document.getElementById('viewConfigName').textContent = data.config_name;
+        document.getElementById('viewGame').textContent = data.game_name;
+        document.getElementById('viewAuthor').textContent = data.author_name;
+        document.getElementById('viewDownloads').textContent = data.downloads;
+        document.getElementById('viewDescription').textContent = data.description;
+        
+        document.getElementById('viewModal').classList.add('active');
+        
+        // Increment downloads
+        fetch(`/api/public-configs/${configId}/download`, { method: 'POST' });
+      } catch (e) {
+        alert('Error loading config');
+      }
+    }
+
+    function closeViewModal() {
+      document.getElementById('viewModal').classList.remove('active');
+    }
+
+    async function saveConfigToMenu() {
+      if (!currentUser || !currentViewConfig) {
+        alert('Please login first');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/configs/${currentUser.license_key}/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: currentViewConfig.config_name,
+            data: currentViewConfig.config_data
+          })
+        });
+
+        if (res.ok) {
+          alert('Config loaded to your menu!');
+          closeViewModal();
+        } else {
+          alert('Failed to save config');
+        }
+      } catch (e) {
+        alert('Error saving config: ' + e.message);
+      }
+    }
+
+    // Close modals on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeLoginModal();
+        closeCreateModal();
+        closeViewModal();
+      }
+    });
+
+    // Initialize - show login button
+    document.getElementById('userArea').innerHTML = `
+      <button class="login-btn" onclick="showLoginModal()">Login</button>
+    `;
+  </script>
+</body>
+</html>
+"""
+
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/home", response_class=HTMLResponse)
+def serve_home():
+    """Home page with all tabs"""
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AXION — Home</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body, html {
+      height: 100%;
+      background-color: rgb(12, 12, 12);
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow-x: hidden;
+    }
+
+    .image-container {
+      width: 100%;
+      height: 100vh;
+      background-image: url('https://image2url.com/r2/default/images/1768674767693-4fff24d5-abfa-4be9-a3ee-bd44454bad9f.blob');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.01;
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+    }
+
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 1.2rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      background: rgba(12, 12, 12, 0.6);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+    }
+
+    .nav-links a {
+      color: rgba(255, 255, 255, 0.6);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.3s;
+      cursor: pointer;
+    }
+
+    .nav-links a:hover {
+      color: rgba(255, 255, 255, 1);
+    }
+
+    .nav-right {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    .nav-right a {
+      color: rgba(255, 255, 255, 0.7);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.3s;
+    }
+
+    .nav-right a:hover {
+      color: rgba(255, 255, 255, 1);
+    }
+
+    .login-btn {
+      padding: 8px 20px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.9rem;
+    }
+
+    .login-btn:hover {
+      background: rgba(255,255,255,0.15);
+    }
+
+    .user-info {
+      padding: 8px 20px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.9rem;
+    }
+
+    .user-info:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .content {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      overflow-y: auto;
+      pointer-events: none;
+    }
+
+    .content > * {
+      pointer-events: auto;
+    }
+
+    .page {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.6s ease;
+    }
+
+    .page.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .configs-page {
+      justify-content: flex-start;
+      padding-top: 15vh;
+    }
+
+    .about-page {
+      padding: 20px;
+    }
+
+    .about-page .description {
+      max-width: 600px;
+      text-align: center;
+      font-size: 18px;
+      line-height: 1.8;
+      color: #aaa;
+      margin-top: 40px;
+    }
+
+    .pricing-page {
+      justify-content: flex-start;
+      padding-top: 15vh;
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 30px;
+      width: 90%;
+      max-width: 1000px;
+      margin-top: 60px;
+    }
+
+    .pricing-card {
+      background: rgba(18,18,22,0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+      transition: all 0.3s;
+    }
+
+    .pricing-card:hover {
+      transform: translateY(-8px);
+      border-color: rgba(255,255,255,0.2);
+      background: rgba(22,22,26,0.7);
+    }
+
+    .pricing-card.featured {
+      border-color: rgba(255,255,255,0.3);
+      background: rgba(25,25,30,0.8);
+    }
+
+    .plan-name {
+      font-size: 24px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 16px;
+    }
+
+    .plan-price {
+      font-size: 48px;
+      font-weight: 900;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+
+    .plan-duration {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 24px;
+    }
+
+    .plan-features {
+      list-style: none;
+      text-align: left;
+      margin-top: 24px;
+    }
+
+    .plan-features li {
+      padding: 10px 0;
+      color: #aaa;
+      font-size: 15px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .plan-features li:last-child {
+      border-bottom: none;
+    }
+
+    .title-wrapper {
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .title-word {
+      font-size: 3.8rem;
+      font-weight: 900;
+      letter-spacing: -1.5px;
+      text-shadow: 0 0 25px rgba(0,0,0,0.7);
+    }
+
+    .configs-container {
+      width: 90%;
+      max-width: 1200px;
+      margin-top: 60px;
+    }
+
+    .login-required {
+      text-align: center;
+      padding: 60px 20px;
+      background: rgba(18,18,22,0.5);
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .create-btn {
+      padding: 14px 32px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 30px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .create-btn:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
+      transform: translateY(-2px);
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 30px;
+      margin-bottom: 60px;
+    }
+
+    .page-btn {
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      backdrop-filter: blur(10px);
+    }
+
+    .page-btn:hover:not(:disabled) {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
+    }
+
+    .page-btn.active {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.3);
+    }
+
+    .page-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+
+    .config-card {
+      background: rgba(25,25,30,0.6);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+
+    .config-card:hover {
+      background: rgba(30,30,35,0.7);
+      border-color: rgba(255,255,255,0.15);
+      transform: translateY(-4px);
+    }
+
+    .config-name {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .config-game {
+      font-size: 12px;
+      color: #888;
+      background: rgba(255,255,255,0.05);
+      padding: 4px 10px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 12px;
+    }
+
+    .config-description {
+      font-size: 14px;
+      color: #aaa;
+      line-height: 1.5;
+      margin: 12px 0;
+    }
+
+    .config-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+      color: #666;
+    }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(10px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .modal.active {
+      display: flex;
+      animation: fadeIn 0.3s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .modal-content {
+      background: #1a1a1f;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 24px;
+      width: 90%;
+      max-width: 460px;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      transform: scale(0.95);
+      animation: modalZoom 0.3s ease forwards;
+    }
+
+    @keyframes modalZoom {
+      from { transform: scale(0.95); }
+      to { transform: scale(1); }
+    }
+
+    .modal-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #fff;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      padding: 10px 14px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      outline: none;
+      border-color: rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.02);
+    }
+
+    .form-textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
+
+    .form-select {
+      cursor: pointer;
+    }
+
+    .form-select option {
+      background: #1a1a1f;
+      color: #fff;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .modal-btn {
+      flex: 1;
+      padding: 11px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: #fff;
+      backdrop-filter: blur(5px);
+    }
+
+    .modal-btn:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
+    }
+
+    .config-detail-modal .modal-content {
+      max-width: 600px;
+      background: #16161a;
+      padding: 28px;
+    }
+
+    .config-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin: 20px 0;
+      padding: 20px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .detail-section {
+      margin: 20px 0;
+    }
+
+    .detail-label {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-content {
+      color: #aaa;
+      line-height: 1.6;
+      font-size: 14px;
+      padding: 12px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 6px;
+    }
+
+    @media (max-width: 768px) {
+      .title-word {
+        font-size: 2.5rem;
+      }
+      
+      .config-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .pricing-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="image-container"></div>
+
+  <nav class="navbar">
+    <div class="nav-links">
+      <a onclick="showPage('home')">Home</a>
+      <a onclick="showPage('about')">About</a>
+      <a onclick="showPage('pricing')">Pricing</a>
+      <a onclick="showPage('configs')">Configs</a>
+    </div>
+    <div class="nav-right">
+      <a href="https://dashboard.getaxion.lol">Menu</a>
+      <a href="/dashboard">Dashboard</a>
+      <div id="userArea"></div>
+    </div>
+  </nav>
+
+  <div class="content">
+    <!-- Home Page -->
+    <div id="home" class="page active">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">WELCOME</span>
+        <span class="title-word" style="color:#ffffff;">TO</span>
+        <span class="title-word" style="color:#888888;">AXION</span>
+      </div>
+    </div>
+
+    <!-- About Page -->
+    <div id="about" class="page about-page">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">About</span>
+        <span class="title-word" style="color:#888888;">Axion</span>
+      </div>
+      <div class="description">
+        Axion is a Da Hood external designed to integrate seamlessly in-game. It delivers smooth, reliable performance while bypassing PC checks, giving you a consistent edge during star tryouts and competitive play.
+      </div>
+    </div>
+
+    <!-- Pricing Page -->
+    <div id="pricing" class="page pricing-page">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">Pricing</span>
+      </div>
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <div class="plan-name">Weekly</div>
+          <div class="plan-price">$5</div>
+          <div class="plan-duration">7 days</div>
+          <ul class="plan-features">
+            <li>✓ Full access to Axion</li>
+            <li>✓ All features unlocked</li>
+            <li>✓ Discord support</li>
+          </ul>
+        </div>
+        <div class="pricing-card">
+          <div class="plan-name">Monthly</div>
+          <div class="plan-price">$15</div>
+          <div class="plan-duration">30 days</div>
+          <ul class="plan-features">
+            <li>✓ Full access to Axion</li>
+            <li>✓ All features unlocked</li>
+            <li>✓ Priority support</li>
+          </ul>
+        </div>
+        <div class="pricing-card featured">
+          <div class="plan-name">Lifetime</div>
+          <div class="plan-price">$40</div>
+          <div class="plan-duration">forever</div>
+          <ul class="plan-features">
+            <li>✓ Full access to Axion</li>
+            <li>✓ All features unlocked</li>
+            <li>✓ VIP support</li>
+            <li>✓ Best value</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Configs Page -->
+    <div id="configs" class="page configs-page">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">Community</span>
+        <span class="title-word" style="color:#888888;">Configs</span>
+      </div>
+      
+      <div class="configs-container" id="configsContent">
+        <div class="login-required">
+          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
+          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
+          <button class="login-btn" onclick="showLoginModal()">Login</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Modal -->
+  <div class="modal" id="loginModal">
+    <div class="modal-content">
+      <h2 class="modal-title">Login to Axion</h2>
+      
+      <div class="form-group">
+        <label class="form-label">License Key</label>
+        <input type="text" class="form-input" id="licenseKeyInput" placeholder="XXXX-XXXX-XXXX-XXXX">
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="closeLoginModal()">Cancel</button>
+        <button class="modal-btn" onclick="submitLogin()">Login</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Config Modal -->
+  <div class="modal" id="createModal">
+    <div class="modal-content">
+      <h2 class="modal-title">Create Public Config</h2>
+      
+      <div class="form-group">
+        <label class="form-label">Select Your Saved Config</label>
+        <select class="form-select" id="savedConfigSelect">
+          <option value="">Loading your configs...</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Config Name</label>
+        <input type="text" class="form-input" id="configName" placeholder="e.g., Pro Camlock Settings">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Author Name</label>
+        <input type="text" class="form-input" id="authorName" placeholder="Your name">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Game</label>
+        <input type="text" class="form-input" id="gameName" placeholder="e.g., Da Hood, Hood Modded, etc.">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea class="form-textarea" id="configDescription" placeholder="Describe your config..."></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="closeCreateModal()">Cancel</button>
+        <button class="modal-btn" onclick="publishConfig()">Publish Config</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- View Config Modal -->
+  <div class="modal config-detail-modal" id="viewModal">
+    <div class="modal-content">
+      <h2 class="modal-title" id="viewConfigName">Config Name</h2>
+      
+      <div class="config-stats">
+        <div class="stat-item">
+          <div class="stat-label">Game</div>
+          <div class="stat-value" id="viewGame">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Author</div>
+          <div class="stat-value" id="viewAuthor">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Downloads</div>
+          <div class="stat-value" id="viewDownloads">0</div>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-label">Description</div>
+        <div class="detail-content" id="viewDescription">-</div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="saveConfigToMenu()">Load to Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let allConfigs = [];
+    let currentPage = 1;
+    let currentViewConfig = null;
+    const CONFIGS_PER_PAGE = 4;
+
+    function showPage(pageId) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById(pageId).classList.add('active');
+      
+      if (pageId === 'configs' && currentUser) {
+        loadConfigs();
+      }
+    }
+
+    function showLoginModal() {
+      document.getElementById('loginModal').classList.add('active');
+    }
+
+    function closeLoginModal() {
+      document.getElementById('loginModal').classList.remove('active');
+    }
+
+    async function submitLogin() {
+      const licenseKey = document.getElementById('licenseKeyInput').value.trim();
+
+      if (!licenseKey) {
+        alert('Please enter your license key');
+        return;
+      }
+
+      try {
+        const res = await fetch(`https://dashboard.getaxion.lol/api/validate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: licenseKey, hwid: 'web-login' })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          
+          if (data.valid) {
+            currentUser = { 
+              license_key: licenseKey
+            };
+            
+            // Update UI - show first 12 chars of license
+            document.getElementById('userArea').innerHTML = `
+              <div class="user-info" onclick="logout()">
+                <span>${licenseKey.substring(0, 12)}...</span>
+              </div>
+            `;
+            
+            closeLoginModal();
+            loadConfigs();
+          } else {
+            alert('Invalid or expired license key');
+          }
+        } else {
+          alert('Invalid license key');
+        }
+      } catch (e) {
+        alert('Connection error. Please check your internet connection.');
+        console.error('Login error:', e);
+      }
+    }
+
+    function logout() {
+      currentUser = null;
+      document.getElementById('userArea').innerHTML = `
+        <button class="login-btn" onclick="showLoginModal()">Login</button>
+      `;
+      document.getElementById('configsContent').innerHTML = `
+        <div class="login-required">
+          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
+          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
+          <button class="login-btn" onclick="showLoginModal()">Login</button>
+        </div>
+      `;
+    }
+
+    async function loadConfigs() {
+      try {
+        const res = await fetch('https://dashboard.getaxion.lol/api/public-configs');
+        const data = await res.json();
+        
+        allConfigs = data.configs || [];
+        renderConfigsPage();
+      } catch (e) {
+        console.error('Load error:', e);
+        document.getElementById('configsContent').innerHTML = '<p>Error loading configs</p>';
+      }
+    }
+
+    function renderConfigsPage() {
+      const startIndex = (currentPage - 1) * CONFIGS_PER_PAGE;
+      const endIndex = startIndex + CONFIGS_PER_PAGE;
+      const pageConfigs = allConfigs.slice(startIndex, endIndex);
+      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
+
+      let html = '<button class="create-btn" onclick="openCreateModal()">+ Create Config</button>';
+      html += '<div class="config-grid">';
+      
+      if (pageConfigs.length > 0) {
+        pageConfigs.forEach(config => {
+          html += `
+            <div class="config-card" onclick="viewConfig(${config.id})">
+              <div class="config-name">${config.config_name}</div>
+              <div class="config-game">${config.game_name}</div>
+              <div class="config-description">${config.description}</div>
+              <div class="config-footer">
+                <div>by ${config.author_name}</div>
+                <div>${config.downloads} downloads</div>
+              </div>
+            </div>
+          `;
+        });
+      } else {
+        html += '<p style="color: #888; text-align: center; padding: 40px;">No configs yet! Be the first to create one.</p>';
+      }
+      
+      html += '</div>';
+
+      // Add pagination
+      if (totalPages > 1) {
+        html += '<div class="pagination">';
+        html += `<button class="page-btn" onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>`;
+        
+        for (let i = 1; i <= totalPages; i++) {
+          html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
+        }
+        
+        html += `<button class="page-btn" onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>`;
+        html += '</div>';
+      }
+      
+      document.getElementById('configsContent').innerHTML = html;
+    }
+
+    function changePage(page) {
+      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
+      if (page < 1 || page > totalPages) return;
+      currentPage = page;
+      renderConfigsPage();
+    }
+
+    async function openCreateModal() {
+      document.getElementById('createModal').classList.add('active');
+      
+      // Load user's saved configs from dashboard backend
+      try {
+        const res = await fetch(`https://dashboard.getaxion.lol/api/configs/${currentUser.license_key}/list`);
+        const data = await res.json();
+        
+        const select = document.getElementById('savedConfigSelect');
+        select.innerHTML = '<option value="">Select a config...</option>';
+        
+        if (data.configs && data.configs.length > 0) {
+          data.configs.forEach(name => {
+            select.innerHTML += `<option value="${name}">${name}</option>`;
+          });
+        } else {
+          select.innerHTML = '<option value="">No saved configs found</option>';
+        }
+      } catch (e) {
+        console.error('Error loading configs:', e);
+      }
+    }
+
+    function closeCreateModal() {
+      document.getElementById('createModal').classList.remove('active');
+    }
+
+    async function publishConfig() {
+      const selectedConfig = document.getElementById('savedConfigSelect').value;
+      const configName = document.getElementById('configName').value.trim();
+      const authorName = document.getElementById('authorName').value.trim();
+      const gameName = document.getElementById('gameName').value.trim();
+      const description = document.getElementById('configDescription').value.trim();
+
+      if (!selectedConfig) {
+        alert('Please select a config');
+        return;
+      }
+      if (!configName || !authorName || !gameName || !description) {
+        alert('Please fill in all fields');
+        return;
+      }
+
+      try {
+        // Load the actual config data
+        const configRes = await fetch(`https://dashboard.getaxion.lol/api/configs/${currentUser.license_key}/load/${selectedConfig}`, {
+          method: 'POST'
+        });
+        const configData = await configRes.json();
+
+        // Publish to public configs
+        const res = await fetch('https://dashboard.getaxion.lol/api/public-configs/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            config_name: configName,
+            author_name: authorName,
+            game_name: gameName,
+            description: description,
+            config_data: configData.config_data
+          })
+        });
+
+        if (res.ok) {
+          alert('Config published successfully!');
+          closeCreateModal();
+          loadConfigs();
+        } else {
+          const error = await res.json();
+          alert('Error: ' + (error.detail || 'Failed to publish'));
+        }
+      } catch (e) {
+        alert('Error publishing config: ' + e.message);
+      }
+    }
+
+    async function viewConfig(configId) {
+      try {
+        const res = await fetch(`/api/public-configs/${configId}`);
+        const data = await res.json();
+        
+        currentViewConfig = data;
+        
+        document.getElementById('viewConfigName').textContent = data.config_name;
+        document.getElementById('viewGame').textContent = data.game_name;
+        document.getElementById('viewAuthor').textContent = data.author_name;
+        document.getElementById('viewDownloads').textContent = data.downloads;
+        document.getElementById('viewDescription').textContent = data.description;
+        
+        document.getElementById('viewModal').classList.add('active');
+        
+        // Increment downloads
+        fetch(`/api/public-configs/${configId}/download`, { method: 'POST' });
+      } catch (e) {
+        alert('Error loading config');
+      }
+    }
+
+    function closeViewModal() {
+      document.getElementById('viewModal').classList.remove('active');
+    }
+
+    async function saveConfigToMenu() {
+      if (!currentUser || !currentViewConfig) {
+        alert('Please login first');
+        return;
+      }
+
+      try {
+        const res = await fetch(`https://dashboard.getaxion.lol/api/configs/${currentUser.license_key}/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: currentViewConfig.config_name,
+            data: currentViewConfig.config_data
+          })
+        });
+
+        if (res.ok) {
+          alert('Config loaded to your menu!');
+          closeViewModal();
+        } else {
+          alert('Failed to save config');
+        }
+      } catch (e) {
+        alert('Error saving config: ' + e.message);
+      }
+    }
+
+    // Close modals on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeLoginModal();
+        closeCreateModal();
+        closeViewModal();
+      }
+    });
+
+    // Initialize - show login button
+    document.getElementById('userArea').innerHTML = `
+      <button class="login-btn" onclick="showLoginModal()">Login</button>
+    `;
+  </script>
+</body>
+</html>
+"""
+
+"""
 
 @app.get("/dashboard/{license_key}", response_class=HTMLResponse)
-def serve_dashboard_page(license_key: str):
-    """Serve dashboard HTML"""
+def serve_dashboard(license_key: str):
+    """Dashboard page"""
     return """
 <!DOCTYPE html>
 <html lang="en">
@@ -1440,20 +3074,20 @@ def serve_dashboard_page(license_key: str):
         let userData = null;
 
         // Get license key from URL
-        const licenseKey = window.location.pathname.split('/dashboard/')[1];
+        const licenseKey = window.location.pathname.split('/dashboard/')[1] || window.location.hash.substring(1);
 
         if (!licenseKey) {
             alert('No license key provided');
-            window.location.href = '/home';
+            window.location.href = '/';
         }
 
         // Load user data
         async function loadUserData() {
             try {
-                const res = await fetch(`/api/dashboard/${licenseKey}`);
+                const res = await fetch(`https://dashboard.getaxion.lol/api/dashboard/${licenseKey}`);
                 if (res.status === 404) {
                     alert('License not found');
-                    window.location.href = '/home';
+                    window.location.href = '/';
                     return;
                 }
                 const data = await res.json();
@@ -1536,7 +3170,7 @@ def serve_dashboard_page(license_key: str):
             }
 
             try {
-                const res = await fetch('/api/redeem', {
+                const res = await fetch('https://dashboard.getaxion.lol/api/redeem', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ key, discord_id: discordId })
@@ -1547,7 +3181,7 @@ def serve_dashboard_page(license_key: str):
                 if (res.ok) {
                     alert('Key redeemed successfully!');
                     // Reload to new license key dashboard
-                    window.location.href = `/dashboard/${key}`;
+                    window.location.href = `/dashboard.html#${key}`;
                 } else {
                     alert(data.error || 'Failed to redeem key');
                 }
@@ -1567,7 +3201,7 @@ def serve_dashboard_page(license_key: str):
 
         async function confirmReset() {
             try {
-                const res = await fetch(`/api/reset-hwid/${licenseKey}`, {
+                const res = await fetch(`https://dashboard.getaxion.lol/api/reset-hwid/${licenseKey}`, {
                     method: 'POST'
                 });
 
@@ -1592,6 +3226,428 @@ def serve_dashboard_page(license_key: str):
 </html>
 """
 
-# Run the app
+@app.get("/{license_key}", response_class=HTMLResponse)
+def serve_menu(license_key: str):
+    """Menu system"""
+    return f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Axion Menu</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
+        body {{
+            background: rgb(12, 12, 12);
+            color: #fff;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            padding: 40px 20px;
+        }}
+        
+        .container {{
+            max-width: 800px;
+            margin: 0 auto;
+        }}
+        
+        h1 {{
+            font-size: 32px;
+            margin-bottom: 10px;
+            color: #fff;
+        }}
+        
+        .license-key {{
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 40px;
+            font-family: monospace;
+        }}
+        
+        .section {{
+            background: rgba(18, 18, 22, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }}
+        
+        .section-title {{
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #fff;
+        }}
+        
+        .controls {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }}
+        
+        .control-group {{
+            margin-bottom: 16px;
+        }}
+        
+        label {{
+            display: block;
+            font-size: 13px;
+            color: #aaa;
+            margin-bottom: 6px;
+        }}
+        
+        input[type="range"] {{
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }}
+        
+        input[type="range"]::-webkit-slider-thumb {{
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            cursor: pointer;
+        }}
+        
+        input[type="checkbox"] {{
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }}
+        
+        .value-display {{
+            display: inline-block;
+            min-width: 40px;
+            text-align: right;
+            color: #fff;
+            font-weight: 600;
+        }}
+        
+        .btn {{
+            padding: 12px 24px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+        }}
+        
+        .btn:hover {{
+            background: rgba(255, 255, 255, 0.15);
+        }}
+        
+        .config-section {{
+            margin-top: 20px;
+        }}
+        
+        .config-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 12px;
+        }}
+        
+        .config-item {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+        }}
+        
+        .config-item:hover {{
+            background: rgba(255, 255, 255, 0.08);
+        }}
+        
+        .config-actions {{
+            display: flex;
+            gap: 8px;
+        }}
+        
+        .btn-small {{
+            padding: 6px 12px;
+            font-size: 12px;
+        }}
+        
+        .input-text {{
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+        }}
+        
+        .input-text:focus {{
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.3);
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Axion Menu</h1>
+        <div class="license-key">License: {license_key}</div>
+        
+        <!-- Triggerbot Section -->
+        <div class="section">
+            <div class="section-title">Triggerbot Settings</div>
+            <div class="controls">
+                <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="triggerbotEnabled"> Enabled
+                    </label>
+                </div>
+                <div class="control-group">
+                    <label>Delay (ms): <span class="value-display" id="triggerbotDelayValue">50</span></label>
+                    <input type="range" id="triggerbotDelay" min="0" max="200" value="50">
+                </div>
+                <div class="control-group">
+                    <label>Hold Time (ms): <span class="value-display" id="triggerbotHoldValue">100</span></label>
+                    <input type="range" id="triggerbotHold" min="50" max="500" value="100">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Camlock Section -->
+        <div class="section">
+            <div class="section-title">Camlock Settings</div>
+            <div class="controls">
+                <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="camlockEnabled"> Enabled
+                    </label>
+                </div>
+                <div class="control-group">
+                    <label>Smoothness: <span class="value-display" id="camlockSmoothnessValue">10</span></label>
+                    <input type="range" id="camlockSmoothness" min="1" max="20" value="10">
+                </div>
+                <div class="control-group">
+                    <label>Prediction: <span class="value-display" id="camlockPredictionValue">5</span></label>
+                    <input type="range" id="camlockPrediction" min="0" max="20" value="5">
+                </div>
+                <div class="control-group">
+                    <label>FOV: <span class="value-display" id="camlockFovValue">100</span></label>
+                    <input type="range" id="camlockFov" min="50" max="300" value="100">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Config Management -->
+        <div class="section config-section">
+            <div class="section-title">Config Management</div>
+            <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                <input type="text" id="configName" placeholder="Config name..." class="input-text" style="flex: 1;">
+                <button class="btn" onclick="saveConfig()">Save Config</button>
+            </div>
+            
+            <div class="config-list" id="configList">
+                <!-- Configs loaded here -->
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const licenseKey = '{license_key}';
+        
+        // Update value displays
+        document.getElementById('triggerbotDelay').addEventListener('input', (e) => {{
+            document.getElementById('triggerbotDelayValue').textContent = e.target.value;
+        }});
+        
+        document.getElementById('triggerbotHold').addEventListener('input', (e) => {{
+            document.getElementById('triggerbotHoldValue').textContent = e.target.value;
+        }});
+        
+        document.getElementById('camlockSmoothness').addEventListener('input', (e) => {{
+            document.getElementById('camlockSmoothnessValue').textContent = e.target.value;
+        }});
+        
+        document.getElementById('camlockPrediction').addEventListener('input', (e) => {{
+            document.getElementById('camlockPredictionValue').textContent = e.target.value;
+        }});
+        
+        document.getElementById('camlockFov').addEventListener('input', (e) => {{
+            document.getElementById('camlockFovValue').textContent = e.target.value;
+        }});
+        
+        // Get current config
+        function getCurrentConfig() {{
+            return {{
+                triggerbot: {{
+                    enabled: document.getElementById('triggerbotEnabled').checked,
+                    delay: parseInt(document.getElementById('triggerbotDelay').value),
+                    holdTime: parseInt(document.getElementById('triggerbotHold').value)
+                }},
+                camlock: {{
+                    enabled: document.getElementById('camlockEnabled').checked,
+                    smoothness: parseInt(document.getElementById('camlockSmoothness').value),
+                    prediction: parseInt(document.getElementById('camlockPrediction').value),
+                    fov: parseInt(document.getElementById('camlockFov').value)
+                }}
+            }};
+        }}
+        
+        // Apply config
+        function applyConfig(config) {{
+            if (config.triggerbot) {{
+                document.getElementById('triggerbotEnabled').checked = config.triggerbot.enabled || false;
+                document.getElementById('triggerbotDelay').value = config.triggerbot.delay || 50;
+                document.getElementById('triggerbotDelayValue').textContent = config.triggerbot.delay || 50;
+                document.getElementById('triggerbotHold').value = config.triggerbot.holdTime || 100;
+                document.getElementById('triggerbotHoldValue').textContent = config.triggerbot.holdTime || 100;
+            }}
+            
+            if (config.camlock) {{
+                document.getElementById('camlockEnabled').checked = config.camlock.enabled || false;
+                document.getElementById('camlockSmoothness').value = config.camlock.smoothness || 10;
+                document.getElementById('camlockSmoothnessValue').textContent = config.camlock.smoothness || 10;
+                document.getElementById('camlockPrediction').value = config.camlock.prediction || 5;
+                document.getElementById('camlockPredictionValue').textContent = config.camlock.prediction || 5;
+                document.getElementById('camlockFov').value = config.camlock.fov || 100;
+                document.getElementById('camlockFovValue').textContent = config.camlock.fov || 100;
+            }}
+        }}
+        
+        // Save config
+        async function saveConfig() {{
+            const name = document.getElementById('configName').value.trim();
+            if (!name) {{
+                alert('Please enter a config name');
+                return;
+            }}
+            
+            const config = getCurrentConfig();
+            
+            try {{
+                const res = await fetch(`/api/configs/${{licenseKey}}/save`, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ name, data: config }})
+                }});
+                
+                if (res.ok) {{
+                    alert('Config saved!');
+                    document.getElementById('configName').value = '';
+                    loadConfigs();
+                }} else {{
+                    alert('Failed to save config');
+                }}
+            }} catch (e) {{
+                alert('Error saving config');
+            }}
+        }}
+        
+        // Load config
+        async function loadConfig(name) {{
+            try {{
+                const res = await fetch(`/api/configs/${{licenseKey}}/load/${{name}}`, {{
+                    method: 'POST'
+                }});
+                
+                if (res.ok) {{
+                    const data = await res.json();
+                    applyConfig(data.config_data);
+                    alert(`Config "${{name}}" loaded!`);
+                }} else {{
+                    alert('Failed to load config');
+                }}
+            }} catch (e) {{
+                alert('Error loading config');
+            }}
+        }}
+        
+        // Delete config
+        async function deleteConfig(name) {{
+            if (!confirm(`Delete config "${{name}}"?`)) return;
+            
+            try {{
+                const res = await fetch(`/api/configs/${{licenseKey}}/delete/${{name}}`, {{
+                    method: 'POST'
+                }});
+                
+                if (res.ok) {{
+                    alert('Config deleted!');
+                    loadConfigs();
+                }} else {{
+                    alert('Failed to delete config');
+                }}
+            }} catch (e) {{
+                alert('Error deleting config');
+            }}
+        }}
+        
+        // Rename config
+        async function renameConfig(oldName) {{
+            const newName = prompt('Enter new name:', oldName);
+            if (!newName || newName === oldName) return;
+            
+            try {{
+                const res = await fetch(`/api/configs/${{licenseKey}}/rename`, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ old_name: oldName, new_name: newName }})
+                }});
+                
+                if (res.ok) {{
+                    alert('Config renamed!');
+                    loadConfigs();
+                }} else {{
+                    alert('Failed to rename config');
+                }}
+            }} catch (e) {{
+                alert('Error renaming config');
+            }}
+        }}
+        
+        // Load configs list
+        async function loadConfigs() {{
+            try {{
+                const res = await fetch(`/api/configs/${{licenseKey}}/list`);
+                const data = await res.json();
+                
+                const list = document.getElementById('configList');
+                
+                if (data.configs && data.configs.length > 0) {{
+                    list.innerHTML = data.configs.map(name => `
+                        <div class="config-item">
+                            <span>${{name}}</span>
+                            <div class="config-actions">
+                                <button class="btn btn-small" onclick="loadConfig('${{name}}')">Load</button>
+                                <button class="btn btn-small" onclick="renameConfig('${{name}}')">Rename</button>
+                                <button class="btn btn-small" onclick="deleteConfig('${{name}}')">Delete</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }} else {{
+                    list.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No saved configs</p>';
+                }}
+            }} catch (e) {{
+                console.error('Error loading configs:', e);
+            }}
+        }}
+        
+        // Load configs on page load
+        loadConfigs();
+    </script>
+</body>
+</html>
+"""
+
 if __name__ == "__main__":
     init_db()
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
