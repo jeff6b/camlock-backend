@@ -1750,6 +1750,20 @@ def serve_home():
       background: rgba(255,255,255,0.15);
     }
 
+    .user-info {
+      padding: 8px 20px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .user-info:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
     .content {
       position: fixed;
       inset: 0;
@@ -1778,6 +1792,90 @@ def serve_home():
     .configs-page {
       justify-content: flex-start;
       padding-top: 15vh;
+    }
+
+    .about-page {
+      padding: 20px;
+    }
+
+    .about-page .description {
+      max-width: 600px;
+      text-align: center;
+      font-size: 18px;
+      line-height: 1.8;
+      color: #aaa;
+      margin-top: 40px;
+    }
+
+    .pricing-page {
+      justify-content: flex-start;
+      padding-top: 15vh;
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 30px;
+      width: 90%;
+      max-width: 1000px;
+      margin-top: 60px;
+    }
+
+    .pricing-card {
+      background: rgba(18,18,22,0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+      transition: all 0.3s;
+    }
+
+    .pricing-card:hover {
+      transform: translateY(-8px);
+      border-color: rgba(255,255,255,0.2);
+      background: rgba(22,22,26,0.7);
+    }
+
+    .pricing-card.featured {
+      border-color: rgba(255,255,255,0.3);
+      background: rgba(25,25,30,0.8);
+    }
+
+    .plan-name {
+      font-size: 24px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 16px;
+    }
+
+    .plan-price {
+      font-size: 48px;
+      font-weight: 900;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+
+    .plan-duration {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 24px;
+    }
+
+    .plan-features {
+      list-style: none;
+      text-align: left;
+      margin-top: 24px;
+    }
+
+    .plan-features li {
+      padding: 10px 0;
+      color: #aaa;
+      font-size: 15px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .plan-features li:last-child {
+      border-bottom: none;
     }
 
     .title-wrapper {
@@ -2021,6 +2119,9 @@ def serve_home():
 
   <nav class="navbar">
     <div class="nav-links">
+      <a onclick="showPage('home')">Home</a>
+      <a onclick="showPage('about')">About</a>
+      <a onclick="showPage('pricing')">Pricing</a>
       <a onclick="showPage('configs')">Configs</a>
     </div>
     <div class="nav-right">
@@ -2031,8 +2132,68 @@ def serve_home():
   </nav>
 
   <div class="content">
+    <!-- Home Page -->
+    <div id="home" class="page active">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">WELCOME</span>
+        <span class="title-word" style="color:#ffffff;">TO</span>
+        <span class="title-word" style="color:#888888;">AXION</span>
+      </div>
+    </div>
+
+    <!-- About Page -->
+    <div id="about" class="page about-page">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">About</span>
+        <span class="title-word" style="color:#888888;">Axion</span>
+      </div>
+      <div class="description">
+        Axion is a Da Hood external designed to integrate seamlessly in-game. It delivers smooth, reliable performance while bypassing PC checks, giving you a consistent edge during star tryouts and competitive play.
+      </div>
+    </div>
+
+    <!-- Pricing Page -->
+    <div id="pricing" class="page pricing-page">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">Pricing</span>
+      </div>
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <div class="plan-name">Weekly</div>
+          <div class="plan-price">$5</div>
+          <div class="plan-duration">7 days</div>
+          <ul class="plan-features">
+            <li>✓ Full access to Axion</li>
+            <li>✓ All features unlocked</li>
+            <li>✓ Discord support</li>
+          </ul>
+        </div>
+        <div class="pricing-card">
+          <div class="plan-name">Monthly</div>
+          <div class="plan-price">$15</div>
+          <div class="plan-duration">30 days</div>
+          <ul class="plan-features">
+            <li>✓ Full access to Axion</li>
+            <li>✓ All features unlocked</li>
+            <li>✓ Priority support</li>
+          </ul>
+        </div>
+        <div class="pricing-card featured">
+          <div class="plan-name">Lifetime</div>
+          <div class="plan-price">$40</div>
+          <div class="plan-duration">forever</div>
+          <ul class="plan-features">
+            <li>✓ Full access to Axion</li>
+            <li>✓ All features unlocked</li>
+            <li>✓ VIP support</li>
+            <li>✓ Best value</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
     <!-- Configs Page -->
-    <div id="configs" class="page configs-page active">
+    <div id="configs" class="page configs-page">
       <div class="title-wrapper">
         <span class="title-word" style="color:#ffffff;">Community</span>
         <span class="title-word" style="color:#888888;">Configs</span>
@@ -2150,7 +2311,10 @@ def serve_home():
 
         if (res.ok) {
           const data = await res.json();
-          currentUser = { username: data.username };
+          currentUser = { 
+            username: data.username,
+            license_key: data.license_key 
+          };
           
           // Update UI
           document.getElementById('userArea').innerHTML = `
@@ -2158,7 +2322,6 @@ def serve_home():
               <span>${currentUser.username}</span>
             </div>
           `;
-          document.getElementById('dashboardLink').style.display = 'block';
           
           closeLoginModal();
           loadConfigs();
@@ -2175,12 +2338,14 @@ def serve_home():
       document.getElementById('userArea').innerHTML = `
         <button class="login-btn" onclick="showLoginModal()">Login</button>
       `;
-      document.getElementById('dashboardLink').style.display = 'none';
       document.getElementById('configsContent').innerHTML = `
         <div class="login-required">
           <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
           <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
           <button class="login-btn" onclick="showLoginModal()">Login</button>
+        </div>
+      `;
+    }
         </div>
       `;
     }
@@ -2252,6 +2417,11 @@ def serve_home():
         closeMenuModal();
       }
     });
+
+    // Initialize - show login button
+    document.getElementById('userArea').innerHTML = `
+      <button class="login-btn" onclick="showLoginModal()">Login</button>
+    `;
   </script>
 </body>
 </html>
