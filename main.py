@@ -1234,3 +1234,612 @@ def serve_dashboard():
 </body>
 </html>
 """
+
+# === HOME PAGE WITH CONFIGS AND MENU ===
+
+@app.get("/home", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)
+def serve_home():
+    """Main home page with configs and menu access"""
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AXION — Home</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body, html {
+      height: 100%;
+      background-color: rgb(12, 12, 12);
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow-x: hidden;
+    }
+
+    .image-container {
+      width: 100%;
+      height: 100vh;
+      background-image: url('https://image2url.com/r2/default/images/1768674767693-4fff24d5-abfa-4be9-a3ee-bd44454bad9f.blob');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.01;
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+    }
+
+    .navbar {
+      position: fixed;
+      top: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: 82%;
+      max-width: 950px;
+      padding: 12px 48px 12px 40px;
+      border: 1px solid #1f1f1f;
+      border-radius: 12px;
+      background: transparent;
+      backdrop-filter: blur(3px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 40px;
+      font-size: 15px;
+      letter-spacing: 0.8px;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 50px;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: #ffffff;
+      cursor: pointer;
+      transition: color 0.3s ease;
+    }
+
+    .nav-links a:hover {
+      color: #ccc;
+    }
+
+    .nav-right {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 12px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .user-info:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    .login-btn {
+      padding: 8px 20px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .login-btn:hover {
+      background: rgba(255,255,255,0.15);
+    }
+
+    .content {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      overflow-y: auto;
+      pointer-events: none;
+    }
+
+    .page {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.6s ease;
+    }
+
+    .page.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .configs-page {
+      justify-content: flex-start;
+      padding-top: 15vh;
+    }
+
+    .title-wrapper {
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .title-word {
+      font-size: 3.8rem;
+      font-weight: 900;
+      letter-spacing: -1.5px;
+      text-shadow: 0 0 25px rgba(0,0,0,0.7);
+    }
+
+    .configs-container {
+      width: 90%;
+      max-width: 1200px;
+      margin-top: 60px;
+    }
+
+    .create-btn {
+      padding: 14px 32px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 30px;
+      backdrop-filter: blur(10px);
+    }
+
+    .create-btn:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
+      transform: translateY(-2px);
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+
+    .config-card {
+      background: rgba(25,25,30,0.6);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+
+    .config-card:hover {
+      background: rgba(30,30,35,0.7);
+      border-color: rgba(255,255,255,0.15);
+      transform: translateY(-4px);
+    }
+
+    .config-name {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .config-game {
+      font-size: 12px;
+      color: #888;
+      background: rgba(255,255,255,0.05);
+      padding: 4px 10px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 12px;
+    }
+
+    .config-description {
+      font-size: 14px;
+      color: #aaa;
+      line-height: 1.5;
+      margin: 12px 0;
+    }
+
+    .config-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+      color: #666;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 30px;
+      margin-bottom: 60px;
+    }
+
+    .page-btn {
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      backdrop-filter: blur(10px);
+    }
+
+    .page-btn:hover:not(:disabled) {
+      background: rgba(255,255,255,0.05);
+    }
+
+    .page-btn.active {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .page-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    /* Login Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(10px);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .modal.active {
+      display: flex;
+      animation: fadeIn 0.3s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .modal-content {
+      background: #1a1a1f;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 24px;
+      width: 90%;
+      max-width: 400px;
+      transform: scale(0.95);
+      animation: modalZoom 0.3s ease forwards;
+    }
+
+    @keyframes modalZoom {
+      from { transform: scale(0.95); }
+      to { transform: scale(1); }
+    }
+
+    .modal-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #fff;
+      text-align: center;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 6px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 10px 14px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.02);
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .modal-btn {
+      flex: 1;
+      padding: 11px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: #fff;
+    }
+
+    .modal-btn:hover {
+      background: rgba(255,255,255,0.05);
+    }
+
+    .login-required {
+      text-align: center;
+      padding: 60px 20px;
+      background: rgba(25,25,30,0.6);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="image-container"></div>
+
+  <nav class="navbar">
+    <div class="nav-links">
+      <a onclick="showPage('configs')">Configs</a>
+    </div>
+    <div class="nav-right">
+      <a style="cursor: pointer;" onclick="openMenuLoader()">Menu</a>
+      <a style="cursor: pointer;" id="dashboardLink" style="display: none;" onclick="goToDashboard()">Dashboard</a>
+      <div id="userArea"></div>
+    </div>
+  </nav>
+
+  <div class="content">
+    <!-- Configs Page -->
+    <div id="configs" class="page configs-page active">
+      <div class="title-wrapper">
+        <span class="title-word" style="color:#ffffff;">Community</span>
+        <span class="title-word" style="color:#888888;">Configs</span>
+      </div>
+      
+      <div class="configs-container" id="configsContent">
+        <div class="login-required">
+          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
+          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
+          <button class="login-btn" onclick="showLoginModal()">Login</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Modal -->
+  <div class="modal" id="loginModal">
+    <div class="modal-content">
+      <h2 class="modal-title">Login to Axion</h2>
+      
+      <div class="form-group">
+        <label class="form-label">Username</label>
+        <input type="text" class="form-input" id="loginUsername" placeholder="Enter username">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input type="password" class="form-input" id="loginPassword" placeholder="Enter password">
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="closeLoginModal()">Cancel</button>
+        <button class="modal-btn" onclick="submitLogin()">Login</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Menu Loader Modal (opens actual loader window) -->
+  <div class="modal" id="menuModal">
+    <div class="modal-content">
+      <h2 class="modal-title">Open Menu Loader</h2>
+      <p style="color: #aaa; margin-bottom: 20px; text-align: center;">
+        This will open the menu loader where you can login and access your triggerbot/camlock settings.
+      </p>
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="closeMenuModal()">Cancel</button>
+        <button class="modal-btn" onclick="downloadLoader()">Download Loader</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let allConfigs = [];
+    let currentPage = 1;
+    const CONFIGS_PER_PAGE = 4;
+
+    function showPage(pageId) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById(pageId).classList.add('active');
+    }
+
+    function showLoginModal() {
+      document.getElementById('loginModal').classList.add('active');
+    }
+
+    function closeLoginModal() {
+      document.getElementById('loginModal').classList.remove('active');
+    }
+
+    function openMenuLoader() {
+      if (!currentUser) {
+        alert('Please login first to access the menu');
+        showLoginModal();
+        return;
+      }
+      document.getElementById('menuModal').classList.add('active');
+    }
+
+    function closeMenuModal() {
+      document.getElementById('menuModal').classList.remove('active');
+    }
+
+    function downloadLoader() {
+      alert('Loader download link: [Contact admin for loader.exe]');
+      closeMenuModal();
+    }
+
+    function goToDashboard() {
+      if (currentUser) {
+        window.location.href = `/dashboard?user=${currentUser.username}`;
+      }
+    }
+
+    async function submitLogin() {
+      const username = document.getElementById('loginUsername').value.trim();
+      const password = document.getElementById('loginPassword').value.trim();
+
+      if (!username || !password) {
+        alert('Please enter username and password');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          currentUser = { username: data.username };
+          
+          // Update UI
+          document.getElementById('userArea').innerHTML = `
+            <div class="user-info" onclick="logout()">
+              <span>${currentUser.username}</span>
+            </div>
+          `;
+          document.getElementById('dashboardLink').style.display = 'block';
+          
+          closeLoginModal();
+          loadConfigs();
+        } else {
+          alert('Invalid credentials');
+        }
+      } catch (e) {
+        alert('Login error: ' + e.message);
+      }
+    }
+
+    function logout() {
+      currentUser = null;
+      document.getElementById('userArea').innerHTML = `
+        <button class="login-btn" onclick="showLoginModal()">Login</button>
+      `;
+      document.getElementById('dashboardLink').style.display = 'none';
+      document.getElementById('configsContent').innerHTML = `
+        <div class="login-required">
+          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
+          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
+          <button class="login-btn" onclick="showLoginModal()">Login</button>
+        </div>
+      `;
+    }
+
+    async function loadConfigs() {
+      try {
+        const res = await fetch('/api/public-configs');
+        const data = await res.json();
+        allConfigs = data.configs || [];
+        renderConfigsPage();
+      } catch (e) {
+        console.error('Error loading configs:', e);
+      }
+    }
+
+    function renderConfigsPage() {
+      const startIndex = (currentPage - 1) * CONFIGS_PER_PAGE;
+      const endIndex = startIndex + CONFIGS_PER_PAGE;
+      const pageConfigs = allConfigs.slice(startIndex, endIndex);
+      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
+
+      let html = '<button class="create-btn" onclick="alert(\'Create config feature coming soon!\')">+ Create Config</button>';
+      html += '<div class="config-grid">';
+      
+      if (pageConfigs.length > 0) {
+        pageConfigs.forEach(config => {
+          html += `
+            <div class="config-card" onclick="alert('Config: ${config.config_name}')">
+              <div class="config-name">${config.config_name}</div>
+              <div class="config-game">${config.game_name}</div>
+              <div class="config-description">${config.description}</div>
+              <div class="config-footer">
+                <div>by ${config.author_name}</div>
+                <div>${config.downloads} downloads</div>
+              </div>
+            </div>
+          `;
+        });
+      } else {
+        html += '<p style="color: #888; text-align: center; padding: 40px;">No configs yet!</p>';
+      }
+      
+      html += '</div>';
+
+      if (totalPages > 1) {
+        html += '<div class="pagination">';
+        html += `<button class="page-btn" onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>`;
+        for (let i = 1; i <= totalPages; i++) {
+          html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
+        }
+        html += `<button class="page-btn" onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>`;
+        html += '</div>';
+      }
+      
+      document.getElementById('configsContent').innerHTML = html;
+    }
+
+    function changePage(page) {
+      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
+      if (page < 1 || page > totalPages) return;
+      currentPage = page;
+      renderConfigsPage();
+    }
+
+    // Close modals on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeLoginModal();
+        closeMenuModal();
+      }
+    });
+  </script>
+</body>
+</html>
+"""
