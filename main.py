@@ -3225,6 +3225,581 @@ def serve_dashboard(license_key: str):
 </body>
 </html>
 """
+@app.get("/dashboard/{license_key}", response_class=HTMLResponse)
+def serve_dashboard(license_key: str):
+    """Dashboard page"""
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Axion</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: rgb(12,12,12);
+            background-image: radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
+            background-size: 6px 6px;
+            color: #ccc;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            min-height: 100vh;
+            display: flex;
+        }
+        .sidebar {
+            width: 180px;
+            background: rgb(13,13,13);
+            border-right: 1px solid rgb(35,35,35);
+            padding: 32px 16px;
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            overflow-y: auto;
+            text-align: center;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            margin-bottom: 40px;
+        }
+        nav ul {
+            list-style: none;
+        }
+        nav li {
+            margin: 12px 0;
+        }
+        nav a {
+            display: block;
+            color: #888;
+            text-decoration: none;
+            padding: 10px 14px;
+            border-radius: 6px;
+            transition: color 0.2s;
+            cursor: pointer;
+        }
+        nav a:hover {
+            color: white;
+        }
+        nav a.active {
+            color: white;
+        }
+        .main-content {
+            margin-left: 180px;
+            flex: 1;
+            padding: 32px 24px 40px 200px;
+        }
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            font-size: 15px;
+            color: #888;
+            margin-bottom: 28px;
+        }
+        .divider {
+            height: 1px;
+            background: rgb(35,35,35);
+            margin: 0 0 36px 0;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 48px;
+        }
+        .stat-card {
+            background: rgb(18,18,18);
+            border: 1px solid rgb(35,35,35);
+            border-radius: 10px;
+            padding: 24px 20px;
+            text-align: center;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #777;
+            margin-bottom: 12px;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: white;
+        }
+        .stat-sub {
+            font-size: 13px;
+            color: #666;
+            margin-top: 6px;
+        }
+        .manage-grid, .security-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 28px;
+        }
+        .card {
+            background: rgb(18,18,18);
+            border: 1px solid rgb(35,35,35);
+            border-radius: 12px;
+            padding: 28px;
+            overflow: hidden;
+        }
+        .card-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 8px;
+        }
+        .card-subtitle {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 28px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        .input-label {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 8px;
+            display: block;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 14px 16px;
+            background: rgb(25,25,25);
+            border: 1px solid rgb(45,45,45);
+            border-radius: 8px;
+            color: white;
+            font-family: monospace;
+            font-size: 15px;
+        }
+        input::placeholder {
+            color: #666;
+            opacity: 1;
+        }
+        .redeem-btn {
+            width: 100%;
+            padding: 14px;
+            background: white;
+            border: none;
+            border-radius: 8px;
+            color: black;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            transform: scale(1);
+        }
+        .redeem-btn:hover {
+            transform: scale(1.03);
+            background: rgb(240,240,240);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .info-item {
+            margin-bottom: 24px;
+        }
+        .info-label {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 8px;
+            display: block;
+        }
+        .info-value {
+            width: 100%;
+            padding: 14px 16px;
+            background: rgb(25,25,25);
+            border: 1px solid rgb(45,45,45);
+            border-radius: 8px;
+            color: white;
+            font-family: monospace;
+            font-size: 15px;
+            filter: blur(6px);
+            transition: filter 0.3s ease;
+            user-select: none;
+            cursor: pointer;
+            position: relative;
+        }
+        .info-value:hover {
+            filter: blur(0);
+        }
+        .info-value.clickable {
+            cursor: pointer;
+        }
+        .info-value.clickable:hover {
+            border-color: rgb(65,65,65);
+        }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal.active {
+            display: flex;
+        }
+        .modal-content {
+            background: #1a1a1f;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 28px;
+            width: 90%;
+            max-width: 420px;
+        }
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 12px;
+        }
+        .modal-text {
+            color: #aaa;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #fff;
+        }
+        .modal-btn:hover {
+            background: rgba(255,255,255,0.05);
+            border-color: rgba(255,255,255,0.25);
+        }
+        .modal-btn-danger {
+            background: rgba(220,53,69,0.1);
+            border-color: rgba(220,53,69,0.3);
+        }
+        .modal-btn-danger:hover {
+            background: rgba(220,53,69,0.2);
+            border-color: rgba(220,53,69,0.5);
+        }
+
+        @media (max-width: 900px) {
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+                border-right: none;
+                border-bottom: 1px solid rgb(35,35,35);
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            .logo {
+                margin-bottom: 20px;
+            }
+            nav ul {
+                display: flex;
+                justify-content: center;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .main-content {
+                margin-left: 0;
+                padding: 24px 16px;
+            }
+            .stats {
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="logo">Axion</div>
+        <nav>
+            <ul>
+                <li><a class="active" data-tab="subscriptions">Subscriptions</a></li>
+                <li><a data-tab="manage">Manage</a></li>
+                <li><a data-tab="security">Security</a></li>
+            </ul>
+        </nav>
+    </aside>
+
+    <main class="main-content">
+        <div class="container">
+            <h1 id="page-title">Subscriptions</h1>
+            <div class="subtitle" id="subtitle">Manage and view your active subscriptions</div>
+            <div class="divider"></div>
+
+            <!-- Subscriptions Tab -->
+            <div id="subscriptions" class="tab-content active">
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-label">Active Subscriptions</div>
+                        <div class="stat-value" id="activeCount">1</div>
+                        <div class="stat-sub">subscriptions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Total HWID Resets</div>
+                        <div class="stat-value" id="hwidResets">0</div>
+                        <div class="stat-sub">all time</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">License Status</div>
+                        <div class="stat-value" id="licenseStatus">Active</div>
+                        <div class="stat-sub" id="licenseExpiry">Lifetime</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Your Subscription</div>
+                    <div class="card-subtitle">License key information</div>
+                    <div class="info-item">
+                        <div class="info-label">License Key</div>
+                        <div class="info-value" id="displayLicenseKey">Loading...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Manage Tab -->
+            <div id="manage" class="tab-content">
+                <div class="manage-grid">
+                    <div class="card">
+                        <div class="card-title">Redeem Key</div>
+                        <div class="card-subtitle">Activate a new subscription</div>
+                        <div class="input-group">
+                            <div class="input-label">Subscription Key</div>
+                            <input type="text" id="redeemKeyInput" placeholder="XXXX-XXXX-XXXX-XXXX">
+                        </div>
+                        <div class="input-group">
+                            <div class="input-label">Discord User ID</div>
+                            <input type="text" id="discordIdInput" placeholder="123456789012345678">
+                        </div>
+                        <button class="redeem-btn" onclick="redeemKey()">Redeem Key</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Tab -->
+            <div id="security" class="tab-content">
+                <div class="security-grid">
+                    <div class="card">
+                        <div class="card-title">Account Security</div>
+                        <div class="card-subtitle">View and manage your security details</div>
+
+                        <div class="info-item">
+                            <div class="info-label">License Key</div>
+                            <div class="info-value" id="securityLicenseKey">Loading...</div>
+                        </div>
+
+                        <div class="info-item">
+                            <div class="info-label">HWID <span style="font-size: 12px; color: #666;">(Click to reset)</span></div>
+                            <div class="info-value clickable" id="hwidDisplay" onclick="openResetModal()">Loading...</div>
+                        </div>
+
+                        <div class="info-item">
+                            <div class="info-label">Discord ID</div>
+                            <div class="info-value" id="discordIdDisplay">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- HWID Reset Confirmation Modal -->
+    <div class="modal" id="resetModal">
+        <div class="modal-content">
+            <div class="modal-title">Reset HWID</div>
+            <div class="modal-text">
+                Are you sure you want to reset your HWID? This action cannot be undone and will log you out from all devices.
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn" onclick="closeResetModal()">Cancel</button>
+                <button class="modal-btn modal-btn-danger" onclick="confirmReset()">Reset HWID</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let userData = null;
+
+        // Get license key from URL
+        const licenseKey = window.location.pathname.split('/dashboard/')[1] || window.location.hash.substring(1);
+
+        if (!licenseKey) {
+            alert('No license key provided');
+            window.location.href = '/';
+        }
+
+        // Load user data
+        async function loadUserData() {
+            try {
+                const res = await fetch(`https://dashboard.getaxion.lol/api/dashboard/${licenseKey}`);
+                if (res.status === 404) {
+                    alert('License not found');
+                    window.location.href = '/';
+                    return;
+                }
+                const data = await res.json();
+                userData = data;
+                updateUI();
+            } catch (e) {
+                console.error('Error loading data:', e);
+                alert('Error loading dashboard');
+            }
+        }
+
+        function updateUI() {
+            // Subscriptions tab
+            document.getElementById('activeCount').textContent = userData.active ? '1' : '0';
+            document.getElementById('hwidResets').textContent = userData.hwid_resets || 0;
+            document.getElementById('licenseStatus').textContent = userData.active ? 'Active' : 'Inactive';
+            
+            // Calculate expiry
+            if (userData.expires_at) {
+                const expiry = new Date(userData.expires_at);
+                const now = new Date();
+                const daysLeft = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+                document.getElementById('licenseExpiry').textContent = daysLeft > 0 ? `${daysLeft} days left` : 'Expired';
+            } else {
+                document.getElementById('licenseExpiry').textContent = 'Lifetime';
+            }
+
+            // Display license keys
+            document.getElementById('displayLicenseKey').textContent = userData.license_key;
+            document.getElementById('securityLicenseKey').textContent = userData.license_key;
+            
+            // HWID
+            document.getElementById('hwidDisplay').textContent = userData.hwid || 'Not set';
+            
+            // Discord ID
+            document.getElementById('discordIdDisplay').textContent = userData.discord_id || 'Not set';
+        }
+
+        // Tab switching
+        document.querySelectorAll('nav a').forEach(link => {
+            link.addEventListener('click', function() {
+                const targetTab = this.getAttribute('data-tab');
+                
+                // Remove active from all tabs and links
+                document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+                document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+                
+                // Add active to clicked
+                document.getElementById(targetTab).classList.add('active');
+                this.classList.add('active');
+                
+                // Update title
+                const titles = {
+                    'subscriptions': 'Subscriptions',
+                    'manage': 'Manage',
+                    'security': 'Security'
+                };
+                const subtitles = {
+                    'subscriptions': 'Manage and view your active subscriptions',
+                    'manage': 'Redeem keys and manage your account',
+                    'security': 'Manage account security and HWID'
+                };
+                document.getElementById('page-title').textContent = titles[targetTab];
+                document.getElementById('subtitle').textContent = subtitles[targetTab];
+            });
+        });
+
+        // Redeem key function
+        async function redeemKey() {
+            const key = document.getElementById('redeemKeyInput').value.trim();
+            const discordId = document.getElementById('discordIdInput').value.trim();
+
+            if (!key) {
+                alert('Please enter a key');
+                return;
+            }
+            if (!discordId) {
+                alert('Please enter your Discord User ID');
+                return;
+            }
+
+            try {
+                const res = await fetch('https://dashboard.getaxion.lol/api/redeem', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key, discord_id: discordId })
+                });
+
+                const data = await res.json();
+                
+                if (res.ok) {
+                    alert('Key redeemed successfully!');
+                    // Reload to new license key dashboard
+                    window.location.href = `/dashboard.html#${key}`;
+                } else {
+                    alert(data.error || 'Failed to redeem key');
+                }
+            } catch (e) {
+                alert('Error redeeming key');
+            }
+        }
+
+        // HWID Reset Modal
+        function openResetModal() {
+            document.getElementById('resetModal').classList.add('active');
+        }
+
+        function closeResetModal() {
+            document.getElementById('resetModal').classList.remove('active');
+        }
+
+        async function confirmReset() {
+            try {
+                const res = await fetch(`https://dashboard.getaxion.lol/api/reset-hwid/${licenseKey}`, {
+                    method: 'POST'
+                });
+
+                const data = await res.json();
+                
+                if (res.ok) {
+                    alert('HWID reset successfully!');
+                    closeResetModal();
+                    loadUserData(); // Reload data
+                } else {
+                    alert(data.error || 'Failed to reset HWID');
+                }
+            } catch (e) {
+                alert('Error resetting HWID');
+            }
+        }
+
+        // Load data on page load
+        loadUserData();
+    </script>
+</body>
+</html>
+"""
 
 @app.get("/{license_key}", response_class=HTMLResponse)
 def serve_menu(license_key: str):
@@ -3651,3 +4226,4 @@ if __name__ == "__main__":
     init_db()
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
