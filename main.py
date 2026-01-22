@@ -515,15 +515,9 @@ def reset_hwid(license_key: str):
     
     return {"success": True, "hwid_resets": resets + 1}
 
-
 # === HTML PAGES ===
 
-@app.get("/", response_class=HTMLResponse)
-@app.get("/home", response_class=HTMLResponse)
-def serve_home():
-    """Home page"""
-    return """
-<!DOCTYPE html>
+_INDEX_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -1555,15 +1549,11 @@ def serve_home():
   </script>
 </body>
 </html>
-"""
+\"\"\"
 
 """
 
-@app.get("/dashboard/{license_key}", response_class=HTMLResponse)
-def serve_dashboard(license_key: str):
-    """Dashboard page"""
-    return """
-<!DOCTYPE html>
+_DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -2135,113 +2125,109 @@ def serve_dashboard(license_key: str):
 </html>
 """
 
-@app.get("/{license_key}", response_class=HTMLResponse)
-def serve_menu(license_key: str):
-    """Menu system"""
-    return f"""
-<!DOCTYPE html>
+_MENU_HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Axion Menu</title>
     <style>
-        * {{
+        * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-        }}
+        }
         
-        body {{
+        body {
             background: rgb(12, 12, 12);
             color: #fff;
             font-family: 'Segoe UI', system-ui, sans-serif;
             padding: 40px 20px;
-        }}
+        }
         
-        .container {{
+        .container {
             max-width: 800px;
             margin: 0 auto;
-        }}
+        }
         
-        h1 {{
+        h1 {
             font-size: 32px;
             margin-bottom: 10px;
             color: #fff;
-        }}
+        }
         
-        .license-key {{
+        .license-key {
             color: #888;
             font-size: 14px;
             margin-bottom: 40px;
             font-family: monospace;
-        }}
+        }
         
-        .section {{
+        .section {
             background: rgba(18, 18, 22, 0.6);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 12px;
             padding: 24px;
             margin-bottom: 20px;
-        }}
+        }
         
-        .section-title {{
+        .section-title {
             font-size: 20px;
             font-weight: 600;
             margin-bottom: 16px;
             color: #fff;
-        }}
+        }
         
-        .controls {{
+        .controls {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 16px;
-        }}
+        }
         
-        .control-group {{
+        .control-group {
             margin-bottom: 16px;
-        }}
+        }
         
-        label {{
+        label {
             display: block;
             font-size: 13px;
             color: #aaa;
             margin-bottom: 6px;
-        }}
+        }
         
-        input[type="range"] {{
+        input[type="range"] {
             width: 100%;
             height: 6px;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 3px;
             outline: none;
             -webkit-appearance: none;
-        }}
+        }
         
-        input[type="range"]::-webkit-slider-thumb {{
+        input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
             width: 16px;
             height: 16px;
             background: #fff;
             border-radius: 50%;
             cursor: pointer;
-        }}
+        }
         
-        input[type="checkbox"] {{
+        input[type="checkbox"] {
             width: 20px;
             height: 20px;
             cursor: pointer;
-        }}
+        }
         
-        .value-display {{
+        .value-display {
             display: inline-block;
             min-width: 40px;
             text-align: right;
             color: #fff;
             font-weight: 600;
-        }}
+        }
         
-        .btn {{
+        .btn {
             padding: 12px 24px;
             background: rgba(255, 255, 255, 0.1);
             border: 1px solid rgba(255, 255, 255, 0.2);
@@ -2250,24 +2236,24 @@ def serve_menu(license_key: str):
             cursor: pointer;
             transition: all 0.2s;
             font-size: 14px;
-        }}
+        }
         
-        .btn:hover {{
+        .btn:hover {
             background: rgba(255, 255, 255, 0.15);
-        }}
+        }
         
-        .config-section {{
+        .config-section {
             margin-top: 20px;
-        }}
+        }
         
-        .config-list {{
+        .config-list {
             display: flex;
             flex-direction: column;
             gap: 8px;
             margin-top: 12px;
-        }}
+        }
         
-        .config-item {{
+        .config-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -2275,41 +2261,41 @@ def serve_menu(license_key: str):
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 6px;
-        }}
+        }
         
-        .config-item:hover {{
+        .config-item:hover {
             background: rgba(255, 255, 255, 0.08);
-        }}
+        }
         
-        .config-actions {{
+        .config-actions {
             display: flex;
             gap: 8px;
-        }}
+        }
         
-        .btn-small {{
+        .btn-small {
             padding: 6px 12px;
             font-size: 12px;
-        }}
+        }
         
-        .input-text {{
+        .input-text {
             padding: 8px 12px;
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 6px;
             color: #fff;
             font-size: 14px;
-        }}
+        }
         
-        .input-text:focus {{
+        .input-text:focus {
             outline: none;
             border-color: rgba(255, 255, 255, 0.3);
-        }}
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Axion Menu</h1>
-        <div class="license-key">License: {license_key}</div>
+        <div class="license-key">License: {LICENSE_KEY}</div>
         
         <!-- Triggerbot Section -->
         <div class="section">
@@ -2370,57 +2356,57 @@ def serve_menu(license_key: str):
     </div>
     
     <script>
-        const licenseKey = '{license_key}';
+        const licenseKey = '{LICENSE_KEY}';
         
         // Update value displays
-        document.getElementById('triggerbotDelay').addEventListener('input', (e) => {{
+        document.getElementById('triggerbotDelay').addEventListener('input', (e) => {
             document.getElementById('triggerbotDelayValue').textContent = e.target.value;
-        }});
+        });
         
-        document.getElementById('triggerbotHold').addEventListener('input', (e) => {{
+        document.getElementById('triggerbotHold').addEventListener('input', (e) => {
             document.getElementById('triggerbotHoldValue').textContent = e.target.value;
-        }});
+        });
         
-        document.getElementById('camlockSmoothness').addEventListener('input', (e) => {{
+        document.getElementById('camlockSmoothness').addEventListener('input', (e) => {
             document.getElementById('camlockSmoothnessValue').textContent = e.target.value;
-        }});
+        });
         
-        document.getElementById('camlockPrediction').addEventListener('input', (e) => {{
+        document.getElementById('camlockPrediction').addEventListener('input', (e) => {
             document.getElementById('camlockPredictionValue').textContent = e.target.value;
-        }});
+        });
         
-        document.getElementById('camlockFov').addEventListener('input', (e) => {{
+        document.getElementById('camlockFov').addEventListener('input', (e) => {
             document.getElementById('camlockFovValue').textContent = e.target.value;
-        }});
+        });
         
         // Get current config
-        function getCurrentConfig() {{
-            return {{
-                triggerbot: {{
+        function getCurrentConfig() {
+            return {
+                triggerbot: {
                     enabled: document.getElementById('triggerbotEnabled').checked,
                     delay: parseInt(document.getElementById('triggerbotDelay').value),
                     holdTime: parseInt(document.getElementById('triggerbotHold').value)
-                }},
-                camlock: {{
+                },
+                camlock: {
                     enabled: document.getElementById('camlockEnabled').checked,
                     smoothness: parseInt(document.getElementById('camlockSmoothness').value),
                     prediction: parseInt(document.getElementById('camlockPrediction').value),
                     fov: parseInt(document.getElementById('camlockFov').value)
-                }}
-            }};
-        }}
+                }
+            };
+        }
         
         // Apply config
-        function applyConfig(config) {{
-            if (config.triggerbot) {{
+        function applyConfig(config) {
+            if (config.triggerbot) {
                 document.getElementById('triggerbotEnabled').checked = config.triggerbot.enabled || false;
                 document.getElementById('triggerbotDelay').value = config.triggerbot.delay || 50;
                 document.getElementById('triggerbotDelayValue').textContent = config.triggerbot.delay || 50;
                 document.getElementById('triggerbotHold').value = config.triggerbot.holdTime || 100;
                 document.getElementById('triggerbotHoldValue').textContent = config.triggerbot.holdTime || 100;
-            }}
+            }
             
-            if (config.camlock) {{
+            if (config.camlock) {
                 document.getElementById('camlockEnabled').checked = config.camlock.enabled || false;
                 document.getElementById('camlockSmoothness').value = config.camlock.smoothness || 10;
                 document.getElementById('camlockSmoothnessValue').textContent = config.camlock.smoothness || 10;
@@ -2428,133 +2414,148 @@ def serve_menu(license_key: str):
                 document.getElementById('camlockPredictionValue').textContent = config.camlock.prediction || 5;
                 document.getElementById('camlockFov').value = config.camlock.fov || 100;
                 document.getElementById('camlockFovValue').textContent = config.camlock.fov || 100;
-            }}
-        }}
+            }
+        }
         
         // Save config
-        async function saveConfig() {{
+        async function saveConfig() {
             const name = document.getElementById('configName').value.trim();
-            if (!name) {{
+            if (!name) {
                 alert('Please enter a config name');
                 return;
-            }}
+            }
             
             const config = getCurrentConfig();
             
-            try {{
-                const res = await fetch(`/api/configs/${{licenseKey}}/save`, {{
+            try {
+                const res = await fetch(`/api/configs/${licenseKey}/save`, {
                     method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{ name, data: config }})
-                }});
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, data: config })
+                });
                 
-                if (res.ok) {{
+                if (res.ok) {
                     alert('Config saved!');
                     document.getElementById('configName').value = '';
                     loadConfigs();
-                }} else {{
+                } else {
                     alert('Failed to save config');
-                }}
-            }} catch (e) {{
+                }
+            } catch (e) {
                 alert('Error saving config');
-            }}
-        }}
+            }
+        }
         
         // Load config
-        async function loadConfig(name) {{
-            try {{
-                const res = await fetch(`/api/configs/${{licenseKey}}/load/${{name}}`, {{
+        async function loadConfig(name) {
+            try {
+                const res = await fetch(`/api/configs/${licenseKey}/load/${name}`, {
                     method: 'POST'
-                }});
+                });
                 
-                if (res.ok) {{
+                if (res.ok) {
                     const data = await res.json();
                     applyConfig(data.config_data);
-                    alert(`Config "${{name}}" loaded!`);
-                }} else {{
+                    alert(`Config "${name}" loaded!`);
+                } else {
                     alert('Failed to load config');
-                }}
-            }} catch (e) {{
+                }
+            } catch (e) {
                 alert('Error loading config');
-            }}
-        }}
+            }
+        }
         
         // Delete config
-        async function deleteConfig(name) {{
-            if (!confirm(`Delete config "${{name}}"?`)) return;
+        async function deleteConfig(name) {
+            if (!confirm(`Delete config "${name}"?`)) return;
             
-            try {{
-                const res = await fetch(`/api/configs/${{licenseKey}}/delete/${{name}}`, {{
+            try {
+                const res = await fetch(`/api/configs/${licenseKey}/delete/${name}`, {
                     method: 'POST'
-                }});
+                });
                 
-                if (res.ok) {{
+                if (res.ok) {
                     alert('Config deleted!');
                     loadConfigs();
-                }} else {{
+                } else {
                     alert('Failed to delete config');
-                }}
-            }} catch (e) {{
+                }
+            } catch (e) {
                 alert('Error deleting config');
-            }}
-        }}
+            }
+        }
         
         // Rename config
-        async function renameConfig(oldName) {{
+        async function renameConfig(oldName) {
             const newName = prompt('Enter new name:', oldName);
             if (!newName || newName === oldName) return;
             
-            try {{
-                const res = await fetch(`/api/configs/${{licenseKey}}/rename`, {{
+            try {
+                const res = await fetch(`/api/configs/${licenseKey}/rename`, {
                     method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{ old_name: oldName, new_name: newName }})
-                }});
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ old_name: oldName, new_name: newName })
+                });
                 
-                if (res.ok) {{
+                if (res.ok) {
                     alert('Config renamed!');
                     loadConfigs();
-                }} else {{
+                } else {
                     alert('Failed to rename config');
-                }}
-            }} catch (e) {{
+                }
+            } catch (e) {
                 alert('Error renaming config');
-            }}
-        }}
+            }
+        }
         
         // Load configs list
-        async function loadConfigs() {{
-            try {{
-                const res = await fetch(`/api/configs/${{licenseKey}}/list`);
+        async function loadConfigs() {
+            try {
+                const res = await fetch(`/api/configs/${licenseKey}/list`);
                 const data = await res.json();
                 
                 const list = document.getElementById('configList');
                 
-                if (data.configs && data.configs.length > 0) {{
+                if (data.configs && data.configs.length > 0) {
                     list.innerHTML = data.configs.map(name => `
                         <div class="config-item">
-                            <span>${{name}}</span>
+                            <span>${name}</span>
                             <div class="config-actions">
-                                <button class="btn btn-small" onclick="loadConfig('${{name}}')">Load</button>
-                                <button class="btn btn-small" onclick="renameConfig('${{name}}')">Rename</button>
-                                <button class="btn btn-small" onclick="deleteConfig('${{name}}')">Delete</button>
+                                <button class="btn btn-small" onclick="loadConfig('${name}')">Load</button>
+                                <button class="btn btn-small" onclick="renameConfig('${name}')">Rename</button>
+                                <button class="btn btn-small" onclick="deleteConfig('${name}')">Delete</button>
                             </div>
                         </div>
                     `).join('');
-                }} else {{
+                } else {
                     list.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No saved configs</p>';
-                }}
-            }} catch (e) {{
+                }
+            } catch (e) {
                 console.error('Error loading configs:', e);
-            }}
-        }}
+            }
+        }
         
         // Load configs on page load
         loadConfigs();
     </script>
 </body>
-</html>
-"""
+</html>"""
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/home", response_class=HTMLResponse)
+def serve_home():
+    """Home page"""
+    return _INDEX_HTML
+
+@app.get("/dashboard/{license_key}", response_class=HTMLResponse)
+def serve_dashboard(license_key: str):
+    """Dashboard page"""
+    return _DASHBOARD_HTML
+
+@app.get("/{license_key}", response_class=HTMLResponse)
+def serve_menu(license_key: str):
+    """Menu system"""
+    return _MENU_HTML_TEMPLATE.replace('{LICENSE_KEY}', license_key)
 
 if __name__ == "__main__":
     init_db()
