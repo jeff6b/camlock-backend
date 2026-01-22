@@ -522,7 +522,7 @@ _INDEX_HTML = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>AXION — Home</title>
+  <title>Axion — Home</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     
@@ -1087,7 +1087,6 @@ _INDEX_HTML = """<!DOCTYPE html>
     </div>
     <div class="nav-right">
       <a href="https://dashboard.getaxion.lol">Menu</a>
-      <a href="/dashboard">Dashboard</a>
       <div id="userArea"></div>
     </div>
   </nav>
@@ -1098,7 +1097,7 @@ _INDEX_HTML = """<!DOCTYPE html>
       <div class="title-wrapper">
         <span class="title-word" style="color:#ffffff;">WELCOME</span>
         <span class="title-word" style="color:#ffffff;">TO</span>
-        <span class="title-word" style="color:#888888;">AXION</span>
+        <span class="title-word" style="color:#888888;">Axion</span>
       </div>
     </div>
 
