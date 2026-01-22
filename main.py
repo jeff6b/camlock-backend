@@ -515,7 +515,7 @@ def reset_hwid(license_key: str):
     
     return {"success": True, "hwid_resets": resets + 1}
 
-# === HTML PAGES ===
+# === HTML CONSTANTS ===
 
 _INDEX_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -2125,44 +2125,53 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
 </html>
 """
 
-_MENU_HTML_TEMPLATE = """<!DOCTYPE html>
-<html lang="en">
+# Menu will be completely generated in the function
+
+# === HTML ROUTES ===
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/home", response_class=HTMLResponse)
+def serve_home():
+    """Home page with all tabs"""
+    return _INDEX_HTML
+
+@app.get("/dashboard/{license_key}", response_class=HTMLResponse)
+def serve_dashboard(license_key: str):
+    """Dashboard - license stats and management"""
+    return _DASHBOARD_HTML
+
+@app.get("/{license_key}", response_class=HTMLResponse)
+def serve_menu(license_key: str):
+    """Menu - Triggerbot and Camlock control panel"""
+    # This is a completely different page from dashboard
+    # This is where users control the actual cheat
+    menu_html = """<!DOCTYPE html>
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Axion Menu</title>
+    <title>Axion Menu - """ + license_key + """</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background: rgb(12, 12, 12);
+            background: #0c0c0c;
             color: #fff;
-            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-family: system-ui, sans-serif;
             padding: 40px 20px;
         }
-        
         .container {
             max-width: 800px;
             margin: 0 auto;
         }
-        
         h1 {
             font-size: 32px;
             margin-bottom: 10px;
-            color: #fff;
         }
-        
-        .license-key {
+        .license {
             color: #888;
             font-size: 14px;
             margin-bottom: 40px;
             font-family: monospace;
         }
-        
         .section {
             background: rgba(18, 18, 22, 0.6);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2170,63 +2179,42 @@ _MENU_HTML_TEMPLATE = """<!DOCTYPE html>
             padding: 24px;
             margin-bottom: 20px;
         }
-        
         .section-title {
             font-size: 20px;
             font-weight: 600;
             margin-bottom: 16px;
-            color: #fff;
         }
-        
         .controls {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 16px;
         }
-        
         .control-group {
             margin-bottom: 16px;
         }
-        
         label {
             display: block;
             font-size: 13px;
             color: #aaa;
             margin-bottom: 6px;
         }
-        
         input[type="range"] {
             width: 100%;
             height: 6px;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 3px;
             outline: none;
-            -webkit-appearance: none;
         }
-        
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 16px;
-            height: 16px;
-            background: #fff;
-            border-radius: 50%;
-            cursor: pointer;
-        }
-        
         input[type="checkbox"] {
             width: 20px;
             height: 20px;
-            cursor: pointer;
         }
-        
-        .value-display {
+        .value {
             display: inline-block;
             min-width: 40px;
             text-align: right;
-            color: #fff;
             font-weight: 600;
         }
-        
         .btn {
             padding: 12px 24px;
             background: rgba(255, 255, 255, 0.1);
@@ -2234,49 +2222,33 @@ _MENU_HTML_TEMPLATE = """<!DOCTYPE html>
             border-radius: 8px;
             color: #fff;
             cursor: pointer;
-            transition: all 0.2s;
             font-size: 14px;
         }
-        
         .btn:hover {
             background: rgba(255, 255, 255, 0.15);
         }
-        
-        .config-section {
-            margin-top: 20px;
-        }
-        
         .config-list {
             display: flex;
             flex-direction: column;
             gap: 8px;
             margin-top: 12px;
         }
-        
         .config-item {
             display: flex;
             justify-content: space-between;
-            align-items: center;
             padding: 12px;
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 6px;
         }
-        
-        .config-item:hover {
-            background: rgba(255, 255, 255, 0.08);
-        }
-        
         .config-actions {
             display: flex;
             gap: 8px;
         }
-        
         .btn-small {
             padding: 6px 12px;
             font-size: 12px;
         }
-        
         .input-text {
             padding: 8px 12px;
             background: rgba(255, 255, 255, 0.05);
@@ -2285,237 +2257,185 @@ _MENU_HTML_TEMPLATE = """<!DOCTYPE html>
             color: #fff;
             font-size: 14px;
         }
-        
-        .input-text:focus {
-            outline: none;
-            border-color: rgba(255, 255, 255, 0.3);
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Axion Menu</h1>
-        <div class="license-key">License: {LICENSE_KEY}</div>
+        <div class="license">License: """ + license_key + """</div>
         
-        <!-- Triggerbot Section -->
         <div class="section">
             <div class="section-title">Triggerbot Settings</div>
             <div class="controls">
                 <div class="control-group">
-                    <label>
-                        <input type="checkbox" id="triggerbotEnabled"> Enabled
-                    </label>
+                    <label><input type="checkbox" id="triggerEnabled"> Enabled</label>
                 </div>
                 <div class="control-group">
-                    <label>Delay (ms): <span class="value-display" id="triggerbotDelayValue">50</span></label>
-                    <input type="range" id="triggerbotDelay" min="0" max="200" value="50">
+                    <label>Delay (ms): <span class="value" id="triggerDelayVal">50</span></label>
+                    <input type="range" id="triggerDelay" min="0" max="200" value="50">
                 </div>
                 <div class="control-group">
-                    <label>Hold Time (ms): <span class="value-display" id="triggerbotHoldValue">100</span></label>
-                    <input type="range" id="triggerbotHold" min="50" max="500" value="100">
+                    <label>Hold Time (ms): <span class="value" id="triggerHoldVal">100</span></label>
+                    <input type="range" id="triggerHold" min="50" max="500" value="100">
                 </div>
             </div>
         </div>
         
-        <!-- Camlock Section -->
         <div class="section">
             <div class="section-title">Camlock Settings</div>
             <div class="controls">
                 <div class="control-group">
-                    <label>
-                        <input type="checkbox" id="camlockEnabled"> Enabled
-                    </label>
+                    <label><input type="checkbox" id="camlockEnabled"> Enabled</label>
                 </div>
                 <div class="control-group">
-                    <label>Smoothness: <span class="value-display" id="camlockSmoothnessValue">10</span></label>
-                    <input type="range" id="camlockSmoothness" min="1" max="20" value="10">
+                    <label>Smoothness: <span class="value" id="camlockSmoothVal">10</span></label>
+                    <input type="range" id="camlockSmooth" min="1" max="20" value="10">
                 </div>
                 <div class="control-group">
-                    <label>Prediction: <span class="value-display" id="camlockPredictionValue">5</span></label>
-                    <input type="range" id="camlockPrediction" min="0" max="20" value="5">
+                    <label>Prediction: <span class="value" id="camlockPredVal">5</span></label>
+                    <input type="range" id="camlockPred" min="0" max="20" value="5">
                 </div>
                 <div class="control-group">
-                    <label>FOV: <span class="value-display" id="camlockFovValue">100</span></label>
+                    <label>FOV: <span class="value" id="camlockFovVal">100</span></label>
                     <input type="range" id="camlockFov" min="50" max="300" value="100">
                 </div>
             </div>
         </div>
         
-        <!-- Config Management -->
-        <div class="section config-section">
+        <div class="section">
             <div class="section-title">Config Management</div>
             <div style="display: flex; gap: 12px; margin-bottom: 16px;">
                 <input type="text" id="configName" placeholder="Config name..." class="input-text" style="flex: 1;">
                 <button class="btn" onclick="saveConfig()">Save Config</button>
             </div>
-            
-            <div class="config-list" id="configList">
-                <!-- Configs loaded here -->
-            </div>
+            <div class="config-list" id="configList"></div>
         </div>
     </div>
     
     <script>
-        const licenseKey = '{LICENSE_KEY}';
+        const license = '""" + license_key + """';
         
-        // Update value displays
-        document.getElementById('triggerbotDelay').addEventListener('input', (e) => {
-            document.getElementById('triggerbotDelayValue').textContent = e.target.value;
-        });
+        // Update displays
+        document.getElementById('triggerDelay').oninput = (e) => {
+            document.getElementById('triggerDelayVal').textContent = e.target.value;
+        };
+        document.getElementById('triggerHold').oninput = (e) => {
+            document.getElementById('triggerHoldVal').textContent = e.target.value;
+        };
+        document.getElementById('camlockSmooth').oninput = (e) => {
+            document.getElementById('camlockSmoothVal').textContent = e.target.value;
+        };
+        document.getElementById('camlockPred').oninput = (e) => {
+            document.getElementById('camlockPredVal').textContent = e.target.value;
+        };
+        document.getElementById('camlockFov').oninput = (e) => {
+            document.getElementById('camlockFovVal').textContent = e.target.value;
+        };
         
-        document.getElementById('triggerbotHold').addEventListener('input', (e) => {
-            document.getElementById('triggerbotHoldValue').textContent = e.target.value;
-        });
-        
-        document.getElementById('camlockSmoothness').addEventListener('input', (e) => {
-            document.getElementById('camlockSmoothnessValue').textContent = e.target.value;
-        });
-        
-        document.getElementById('camlockPrediction').addEventListener('input', (e) => {
-            document.getElementById('camlockPredictionValue').textContent = e.target.value;
-        });
-        
-        document.getElementById('camlockFov').addEventListener('input', (e) => {
-            document.getElementById('camlockFovValue').textContent = e.target.value;
-        });
-        
-        // Get current config
-        function getCurrentConfig() {
+        function getConfig() {
             return {
                 triggerbot: {
-                    enabled: document.getElementById('triggerbotEnabled').checked,
-                    delay: parseInt(document.getElementById('triggerbotDelay').value),
-                    holdTime: parseInt(document.getElementById('triggerbotHold').value)
+                    enabled: document.getElementById('triggerEnabled').checked,
+                    delay: parseInt(document.getElementById('triggerDelay').value),
+                    holdTime: parseInt(document.getElementById('triggerHold').value)
                 },
                 camlock: {
                     enabled: document.getElementById('camlockEnabled').checked,
-                    smoothness: parseInt(document.getElementById('camlockSmoothness').value),
-                    prediction: parseInt(document.getElementById('camlockPrediction').value),
+                    smoothness: parseInt(document.getElementById('camlockSmooth').value),
+                    prediction: parseInt(document.getElementById('camlockPred').value),
                     fov: parseInt(document.getElementById('camlockFov').value)
                 }
             };
         }
         
-        // Apply config
-        function applyConfig(config) {
-            if (config.triggerbot) {
-                document.getElementById('triggerbotEnabled').checked = config.triggerbot.enabled || false;
-                document.getElementById('triggerbotDelay').value = config.triggerbot.delay || 50;
-                document.getElementById('triggerbotDelayValue').textContent = config.triggerbot.delay || 50;
-                document.getElementById('triggerbotHold').value = config.triggerbot.holdTime || 100;
-                document.getElementById('triggerbotHoldValue').textContent = config.triggerbot.holdTime || 100;
+        function applyConfig(cfg) {
+            if (cfg.triggerbot) {
+                document.getElementById('triggerEnabled').checked = cfg.triggerbot.enabled || false;
+                document.getElementById('triggerDelay').value = cfg.triggerbot.delay || 50;
+                document.getElementById('triggerDelayVal').textContent = cfg.triggerbot.delay || 50;
+                document.getElementById('triggerHold').value = cfg.triggerbot.holdTime || 100;
+                document.getElementById('triggerHoldVal').textContent = cfg.triggerbot.holdTime || 100;
             }
-            
-            if (config.camlock) {
-                document.getElementById('camlockEnabled').checked = config.camlock.enabled || false;
-                document.getElementById('camlockSmoothness').value = config.camlock.smoothness || 10;
-                document.getElementById('camlockSmoothnessValue').textContent = config.camlock.smoothness || 10;
-                document.getElementById('camlockPrediction').value = config.camlock.prediction || 5;
-                document.getElementById('camlockPredictionValue').textContent = config.camlock.prediction || 5;
-                document.getElementById('camlockFov').value = config.camlock.fov || 100;
-                document.getElementById('camlockFovValue').textContent = config.camlock.fov || 100;
+            if (cfg.camlock) {
+                document.getElementById('camlockEnabled').checked = cfg.camlock.enabled || false;
+                document.getElementById('camlockSmooth').value = cfg.camlock.smoothness || 10;
+                document.getElementById('camlockSmoothVal').textContent = cfg.camlock.smoothness || 10;
+                document.getElementById('camlockPred').value = cfg.camlock.prediction || 5;
+                document.getElementById('camlockPredVal').textContent = cfg.camlock.prediction || 5;
+                document.getElementById('camlockFov').value = cfg.camlock.fov || 100;
+                document.getElementById('camlockFovVal').textContent = cfg.camlock.fov || 100;
             }
         }
         
-        // Save config
         async function saveConfig() {
             const name = document.getElementById('configName').value.trim();
-            if (!name) {
-                alert('Please enter a config name');
-                return;
-            }
-            
-            const config = getCurrentConfig();
+            if (!name) { alert('Enter a name'); return; }
             
             try {
-                const res = await fetch(`/api/configs/${licenseKey}/save`, {
+                const res = await fetch(`/api/configs/${license}/save`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, data: config })
+                    body: JSON.stringify({ name, data: getConfig() })
                 });
-                
                 if (res.ok) {
-                    alert('Config saved!');
+                    alert('Saved!');
                     document.getElementById('configName').value = '';
                     loadConfigs();
-                } else {
-                    alert('Failed to save config');
                 }
-            } catch (e) {
-                alert('Error saving config');
+            } catch(e) {
+                alert('Error saving');
             }
         }
         
-        // Load config
         async function loadConfig(name) {
             try {
-                const res = await fetch(`/api/configs/${licenseKey}/load/${name}`, {
-                    method: 'POST'
-                });
-                
+                const res = await fetch(`/api/configs/${license}/load/${name}`, { method: 'POST' });
                 if (res.ok) {
                     const data = await res.json();
                     applyConfig(data.config_data);
-                    alert(`Config "${name}" loaded!`);
-                } else {
-                    alert('Failed to load config');
+                    alert('Loaded!');
                 }
-            } catch (e) {
-                alert('Error loading config');
+            } catch(e) {
+                alert('Error loading');
             }
         }
         
-        // Delete config
         async function deleteConfig(name) {
-            if (!confirm(`Delete config "${name}"?`)) return;
-            
+            if (!confirm(`Delete "${name}"?`)) return;
             try {
-                const res = await fetch(`/api/configs/${licenseKey}/delete/${name}`, {
-                    method: 'POST'
-                });
-                
+                const res = await fetch(`/api/configs/${license}/delete/${name}`, { method: 'POST' });
                 if (res.ok) {
-                    alert('Config deleted!');
+                    alert('Deleted!');
                     loadConfigs();
-                } else {
-                    alert('Failed to delete config');
                 }
-            } catch (e) {
-                alert('Error deleting config');
+            } catch(e) {
+                alert('Error deleting');
             }
         }
         
-        // Rename config
-        async function renameConfig(oldName) {
-            const newName = prompt('Enter new name:', oldName);
-            if (!newName || newName === oldName) return;
-            
+        async function renameConfig(old) {
+            const newName = prompt('New name:', old);
+            if (!newName || newName === old) return;
             try {
-                const res = await fetch(`/api/configs/${licenseKey}/rename`, {
+                const res = await fetch(`/api/configs/${license}/rename`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ old_name: oldName, new_name: newName })
+                    body: JSON.stringify({ old_name: old, new_name: newName })
                 });
-                
                 if (res.ok) {
-                    alert('Config renamed!');
+                    alert('Renamed!');
                     loadConfigs();
-                } else {
-                    alert('Failed to rename config');
                 }
-            } catch (e) {
-                alert('Error renaming config');
+            } catch(e) {
+                alert('Error renaming');
             }
         }
         
-        // Load configs list
         async function loadConfigs() {
             try {
-                const res = await fetch(`/api/configs/${licenseKey}/list`);
+                const res = await fetch(`/api/configs/${license}/list`);
                 const data = await res.json();
-                
                 const list = document.getElementById('configList');
-                
                 if (data.configs && data.configs.length > 0) {
                     list.innerHTML = data.configs.map(name => `
                         <div class="config-item">
@@ -2530,32 +2450,16 @@ _MENU_HTML_TEMPLATE = """<!DOCTYPE html>
                 } else {
                     list.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No saved configs</p>';
                 }
-            } catch (e) {
-                console.error('Error loading configs:', e);
+            } catch(e) {
+                console.error(e);
             }
         }
         
-        // Load configs on page load
         loadConfigs();
     </script>
 </body>
 </html>"""
-
-@app.get("/", response_class=HTMLResponse)
-@app.get("/home", response_class=HTMLResponse)
-def serve_home():
-    """Home page"""
-    return _INDEX_HTML
-
-@app.get("/dashboard/{license_key}", response_class=HTMLResponse)
-def serve_dashboard(license_key: str):
-    """Dashboard page"""
-    return _DASHBOARD_HTML
-
-@app.get("/{license_key}", response_class=HTMLResponse)
-def serve_menu(license_key: str):
-    """Menu system"""
-    return _MENU_HTML_TEMPLATE.replace('{LICENSE_KEY}', license_key)
+    return menu_html
 
 if __name__ == "__main__":
     init_db()
