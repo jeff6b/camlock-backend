@@ -2208,7 +2208,6 @@ def serve_home():
     return _INDEX_HTML
 
 @app.get("/{license_key:path}", response_class=HTMLResponse)
-@app.get("/{license_key:path}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
     """Dashboard - Full Axion control panel"""
     # Skip if it's a reserved route
@@ -2250,36 +2249,89 @@ body{height:100vh;background:#0c0c0c;font-family:Arial,sans-serif;color:#fff;dis
 </body>
 </html>"""
     
-    # Valid license - return the dashboard (using string concatenation to avoid f-string brace hell)
-    config_data = json.dumps(DEFAULT_CONFIG)
+    # Valid license - build dashboard HTML
+    config_json = json.dumps(DEFAULT_CONFIG)
     
-    html_part1 = """<!DOCTYPE html>
+    # Use simple string replacement instead of f-strings
+    dashboard_html = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<title>Axion Dashboard</title>
+<title>Axion — __LICENSE_KEY__</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{height:100vh;background:#0c0c0c;color:#fff;font-family:Arial;display:flex;align-items:center;justify-content:center}
-.container{text-align:center}
-h1{font-size:32px;margin-bottom:20px}
-p{color:#888}
+*{margin:0;padding:0;box-sizing:border-box;user-select:none}
+body{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);font-family:Arial,sans-serif;color:#cfcfcf;display:flex;align-items:center;justify-content:center}
+.window{width:760px;height:520px;background:linear-gradient(#111,#0a0a0a);border:1px solid #2a2a2a;box-shadow:0 0 40px rgba(0,0,0,0.8);display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:38px;background:linear-gradient(#1a1a1a,#0e0e0e);border-bottom:1px solid #2b2b2b;display:flex;align-items:center;padding:0 12px;gap:16px}
+.title{font-size:13px;color:#bfbfbf;padding-right:16px;border-right:1px solid #2a2a2a}
+.tabs{display:flex;gap:18px;font-size:12px}
+.tab{color:#9a9a9a;cursor:pointer;transition:color 0.2s}
+.tab:hover,.tab.active{color:#ffffff;text-shadow:0 0 4px rgba(255,255,255,0.3)}
+.topbar-right{margin-left:auto;display:flex;align-items:center}
+.search-container{position:relative;width:180px}
+.search-bar{width:100%;height:26px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;padding:0 10px 0 32px;outline:none;transition:border-color 0.2s}
+.search-bar::placeholder{color:#666}
+.search-bar:focus{border-color:#555}
+.search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;pointer-events:none}
+.content{flex:1;padding:10px;background:#0c0c0c;display:flex;align-items:center;justify-content:center;position:relative}
+.tab-content{width:100%;height:100%;display:none}
+.tab-content.active{display:block}
 </style>
 </head>
 <body>
-<div class="container">
-<h1>Axion Dashboard</h1>
-<p>License: """ + license_key + """</p>
-<p>Dashboard UI coming soon</p>
+<div class="window">
+<div class="topbar">
+<div class="title">Axion</div>
+<div class="tabs">
+<div class="tab active" data-tab="aimbot">aimbot</div>
+<div class="tab" data-tab="settings">settings</div>
+</div>
+</div>
+<div class="content">
+<div class="tab-content active" id="aimbot">
+<p style="text-align:center;color:#888">Aimbot settings coming soon</p>
+</div>
+<div class="tab-content" id="settings">
+<p style="text-align:center;color:#888">Settings coming soon</p>
+</div>
+</div>
 </div>
 <script>
-let config = """ + config_data + """;
-console.log('Config loaded:', config);
+let config = __CONFIG_JSON__;
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.getAttribute('data-tab')).classList.add('active');
+  });
+});
+
+async function saveConfig(){
+  try{
+    await fetch('/api/config/__LICENSE_KEY__',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});
+  }catch(e){console.error('Save failed:',e);}
+}
+
+async function loadConfig(){
+  try{
+    const res=await fetch('/api/config/__LICENSE_KEY__');
+    config=await res.json();
+  }catch(e){console.error('Load failed:',e);}
+}
+
+loadConfig();
+setInterval(loadConfig,1000);
 </script>
 </body>
 </html>"""
     
-    return html_part1
+    # Replace placeholders
+    dashboard_html = dashboard_html.replace("__LICENSE_KEY__", license_key)
+    dashboard_html = dashboard_html.replace("__CONFIG_JSON__", config_json)
+    
+    return dashboard_html
 
 if __name__ == "__main__":
     init_db()
