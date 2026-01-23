@@ -486,13 +486,15 @@ def redeem_key(data: RedeemRequest):
         expires_at = (now + timedelta(days=30)).isoformat()
     elif duration == "weekly":
         expires_at = (now + timedelta(days=7)).isoformat()
+    elif duration == "3monthly":
+        expires_at = (now + timedelta(days=90)).isoformat()
     
     cur.execute(q("UPDATE keys SET redeemed_at=%s, redeemed_by=%s, expires_at=%s, active=1 WHERE key=%s"),
                (now.isoformat(), data.discord_id, expires_at, data.key))
     db.commit()
     db.close()
     
-    return {"success": True}
+    return {"success": True, "duration": duration, "expires_at": expires_at, "message": "Key redeemed successfully"}
 
 @app.post("/api/reset-hwid/{license_key}")
 def reset_hwid(license_key: str):
@@ -2134,9 +2136,13 @@ def serve_home():
     """Home page with all tabs"""
     return _INDEX_HTML
 
-@app.get("/{license_key}", response_class=HTMLResponse)
+@app.get("/{license_key:path}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
     """Dashboard - Full Axion control panel"""
+    # Skip if it's a reserved route
+    if license_key in ["home", "api", "favicon.ico"]:
+        raise HTTPException(status_code=404, detail="Not found")
+    
     # Validate license key exists
     db = get_db()
     cur = db.cursor()
