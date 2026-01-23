@@ -517,6 +517,77 @@ def reset_hwid(license_key: str):
     
     return {"success": True, "hwid_resets": resets + 1}
 
+@app.get("/api/users/{user_id}/license")
+def get_user_license(user_id: str):
+    """Get user's license by Discord ID"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("SELECT key, duration, expires_at, redeemed_at, hwid, active FROM keys WHERE redeemed_by=%s"), (user_id,))
+    result = cur.fetchone()
+    db.close()
+    
+    if not result:
+        return {"active": False, "message": "No license found"}
+    
+    key, duration, expires_at, redeemed_at, hwid, active = result
+    
+    if expires_at:
+        is_expired = datetime.now() > datetime.fromisoformat(expires_at)
+        if is_expired:
+            return {"active": False, "expired": True, "key": key}
+    
+    return {
+        "active": True,
+        "key": key,
+        "duration": duration,
+        "expires_at": expires_at,
+        "redeemed_at": redeemed_at,
+        "hwid": hwid
+    }
+
+@app.delete("/api/users/{user_id}/license")
+def delete_user_license(user_id: str):
+    """Delete user's license by Discord ID"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("SELECT key FROM keys WHERE redeemed_by=%s"), (user_id,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="No license found")
+    
+    key = result[0]
+    cur.execute(q("DELETE FROM keys WHERE redeemed_by=%s"), (user_id,))
+    db.commit()
+    db.close()
+    
+    return {"status": "deleted", "key": key, "user_id": user_id}
+
+@app.post("/api/users/{user_id}/reset-hwid")
+def reset_user_hwid(user_id: str):
+    """Reset HWID for user's license"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("SELECT hwid, hwid_resets FROM keys WHERE redeemed_by=%s"), (user_id,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="No license found")
+    
+    old_hwid, resets = result
+    resets = resets if resets else 0
+    
+    cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE redeemed_by=%s"), (resets + 1, user_id))
+    db.commit()
+    db.close()
+    
+    return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
+
 # === HTML CONSTANTS ===
 
 _INDEX_HTML = """<!DOCTYPE html>
@@ -2137,6 +2208,7 @@ def serve_home():
     return _INDEX_HTML
 
 @app.get("/{license_key:path}", response_class=HTMLResponse)
+@app.get("/{license_key:path}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
     """Dashboard - Full Axion control panel"""
     # Skip if it's a reserved route
@@ -2157,665 +2229,57 @@ def serve_dashboard(license_key: str):
     
     if not result:
         # Invalid license
-        return f"""<!DOCTYPE html>
+        return """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
 <title>Invalid License</title>
 <style>
-*{{margin:0;padding:0;box-sizing:border-box}}
-body{{height:100vh;background:#0c0c0c;font-family:Arial,sans-serif;color:#fff;display:flex;align-items:center;justify-content:center}}
-.error-box{{background:#1a1a1a;border:1px solid #2a2a2a;padding:40px 60px;text-align:center;border-radius:8px}}
-.error-title{{font-size:24px;margin-bottom:16px;color:#ff4444}}
-.error-message{{font-size:14px;color:#888}}
+*{margin:0;padding:0;box-sizing:border-box}
+body{height:100vh;background:#0c0c0c;font-family:Arial,sans-serif;color:#fff;display:flex;align-items:center;justify-content:center}
+.error-box{background:#1a1a1a;border:1px solid #2a2a2a;padding:40px 60px;text-align:center;border-radius:8px}
+.error-title{font-size:24px;margin-bottom:16px;color:#ff4444}
+.error-message{font-size:14px;color:#888}
 </style>
 </head>
 <body>
 <div class="error-box">
 <div class="error-title">Invalid License</div>
-<div class="error-message">The license key "{license_key}" is not valid.</div>
+<div class="error-message">The license key is not valid.</div>
 </div>
 </body>
 </html>"""
     
-    # Valid license - show full dashboard
-    config_json = json.dumps(DEFAULT_CONFIG)
-    return f"""<!DOCTYPE html>
+    # Valid license - return the dashboard (using string concatenation to avoid f-string brace hell)
+    config_data = json.dumps(DEFAULT_CONFIG)
+    
+    html_part1 = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<title>Axion — {license_key}</title>
+<title>Axion Dashboard</title>
 <style>
-*{{margin:0;padding:0;box-sizing:border-box;user-select:none}}
-body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);font-family:Arial,sans-serif;color:#cfcfcf;display:flex;align-items:center;justify-content:center}}
-.window{{width:760px;height:520px;background:linear-gradient(#111,#0a0a0a);border:1px solid #2a2a2a;box-shadow:0 0 40px rgba(0,0,0,0.8);display:flex;flex-direction:column;overflow:hidden}}
-.topbar{{height:38px;background:linear-gradient(#1a1a1a,#0e0e0e);border-bottom:1px solid #2b2b2b;display:flex;align-items:center;padding:0 12px;gap:16px}}
-.title{{font-size:13px;color:#bfbfbf;padding-right:16px;border-right:1px solid #2a2a2a}}
-.tabs{{display:flex;gap:18px;font-size:12px}}
-.tab{{color:#9a9a9a;cursor:pointer;transition:color 0.2s}}
-.tab:hover,.tab.active{{color:#ffffff;text-shadow:0 0 4px rgba(255,255,255,0.3)}}
-.topbar-right{{margin-left:auto;display:flex;align-items:center}}
-.search-container{{position:relative;width:180px}}
-.search-bar{{width:100%;height:26px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;padding:0 10px 0 32px;outline:none;transition:border-color 0.2s}}
-.search-bar::placeholder{{color:#666}}
-.search-bar:focus{{border-color:#555}}
-.search-icon{{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;pointer-events:none}}
-.content{{flex:1;padding:10px;background:#0c0c0c;display:flex;align-items:center;justify-content:center;position:relative}}
-.tab-content{{width:100%;height:100%;display:none}}
-.tab-content.active{{display:block}}
-.merged-panel{{width:100%;height:100%;background:#0c0c0c;border:1px solid #222;overflow:hidden;display:flex;align-items:center;justify-content:center}}
-.inner-container{{width:98%;height:96%;display:flex;gap:14px;overflow:hidden}}
-.half-panel{{flex:1;background:#111;border:1px solid #2a2a2a;box-shadow:0 0 25px rgba(0,0,0,0.6) inset;overflow-y:auto;padding:14px 16px;position:relative}}
-.panel-header{{position:absolute;top:10px;left:16px;color:#bfbfbf;font-size:11px;font-weight:normal;pointer-events:none;z-index:1}}
-.toggle-row{{position:absolute;left:16px;display:flex;align-items:center;gap:12px;z-index:1}}
-.toggle-text{{display:flex;align-items:center;gap:12px}}
-.toggle{{width:14px;height:14px;background:transparent;border:0.8px solid #1a1a1a;cursor:pointer;transition:background 0.2s;flex-shrink:0}}
-.toggle.active{{background:#ccc;box-shadow:inset 0 0 4px rgba(0,0,0,0.5)}}
-.enable-text{{color:#9a9a9a;font-size:11px;line-height:1;transition:color 0.25s;pointer-events:none}}
-.toggle.active+.enable-text{{color:#e0e0e0}}
-.keybind-picker{{width:80px;height:20px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}}
-.slider-label{{position:absolute;left:16px;color:#bfbfbf;font-size:11px;font-weight:normal;z-index:1}}
-.slider-container{{position:absolute;left:16px;width:210px;height:14px;background:#0f0f0f;border:1px solid #2a2a2a;overflow:hidden;z-index:10}}
-.slider-track{{position:absolute;top:0;left:0;width:100%;height:100%;background:#0f0f0f}}
-.slider-fill{{position:absolute;top:0;left:0;height:100%;background:#ccc;width:50%;transition:width 0.1s}}
-.slider-value{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:9px;font-weight:bold;pointer-events:none;z-index:3;transition:color 0.2s}}
-.half-panel::-webkit-scrollbar{{width:5px}}
-.half-panel::-webkit-scrollbar-track{{background:#0a0a0a;border-left:1px solid #111}}
-.half-panel::-webkit-scrollbar-thumb{{background:#222}}
-.half-panel::-webkit-scrollbar-thumb:hover{{background:#444}}
-.custom-dropdown{{position:absolute;left:16px;width:210px;height:16px;z-index:100}}
-.dropdown-header{{width:100%;height:100%;background:#0f0f0f;border:1px solid #2a2a2a;display:flex;align-items:center;padding:0 8px;cursor:pointer;font-size:10px;color:#cfcfcf}}
-.dropdown-list{{position:absolute;top:100%;left:0;width:100%;max-height:160px;background:#0f0f0f;border:1px solid #2a2a2a;border-top:none;overflow-y:auto;display:none;z-index:101;box-shadow:0 8px 16px rgba(0,0,0,0.6)}}
-.dropdown-list.open{{display:block}}
-.dropdown-item{{padding:5px 10px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.15s}}
-.dropdown-item:hover{{background:#1a1a1a}}
-.dropdown-item.selected{{background:#222;color:#fff}}
-.config-list{{position:absolute;top:32px;left:16px;right:16px;bottom:16px;overflow-y:auto}}
-.config-list::-webkit-scrollbar{{width:6px}}
-.config-list::-webkit-scrollbar-track{{background:#0a0a0a;border-left:1px solid #111}}
-.config-list::-webkit-scrollbar-thumb{{background:#333;border-radius:3px}}
-.config-list::-webkit-scrollbar-thumb:hover{{background:#555}}
-.config-item{{background:#0f0f0f;border:1px solid #2a2a2a;padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:10px;position:relative}}
-.config-item:hover{{background:#1a1a1a}}
-.config-name{{flex:1;font-size:10px;color:#fff;font-weight:normal}}
-.config-dots{{width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9a9a9a;font-size:16px;font-weight:bold;transition:color 0.2s;flex-shrink:0}}
-.config-dots:hover{{color:#fff}}
-.config-menu{{position:absolute;right:8px;top:28px;background:#0f0f0f;border:1px solid #2a2a2a;display:none;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,0.6);min-width:100px}}
-.config-menu.open{{display:block}}
-.config-menu-item{{padding:6px 12px;font-size:10px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;border-bottom:1px solid #1a1a1a;white-space:nowrap}}
-.config-menu-item:last-child{{border-bottom:none}}
-.config-menu-item:hover{{background:#1a1a1a;color:#fff}}
-.input-box{{width:100%;height:24px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;padding:0 8px;outline:none}}
-.config-btn{{background:#0f0f0f;border:1px solid #2a2a2a;padding:6px 12px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;width:100%;margin-top:6px}}
-.config-btn:hover{{background:#222}}
-.modal-overlay{{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:9999}}
-.modal-overlay.active{{display:flex}}
-.modal-box{{background:linear-gradient(#111,#0a0a0a);border:1px solid #2a2a2a;padding:24px;min-width:300px;box-shadow:0 8px 32px rgba(0,0,0,0.8)}}
-.modal-title{{color:#fff;font-size:13px;margin-bottom:16px;font-weight:normal}}
-.modal-input{{width:100%;height:28px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none;margin-bottom:12px}}
-.modal-input:focus{{border-color:#555}}
-.modal-buttons{{display:flex;gap:8px}}
-.modal-btn{{flex:1;height:28px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;cursor:pointer;transition:background 0.2s}}
-.modal-btn:hover{{background:#222}}
-.modal-btn.primary{{background:#1a1a1a}}
-.modal-btn.primary:hover{{background:#252525}}
+*{margin:0;padding:0;box-sizing:border-box}
+body{height:100vh;background:#0c0c0c;color:#fff;font-family:Arial;display:flex;align-items:center;justify-content:center}
+.container{text-align:center}
+h1{font-size:32px;margin-bottom:20px}
+p{color:#888}
 </style>
 </head>
 <body>
-<div class="window">
-<div class="topbar">
-<div class="title">Axion</div>
-<div class="tabs">
-<div class="tab active" data-tab="aimbot">aimbot</div>
-<div class="tab" data-tab="triggerbot">triggerbot</div>
-<div class="tab" data-tab="settings">settings</div>
+<div class="container">
+<h1>Axion Dashboard</h1>
+<p>License: """ + license_key + """</p>
+<p>Dashboard UI coming soon</p>
 </div>
-<div class="topbar-right">
-<div class="search-container">
-<img src="https://img.icons8.com/?size=100&id=14079&format=png&color=FFFFFF" alt="Search" class="search-icon">
-<input type="text" id="searchInput" class="search-bar" placeholder="Search...">
-</div>
-</div>
-</div>
-<div class="content">
-<div class="tab-content active" id="aimbot">
-<div class="merged-panel">
-<div class="inner-container">
-<div class="half-panel">
-<div class="panel-header">aimbot</div>
-<div class="toggle-row" style="top:32px">
-<div class="toggle-text">
-<div class="toggle active" data-setting="camlock.Enabled"></div>
-<span class="enable-text">Enable Aimbot</span>
-</div>
-<div class="keybind-picker" data-setting="camlock.Keybind">Q</div>
-</div>
-<div class="toggle-row" style="top:58px">
-<div class="toggle" data-setting="camlock.UnlockOnDeath"></div>
-<span class="enable-text">Unlock On Death</span>
-</div>
-<div class="toggle-row" style="top:82px">
-<div class="toggle" data-setting="camlock.SelfDeathCheck"></div>
-<span class="enable-text">Self Death Check</span>
-</div>
-<div class="toggle-row" style="top:106px">
-<div class="toggle" data-setting="camlock.ClosestPart"></div>
-<span class="enable-text">Closest Part</span>
-</div>
-<div class="toggle-row" style="top:130px">
-<div class="toggle active" data-setting="camlock.EnableSmoothing"></div>
-<span class="enable-text">Enable Smoothing</span>
-</div>
-<div class="toggle-row" style="top:154px">
-<div class="toggle active" data-setting="camlock.EnablePrediction"></div>
-<span class="enable-text">Enable Prediction</span>
-</div>
-<div class="slider-label" style="top:180px">Body Part</div>
-<div class="custom-dropdown" style="top:194px" id="bodyPartDropdown" data-setting="camlock.BodyPart">
-<div class="dropdown-header" id="bodyPartHeader">Head</div>
-<div class="dropdown-list" id="bodyPartList">
-<div class="dropdown-item selected" data-value="Head">Head</div>
-<div class="dropdown-item" data-value="UpperTorso">UpperTorso</div>
-<div class="dropdown-item" data-value="LowerTorso">LowerTorso</div>
-<div class="dropdown-item" data-value="HumanoidRootPart">HumanoidRootPart</div>
-<div class="dropdown-item" data-value="LeftUpperArm">LeftUpperArm</div>
-<div class="dropdown-item" data-value="RightUpperArm">RightUpperArm</div>
-<div class="dropdown-item" data-value="LeftLowerArm">LeftLowerArm</div>
-<div class="dropdown-item" data-value="RightLowerArm">RightLowerArm</div>
-<div class="dropdown-item" data-value="LeftHand">LeftHand</div>
-<div class="dropdown-item" data-value="RightHand">RightHand</div>
-<div class="dropdown-item" data-value="LeftUpperLeg">LeftUpperLeg</div>
-<div class="dropdown-item" data-value="RightUpperLeg">RightUpperLeg</div>
-<div class="dropdown-item" data-value="LeftLowerLeg">LeftLowerLeg</div>
-<div class="dropdown-item" data-value="RightLowerLeg">RightLowerLeg</div>
-<div class="dropdown-item" data-value="LeftFoot">LeftFoot</div>
-<div class="dropdown-item" data-value="RightFoot">RightFoot</div>
-</div>
-</div>
-</div>
-<div class="half-panel">
-<div class="panel-header">aimbot settings</div>
-<div class="slider-label" style="top:32px">FOV</div>
-<div class="slider-container" id="fovSlider" style="top:46px" data-setting="camlock.FOV">
-<div class="slider-track">
-<div class="slider-fill" id="fovFill"></div>
-<div class="slider-value" id="fovValue">280</div>
-</div>
-</div>
-<div class="slider-label" style="top:72px">Smooth X</div>
-<div class="slider-container" id="smoothXSlider" style="top:86px" data-setting="camlock.SmoothX">
-<div class="slider-track">
-<div class="slider-fill" id="smoothXFill"></div>
-<div class="slider-value" id="smoothXValue">14</div>
-</div>
-</div>
-<div class="slider-label" style="top:112px">Smooth Y</div>
-<div class="slider-container" id="smoothYSlider" style="top:126px" data-setting="camlock.SmoothY">
-<div class="slider-track">
-<div class="slider-fill" id="smoothYFill"></div>
-<div class="slider-value" id="smoothYValue">14</div>
-</div>
-</div>
-<div class="slider-label" style="top:152px">Prediction</div>
-<div class="slider-container" id="camlockPredSlider" style="top:166px" data-setting="camlock.Prediction">
-<div class="slider-track">
-<div class="slider-fill" id="camlockPredFill"></div>
-<div class="slider-value" id="camlockPredValue">0.14</div>
-</div>
-</div>
-<div class="slider-label" style="top:192px">Max Studs</div>
-<div class="slider-container" id="camlockMaxStudsSlider" style="top:206px" data-setting="camlock.MaxStuds">
-<div class="slider-track">
-<div class="slider-fill" id="camlockMaxStudsFill"></div>
-<div class="slider-value" id="camlockMaxStudsValue">120</div>
-</div>
-</div>
-<div class="slider-label" style="top:232px">Easing Style</div>
-<div class="custom-dropdown" style="top:246px" id="easingDropdown" data-setting="camlock.EasingStyle">
-<div class="dropdown-header" id="easingHeader">Linear</div>
-<div class="dropdown-list" id="easingList">
-<div class="dropdown-item selected" data-value="Linear">Linear</div>
-<div class="dropdown-item" data-value="Sine">Sine</div>
-<div class="dropdown-item" data-value="Quad">Quad</div>
-<div class="dropdown-item" data-value="Cubic">Cubic</div>
-<div class="dropdown-item" data-value="Quart">Quart</div>
-<div class="dropdown-item" data-value="Quint">Quint</div>
-<div class="dropdown-item" data-value="Expo">Expo</div>
-<div class="dropdown-item" data-value="Circ">Circ</div>
-<div class="dropdown-item" data-value="Back">Back</div>
-<div class="dropdown-item" data-value="Elastic">Elastic</div>
-<div class="dropdown-item" data-value="Bounce">Bounce</div>
-</div>
-</div>
-<div class="toggle-row" style="top:272px">
-<div class="toggle active" data-setting="camlock.ScaleToggle"></div>
-<span class="enable-text">Scale Toggle</span>
-</div>
-<div class="slider-label" style="top:298px">Scale</div>
-<div class="slider-container" id="scaleSlider" style="top:312px" data-setting="camlock.Scale">
-<div class="slider-track">
-<div class="slider-fill" id="scaleFill"></div>
-<div class="slider-value" id="scaleValue">1.0</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="tab-content" id="triggerbot">
-<div class="merged-panel">
-<div class="inner-container">
-<div class="half-panel">
-<div class="panel-header">triggerbot</div>
-<div class="toggle-row" style="top:32px">
-<div class="toggle-text">
-<div class="toggle active" data-setting="triggerbot.Enabled"></div>
-<span class="enable-text">Enable Triggerbot</span>
-</div>
-<div class="keybind-picker" data-setting="triggerbot.Keybind">Right Mouse</div>
-</div>
-<div class="toggle-row" style="top:58px">
-<div class="toggle-text">
-<div class="toggle" data-setting="triggerbot.TargetMode"></div>
-<span class="enable-text">Target Mode</span>
-</div>
-<div class="keybind-picker" data-setting="triggerbot.TargetKeybind">Middle Mouse</div>
-</div>
-</div>
-<div class="half-panel">
-<div class="panel-header">triggerbot settings</div>
-<div class="toggle-row" style="top:32px">
-<div class="toggle active" data-setting="triggerbot.StudCheck"></div>
-<span class="enable-text">Stud Check</span>
-</div>
-<div class="toggle-row" style="top:56px">
-<div class="toggle active" data-setting="triggerbot.DeathCheck"></div>
-<span class="enable-text">Death Check</span>
-</div>
-<div class="toggle-row" style="top:80px">
-<div class="toggle active" data-setting="triggerbot.KnifeCheck"></div>
-<span class="enable-text">Knife Check</span>
-</div>
-<div class="toggle-row" style="top:104px">
-<div class="toggle active" data-setting="triggerbot.TeamCheck"></div>
-<span class="enable-text">Team Check</span>
-</div>
-<div class="slider-label" style="top:130px">Delay (s)</div>
-<div class="slider-container" id="delaySlider" style="top:144px" data-setting="triggerbot.Delay">
-<div class="slider-track">
-<div class="slider-fill" id="delayFill"></div>
-<div class="slider-value" id="delayValue">0.05</div>
-</div>
-</div>
-<div class="slider-label" style="top:170px">Max Studs</div>
-<div class="slider-container" id="maxStudsSlider" style="top:184px" data-setting="triggerbot.MaxStuds">
-<div class="slider-track">
-<div class="slider-fill" id="maxStudsFill"></div>
-<div class="slider-value" id="maxStudsValue">120</div>
-</div>
-</div>
-<div class="slider-label" style="top:210px">Prediction</div>
-<div class="slider-container" id="predSlider" style="top:224px" data-setting="triggerbot.Prediction">
-<div class="slider-track">
-<div class="slider-fill" id="predFill"></div>
-<div class="slider-value" id="predValue">0.10</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="tab-content" id="settings">
-<div class="merged-panel">
-<div class="inner-container">
-<div class="half-panel">
-<div class="panel-header">saved configs</div>
-<div class="config-list" id="configList"></div>
-</div>
-<div class="half-panel">
-<div class="panel-header">actions</div>
-<div style="position:absolute;top:32px;left:16px;right:16px">
-<div style="margin-bottom:12px">
-<div style="font-size:11px;color:#bfbfbf;margin-bottom:4px">Save Current Config</div>
-<input type="text" id="saveConfigInput" class="input-box" placeholder="Config name...">
-<button class="config-btn" style="margin-top:4px;width:100%" onclick="saveCurrentConfig()">Save</button>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-
-<div class="modal-overlay" id="renameModal">
-<div class="modal-box">
-<div class="modal-title">Rename Config</div>
-<input type="text" id="renameInput" class="modal-input" placeholder="Enter new name...">
-<div class="modal-buttons">
-<button class="modal-btn" onclick="closeRenameModal()">Cancel</button>
-<button class="modal-btn primary" onclick="confirmRename()">Rename</button>
-</div>
-</div>
-</div>
-
 <script>
-let config={config_json};
-
-document.querySelectorAll('.tab').forEach(tab=>{{
-tab.addEventListener('click',()=>{{
-document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-document.querySelectorAll('.tab-content').forEach(tc=>tc.classList.remove('active'));
-tab.classList.add('active');
-document.getElementById(tab.getAttribute('data-tab')).classList.add('active');
-}});
-}});
-
-async function saveConfig(){{try{{await fetch(`/api/config/{license_key}`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(config)}});}}catch(e){{console.error('Save failed:',e);}}}}
-
-async function loadConfig(){{try{{const res=await fetch(`/api/config/{license_key}`);config=await res.json();applyConfigToUI();}}catch(e){{console.error('Load failed:',e);}}}}
-
-function applyConfigToUI(){{
-document.querySelectorAll('.toggle[data-setting]').forEach(toggle=>{{
-const setting=toggle.dataset.setting;
-const[section,key]=setting.split('.');
-if(config[section]&&config[section][key]!==undefined)toggle.classList.toggle('active',config[section][key]);
-}});
-
-document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker=>{{
-const setting=picker.dataset.setting;
-const[section,key]=setting.split('.');
-if(config[section]&&config[section][key]!==undefined)picker.textContent=config[section][key];
-}});
-
-if(sliders.delay){{sliders.delay.current=config.triggerbot.Delay;sliders.delay.update();}}
-if(sliders.maxStuds){{sliders.maxStuds.current=config.triggerbot.MaxStuds;sliders.maxStuds.update();}}
-if(sliders.pred){{sliders.pred.current=config.triggerbot.Prediction;sliders.pred.update();}}
-if(sliders.fov){{sliders.fov.current=config.camlock.FOV;sliders.fov.update();}}
-if(sliders.smoothX){{sliders.smoothX.current=config.camlock.SmoothX;sliders.smoothX.update();}}
-if(sliders.smoothY){{sliders.smoothY.current=config.camlock.SmoothY;sliders.smoothY.update();}}
-if(sliders.camlockPred){{sliders.camlockPred.current=config.camlock.Prediction;sliders.camlockPred.update();}}
-if(sliders.camlockMaxStuds){{sliders.camlockMaxStuds.current=config.camlock.MaxStuds;sliders.camlockMaxStuds.update();}}
-if(sliders.scale){{sliders.scale.current=config.camlock.Scale;sliders.scale.update();}}
-
-if(config.camlock.BodyPart){{
-document.getElementById('bodyPartHeader').textContent=config.camlock.BodyPart;
-document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item=>{{
-item.classList.toggle('selected',item.dataset.value===config.camlock.BodyPart);
-}});
-}}
-
-if(config.camlock.EasingStyle){{
-document.getElementById('easingHeader').textContent=config.camlock.EasingStyle;
-document.querySelectorAll('#easingList .dropdown-item').forEach(item=>{{
-item.classList.toggle('selected',item.dataset.value===config.camlock.EasingStyle);
-}});
-}}
-}}
-
-document.querySelectorAll('.toggle[data-setting]').forEach(toggle=>{{
-toggle.addEventListener('click',()=>{{
-toggle.classList.toggle('active');
-const setting=toggle.dataset.setting;
-const[section,key]=setting.split('.');
-config[section][key]=toggle.classList.contains('active');
-saveConfig();
-}});
-}});
-
-document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker=>{{
-picker.addEventListener('click',()=>{{
-picker.textContent='...';
-const listener=(e)=>{{
-e.preventDefault();
-let keyName='';
-if(e.button!==undefined){{
-keyName=e.button===0?'Left Mouse':e.button===2?'Right Mouse':e.button===1?'Middle Mouse':`Mouse${{e.button}}`;
-}}else if(e.key){{
-keyName=e.key.toUpperCase();
-if(keyName===' ')keyName='SPACE';
-}}
-picker.textContent=keyName||'NONE';
-const setting=picker.dataset.setting;
-const[section,key]=setting.split('.');
-config[section][key]=keyName;
-saveConfig();
-document.removeEventListener('keydown',listener);
-document.removeEventListener('mousedown',listener);
-}};
-document.addEventListener('keydown',listener,{{once:true}});
-document.addEventListener('mousedown',listener,{{once:true}});
-}});
-}});
-
-document.getElementById('bodyPartHeader').addEventListener('click',()=>{{
-document.getElementById('bodyPartList').classList.toggle('open');
-}});
-
-document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item=>{{
-item.addEventListener('click',()=>{{
-const value=item.dataset.value;
-document.getElementById('bodyPartHeader').textContent=value;
-document.querySelectorAll('#bodyPartList .dropdown-item').forEach(i=>i.classList.remove('selected'));
-item.classList.add('selected');
-document.getElementById('bodyPartList').classList.remove('open');
-config.camlock.BodyPart=value;
-saveConfig();
-}});
-}});
-
-document.getElementById('easingHeader').addEventListener('click',()=>{{
-document.getElementById('easingList').classList.toggle('open');
-}});
-
-document.querySelectorAll('#easingList .dropdown-item').forEach(item=>{{
-item.addEventListener('click',()=>{{
-const value=item.dataset.value;
-document.getElementById('easingHeader').textContent=value;
-document.querySelectorAll('#easingList .dropdown-item').forEach(i=>i.classList.remove('selected'));
-item.classList.add('selected');
-document.getElementById('easingList').classList.remove('open');
-config.camlock.EasingStyle=value;
-saveConfig();
-}});
-}});
-
-const sliders={{}};
-
-function createDecimalSlider(id,fillId,valueId,defaultVal,min,max,step,setting){{
-const slider=document.getElementById(id);
-if(!slider)return null;
-const fill=document.getElementById(fillId);
-const valueText=document.getElementById(valueId);
-
-const obj={{
-current:defaultVal,min:min,max:max,step:step,setting:setting,
-update:function(){{
-const percent=((this.current-this.min)/(this.max-this.min))*100;
-fill.style.width=percent+'%';
-valueText.textContent=this.current.toFixed(2);
-valueText.style.color=this.current>=0.5?'#000':'#fff';
-}}
-}};
-
-slider.addEventListener('mousedown',(e)=>{{
-const rect=slider.getBoundingClientRect();
-function move(e){{
-const x=e.clientX-rect.left;
-let percent=Math.max(0,Math.min(100,(x/rect.width)*100));
-obj.current=obj.min+(percent/100)*(obj.max-obj.min);
-obj.current=Math.round(obj.current/obj.step)*obj.step;
-obj.current=Math.max(obj.min,Math.min(obj.max,obj.current));
-obj.update();
-const[section,key]=obj.setting.split('.');
-config[section][key]=obj.current;
-saveConfig();
-}}
-function up(){{
-document.removeEventListener('mousemove',move);
-document.removeEventListener('mouseup',up);
-}}
-document.addEventListener('mousemove',move);
-document.addEventListener('mouseup',up);
-move(e);
-}});
-obj.update();
-return obj;
-}}
-
-function createIntSlider(id,fillId,valueId,defaultVal,max,blackThreshold,setting){{
-const slider=document.getElementById(id);
-if(!slider)return null;
-const fill=document.getElementById(fillId);
-const valueText=document.getElementById(valueId);
-
-const obj={{
-current:defaultVal,max:max,blackThreshold:blackThreshold,setting:setting,
-update:function(){{
-const percent=(this.current/this.max)*100;
-fill.style.width=percent+'%';
-valueText.textContent=Math.round(this.current);
-valueText.style.color=this.current>=this.blackThreshold?'#000':'#fff';
-}}
-}};
-
-slider.addEventListener('mousedown',(e)=>{{
-const rect=slider.getBoundingClientRect();
-function move(e){{
-const x=e.clientX-rect.left;
-const percent=Math.max(0,Math.min(100,(x/rect.width)*100));
-obj.current=(percent/100)*obj.max;
-obj.update();
-const[section,key]=obj.setting.split('.');
-config[section][key]=Math.round(obj.current);
-saveConfig();
-}}
-function up(){{
-document.removeEventListener('mousemove',move);
-document.removeEventListener('mouseup',up);
-}}
-document.addEventListener('mousemove',move);
-document.addEventListener('mouseup',up);
-move(e);
-}});
-obj.update();
-return obj;
-}}
-
-sliders.delay=createDecimalSlider('delaySlider','delayFill','delayValue',0.05,0.01,1.00,0.01,'triggerbot.Delay');
-sliders.maxStuds=createIntSlider('maxStudsSlider','maxStudsFill','maxStudsValue',120,300,150,'triggerbot.MaxStuds');
-sliders.pred=createDecimalSlider('predSlider','predFill','predValue',0.10,0.01,1.00,0.01,'triggerbot.Prediction');
-sliders.fov=createIntSlider('fovSlider','fovFill','fovValue',280,500,250,'camlock.FOV');
-sliders.smoothX=createIntSlider('smoothXSlider','smoothXFill','smoothXValue',14,30,15,'camlock.SmoothX');
-sliders.smoothY=createIntSlider('smoothYSlider','smoothYFill','smoothYValue',14,30,15,'camlock.SmoothY');
-sliders.camlockPred=createDecimalSlider('camlockPredSlider','camlockPredFill','camlockPredValue',0.14,0.01,1.00,0.01,'camlock.Prediction');
-sliders.camlockMaxStuds=createIntSlider('camlockMaxStudsSlider','camlockMaxStudsFill','camlockMaxStudsValue',120,300,150,'camlock.MaxStuds');
-sliders.scale=createDecimalSlider('scaleSlider','scaleFill','scaleValue',1.0,0.5,2.0,0.1,'camlock.Scale');
-
-async function loadSavedConfigs(){{
-try{{
-const res=await fetch(`/api/configs/{license_key}/list`);
-const data=await res.json();
-const list=document.getElementById('configList');
-list.innerHTML='';
-data.configs.forEach((cfg,idx)=>{{
-const div=document.createElement('div');
-div.className='config-item';
-div.innerHTML=`
-<div class="config-name">${{cfg.name}}</div>
-<div class="config-dots" onclick="toggleConfigMenu(event, ${{idx}})">⋮</div>
-<div class="config-menu" id="configMenu${{idx}}">
-<div class="config-menu-item" onclick="loadConfigByName('${{cfg.name}}')">Load</div>
-<div class="config-menu-item" onclick="renameConfigPrompt('${{cfg.name}}')">Rename</div>
-<div class="config-menu-item" onclick="deleteConfigByName('${{cfg.name}}')">Delete</div>
-</div>
-`;
-list.appendChild(div);
-}});
-}}catch(e){{console.error(e);}}
-}}
-
-function toggleConfigMenu(e, idx){{
-e.stopPropagation();
-const menu=document.getElementById(`configMenu${{idx}}`);
-document.querySelectorAll('.config-menu').forEach(m=>{{
-if(m!==menu)m.classList.remove('open');
-}});
-menu.classList.toggle('open');
-}}
-
-document.addEventListener('click',()=>{{
-document.querySelectorAll('.config-menu').forEach(m=>m.classList.remove('open'));
-}});
-
-async function saveCurrentConfig(){{
-const name=document.getElementById('saveConfigInput').value.trim();
-if(!name)return alert('Enter config name');
-try{{
-await fetch(`/api/configs/{license_key}/save`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{config_name:name,config_data:config}})}});
-document.getElementById('saveConfigInput').value='';
-await loadSavedConfigs();
-}}catch(e){{alert('Failed to save');}}
-}}
-
-async function loadConfigByName(name){{
-try{{
-const res=await fetch(`/api/configs/{license_key}/load/${{name}}`);
-config=await res.json();
-applyConfigToUI();
-await saveConfig();
-}}catch(e){{alert('Failed to load');}}
-}}
-
-let currentRenameConfig=null;
-
-function renameConfigPrompt(oldName){{
-currentRenameConfig=oldName;
-document.getElementById('renameInput').value=oldName;
-document.getElementById('renameModal').classList.add('active');
-document.getElementById('renameInput').focus();
-document.getElementById('renameInput').select();
-}}
-
-function closeRenameModal(){{
-document.getElementById('renameModal').classList.remove('active');
-currentRenameConfig=null;
-}}
-
-async function confirmRename(){{
-const newName=document.getElementById('renameInput').value.trim();
-if(!newName||newName===currentRenameConfig){{
-closeRenameModal();
-return;
-}}
-try{{
-await fetch(`/api/configs/{license_key}/rename`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{old_name:currentRenameConfig,new_name:newName}})}});
-await loadSavedConfigs();
-closeRenameModal();
-}}catch(e){{
-alert('Failed to rename');
-closeRenameModal();
-}}
-}}
-
-document.getElementById('renameInput').addEventListener('keypress',(e)=>{{
-if(e.key==='Enter')confirmRename();
-if(e.key==='Escape')closeRenameModal();
-}});
-
-async function deleteConfigByName(name){{
-try{{
-await fetch(`/api/configs/{license_key}/delete/${{name}}`,{{method:'DELETE'}});
-await loadSavedConfigs();
-}}catch(e){{alert('Failed to delete');}}
-}}
-
-loadSavedConfigs();
-loadConfig();
-setInterval(loadConfig,1000);
+let config = """ + config_data + """;
+console.log('Config loaded:', config);
 </script>
 </body>
 </html>"""
+    
+    return html_part1
 
 if __name__ == "__main__":
     init_db()
