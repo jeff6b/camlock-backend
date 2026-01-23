@@ -2173,6 +2173,7 @@ body{{height:100vh;background:#0c0c0c;font-family:Arial,sans-serif;color:#fff;di
 </html>"""
     
     # Valid license - show full dashboard
+    config_json = json.dumps(DEFAULT_CONFIG)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2493,7 +2494,7 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 </div>
 
 <script>
-let config={json.dumps(DEFAULT_CONFIG)};
+let config={config_json};
 
 document.querySelectorAll('.tab').forEach(tab=>{{
 tab.addEventListener('click',()=>{{
