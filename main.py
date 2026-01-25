@@ -21,6 +21,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Default configuration
+DEFAULT_CONFIG = {
+    "triggerbot": {
+        "Enabled": True,
+        "Keybind": "Right Mouse",
+        "Delay": 0.0,
+        "MaxStuds": 120,
+        "StudCheck": True,
+        "DeathCheck": True,
+        "KnifeCheck": True,
+        "TeamCheck": True,
+        "TargetMode": False,
+        "TargetKeybind": "Middle Mouse",
+        "Prediction": 0.1,
+        "FOV": 25
+    },
+    "camlock": {
+        "Enabled": True,
+        "Keybind": "Q",
+        "FOV": 280.0,
+        "SmoothX": 14.0,
+        "SmoothY": 14.0,
+        "EnableSmoothing": True,
+        "EasingStyle": "Linear",
+        "Prediction": 0.14,
+        "EnablePrediction": True,
+        "MaxStuds": 120.0,
+        "UnlockOnDeath": True,
+        "SelfDeathCheck": True,
+        "BodyPart": "Head",
+        "ClosestPart": False,
+        "ScaleToggle": True,
+        "Scale": 1.0
+    }
+}
+
 # Database config
 DATABASE_URL = os.getenv("DATABASE_URL")
 USE_POSTGRES = DATABASE_URL is not None
@@ -1655,8 +1691,6 @@ _INDEX_HTML = """<!DOCTYPE html>
   </script>
 </body>
 </html>
-\"\"\"
-
 """
 
 # === HTML ROUTES (Must be after all API routes) ===
