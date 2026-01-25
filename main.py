@@ -1707,25 +1707,25 @@ def serve_dashboard(license_key: str):
     """Full dashboard with toggles, sliders, dropdowns"""
     if license_key in ["api", "favicon.ico"]:
         raise HTTPException(status_code=404)
-    
+   
     db = get_db()
     cur = db.cursor()
-    
+   
     if USE_POSTGRES:
         cur.execute("SELECT * FROM keys WHERE key=%s", (license_key,))
     else:
         cur.execute("SELECT * FROM keys WHERE key=?", (license_key,))
-    
+   
     result = cur.fetchone()
     db.close()
-    
+   
     if not result:
         return "<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>Not valid</p></div></body></html>"
-    
+   
     cfg = json.dumps(DEFAULT_CONFIG)
     key = license_key
-    
-        return f"""
+   
+    return f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2254,7 +2254,6 @@ body{{
                 <div class="dropdown-item" data-value="UpperTorso">UpperTorso</div>
                 <div class="dropdown-item" data-value="LowerTorso">LowerTorso</div>
                 <div class="dropdown-item" data-value="HumanoidRootPart">HumanoidRootPart</div>
-                <!-- add more if needed -->
               </div>
             </div>
 
@@ -2267,7 +2266,6 @@ body{{
                 <div class="dropdown-item" data-value="Quad">Quad</div>
                 <div class="dropdown-item" data-value="Cubic">Cubic</div>
                 <div class="dropdown-item" data-value="Expo">Expo</div>
-                <!-- more easing styles if you want -->
               </div>
             </div>
           </div>
@@ -2621,8 +2619,11 @@ function applyConfigToUI() {{
 
   // Sliders
   Object.entries(sliders).forEach(([name, slider]) => {{
-    if (slider) slider.value = eval(`config.${{name.replace(/([A-Z])/g, '.$1').toLowerCase()}}`) || slider.value;
-    slider.updateUI();
+    if (slider) {{
+      const path = name.replace(/([A-Z])/g, '.$1').toLowerCase();
+      slider.value = eval(`config.${{path}}`) || slider.value;
+      slider.updateUI();
+    }}
   }});
 }}
 
@@ -2637,12 +2638,12 @@ async function loadSavedConfigs() {{
       const item = document.createElement('div');
       item.className = 'config-item';
       item.innerHTML = `
-        <div class="config-name">${cfg.name}</div>
-        <div class="config-dots" onclick="toggleConfigMenu(event, ${i})">⋮</div>
-        <div class="config-menu" id="menu${i}">
-          <div class="config-menu-item" onclick="loadConfigByName('${cfg.name}')">Load</div>
-          <div class="config-menu-item" onclick="renameConfigPrompt('${cfg.name}')">Rename</div>
-          <div class="config-menu-item" onclick="deleteConfigByName('${cfg.name}')">Delete</div>
+        <div class="config-name">${{cfg.name}}</div>
+        <div class="config-dots" onclick="toggleConfigMenu(event, ${{i}})">⋮</div>
+        <div class="config-menu" id="menu${{i}}">
+          <div class="config-menu-item" onclick="loadConfigByName('${{cfg.name}}')">Load</div>
+          <div class="config-menu-item" onclick="renameConfigPrompt('${{cfg.name}}')">Rename</div>
+          <div class="config-menu-item" onclick="deleteConfigByName('${{cfg.name}}')">Delete</div>
         </div>
       `;
       list.appendChild(item);
@@ -2655,7 +2656,7 @@ async function loadSavedConfigs() {{
 function toggleConfigMenu(e, idx) {{
   e.stopPropagation();
   document.querySelectorAll('.config-menu').forEach(m => m.classList.remove('open'));
-  document.getElementById(`menu${idx}`).classList.toggle('open');
+  document.getElementById(`menu${{idx}}`).classList.toggle('open');
 }}
 
 document.addEventListener('click', () => {{
