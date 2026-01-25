@@ -588,6 +588,40 @@ def reset_user_hwid(user_id: str):
     
     return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
 
+@app.get("/api/config/{key}")
+def get_config(key: str):
+    """Get config for a license key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    # Insert default if doesn't exist
+    cur.execute(q("INSERT OR IGNORE INTO settings (key, config) VALUES (%s, %s)"), (key, json.dumps(DEFAULT_CONFIG)))
+    db.commit()
+    
+    cur.execute(q("SELECT config FROM settings WHERE key=%s"), (key,))
+    result = cur.fetchone()
+    db.close()
+    
+    return json.loads(result[0]) if result else DEFAULT_CONFIG
+
+@app.post("/api/config/{key}")
+def set_config(key: str, data: dict):
+    """Save config for a license key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("INSERT INTO settings(key, config) VALUES(%s, %s) ON CONFLICT(key) DO UPDATE SET config=excluded.config"), 
+                (key, json.dumps(data)))
+    db.commit()
+    db.close()
+    
+    return {"status": "ok"}
+
+@app.get("/api/keepalive")
+def keepalive():
+    """Keep server awake"""
+    return {"status": "alive"}
+
 # === HTML CONSTANTS ===
 
 _INDEX_HTML = """<!DOCTYPE html>
@@ -2207,11 +2241,11 @@ def serve_home():
     """Home page with all tabs"""
     return _INDEX_HTML
 
-@app.get("/{license_key:path}", response_class=HTMLResponse)
+@app.get("/{license_key}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
     """Dashboard - Full Axion control panel"""
     # Skip if it's a reserved route
-    if license_key in ["home", "api", "favicon.ico"]:
+    if license_key in ["home", "api", "favicon.ico"] or license_key.startswith("api/"):
         raise HTTPException(status_code=404, detail="Not found")
     
     # Validate license key exists
