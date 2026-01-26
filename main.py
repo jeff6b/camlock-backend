@@ -258,6 +258,10 @@ class RedeemRequest(BaseModel):
     key: str
     discord_id: str
 
+class SavedConfigRequest(BaseModel):
+    config_name: str
+    config_data: dict
+
 # === VALIDATION ===
 
 @app.post("/api/validate")
@@ -370,29 +374,29 @@ def list_configs(license_key: str):
     """List saved configs"""
     db = get_db()
     cur = db.cursor()
-    cur.execute(q("SELECT config_name FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC"), (license_key,))
+    cur.execute(q("SELECT config_name, created_at FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC"), (license_key,))
     rows = cur.fetchall()
     db.close()
     
-    configs = [row[0] for row in rows]
+    configs = [{"name": row[0], "created_at": row[1]} for row in rows]
     return {"configs": configs}
 
 @app.post("/api/configs/{license_key}/save")
-def save_config(license_key: str, data: ConfigData):
+def save_config(license_key: str, data: SavedConfigRequest):
     """Save a config"""
     db = get_db()
     cur = db.cursor()
     
     try:
-        cur.execute(q("SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, data.name))
+        cur.execute(q("SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, data.config_name))
         existing = cur.fetchone()
         
         if existing:
             cur.execute(q("UPDATE saved_configs SET config_data=%s WHERE license_key=%s AND config_name=%s"),
-                       (json.dumps(data.data), license_key, data.name))
+                       (json.dumps(data.config_data), license_key, data.config_name))
         else:
             cur.execute(q("INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (%s, %s, %s, %s)"),
-                       (license_key, data.name, json.dumps(data.data), datetime.now().isoformat()))
+                       (license_key, data.config_name, json.dumps(data.config_data), datetime.now().isoformat()))
         
         db.commit()
         db.close()
@@ -401,7 +405,7 @@ def save_config(license_key: str, data: ConfigData):
         db.close()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/configs/{license_key}/load/{config_name}")
+@app.get("/api/configs/{license_key}/load/{config_name}")
 def load_config(license_key: str, config_name: str):
     """Load a saved config"""
     db = get_db()
@@ -413,7 +417,7 @@ def load_config(license_key: str, config_name: str):
     if not row:
         raise HTTPException(status_code=404, detail="Config not found")
     
-    return {"config_data": json.loads(row[0])}
+    return json.loads(row[0])
 
 @app.post("/api/configs/{license_key}/rename")
 def rename_config(license_key: str, data: dict):
@@ -430,7 +434,7 @@ def rename_config(license_key: str, data: dict):
     
     return {"success": True}
 
-@app.post("/api/configs/{license_key}/delete/{config_name}")
+@app.delete("/api/configs/{license_key}/delete/{config_name}")
 def delete_config(license_key: str, config_name: str):
     """Delete a config"""
     db = get_db()
@@ -843,639 +847,1073 @@ def serve_dashboard(license_key: str):
     if not result:
         return "<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>Not valid</p></div></body></html>"
    
-    cfg = json.dumps(DEFAULT_CONFIG)
     key = license_key
    
-    return f"""
-<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
 <title>Axion - {key}</title>
 <style>
-*{{margin:0;padding:0;box-sizing:border-box;user-select:none}}
-body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);font-family:Arial,sans-serif;color:#cfcfcf;display:flex;align-items:center;justify-content:center}}
-.window{{width:860px;height:620px;background:linear-gradient(#111,#0a0a0a);border:1px solid #2a2a2a;box-shadow:0 0 40px rgba(0,0,0,0.8);display:flex;flex-direction:column;overflow:hidden;border-radius:8px}}
-.topbar{{height:42px;background:linear-gradient(#1a1a1a,#0e0e0e);border-bottom:1px solid #2b2b2b;display:flex;align-items:center;padding:0 16px;gap:20px}}
-.title{{font-size:14px;color:#bfbfbf;font-weight:600;padding-right:20px;border-right:1px solid #2a2a2a}}
-.tabs{{display:flex;gap:24px;font-size:13px}}
-.tab{{color:#9a9a9a;cursor:pointer;transition:color 0.2s;padding:0 4px}}
-.tab:hover,.tab.active{{color:#ffffff;text-shadow:0 0 4px rgba(255,255,255,0.3)}}
-.topbar-right{{margin-left:auto;display:flex;align-items:center;gap:12px}}
-.search-container{{position:relative;width:200px}}
-.search-bar{{width:100%;height:28px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:12px;padding:0 12px 0 36px;outline:none;border-radius:4px}}
-.search-bar::placeholder{{color:#666}}
-.search-icon{{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;pointer-events:none;opacity:0.6}}
-.content{{flex:1;padding:16px;background:#0c0c0c;overflow:hidden;position:relative}}
-.tab-content{{width:100%;height:100%;display:none}}
-.tab-content.active{{display:block}}
-.merged-panel{{width:100%;height:100%;background:#0c0c0c;border:1px solid #222;overflow:hidden;display:flex;align-items:center;justify-content:center}}
-.inner-container{{width:98%;height:96%;display:flex;gap:16px;overflow:hidden}}
-.half-panel{{flex:1;background:#111;border:1px solid #2a2a2a;box-shadow:0 0 25px rgba(0,0,0,0.6) inset;overflow-y:auto;padding:20px 18px;position:relative;border-radius:6px}}
-.panel-header{{position:sticky;top:0;left:0;background:#111;color:#bfbfbf;font-size:12px;font-weight:600;padding:8px 0 12px;z-index:2;border-bottom:1px solid #222;margin-bottom:12px}}
-.toggle-row{{display:flex;align-items:center;gap:12px;margin-bottom:14px}}
-.toggle-text{{display:flex;align-items:center;gap:12px;flex:1}}
-.toggle{{width:16px;height:16px;background:transparent;border:1.2px solid #444;border-radius:3px;cursor:pointer;transition:all 0.15s}}
-.toggle.active{{background:#aaa;border-color:#aaa;box-shadow:inset 0 0 6px rgba(0,0,0,0.6)}}
-.enable-text{{color:#9a9a9a;font-size:12px;transition:color 0.2s}}
-.toggle.active + .enable-text{{color:#e0e0e0}}
-.keybind-picker{{min-width:90px;height:26px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:4px;transition:all 0.15s}}
-.keybind-picker:hover{{border-color:#555;background:#1a1a1a}}
-.slider-label{{color:#bfbfbf;font-size:11px;margin-bottom:6px;display:block}}
-.slider-container{{width:100%;height:10px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:5px;overflow:hidden;position:relative;cursor:pointer}}
-.slider-track{{position:absolute;inset:0}}
-.slider-fill{{position:absolute;top:0;left:0;height:100%;background:#888;width:50%;transition:width 0.08s}}
-.slider-value{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:10px;font-weight:bold;pointer-events:none;color:#000;text-shadow:0 0 3px rgba(255,255,255,0.6)}}
-.half-panel::-webkit-scrollbar{{width:6px}}
-.half-panel::-webkit-scrollbar-track{{background:#0a0a0a}}
-.half-panel::-webkit-scrollbar-thumb{{background:#333;border-radius:3px}}
-.half-panel::-webkit-scrollbar-thumb:hover{{background:#555}}
-.custom-dropdown{{width:100%;position:relative;margin-bottom:16px}}
-.dropdown-header{{width:100%;height:32px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:12px;display:flex;align-items:center;padding:0 12px;cursor:pointer;border-radius:4px}}
-.dropdown-list{{position:absolute;top:100%;left:0;width:100%;max-height:220px;background:#0f0f0f;border:1px solid #2a2a2a;border-top:none;overflow-y:auto;display:none;z-index:10;box-shadow:0 8px 20px rgba(0,0,0,0.7);border-radius:0 0 4px 4px}}
-.dropdown-list.open{{display:block}}
-.dropdown-item{{padding:8px 12px;font-size:12px;color:#cfcfcf;cursor:pointer;transition:background 0.15s}}
-.dropdown-item:hover{{background:#1e1e1e}}
-.dropdown-item.selected{{background:#2a2a2a;color:#fff}}
-.config-list{{margin-top:8px}}
-.config-item{{background:#0f0f0f;border:1px solid #2a2a2a;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:12px;border-radius:4px;transition:all 0.15s}}
-.config-item:hover{{background:#181818;border-color:#444}}
-.config-name{{flex:1;font-size:12px;color:#fff}}
-.config-dots{{width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#aaa;font-size:18px;font-weight:bold}}
-.config-dots:hover{{color:#fff}}
-.config-menu{{position:absolute;right:12px;top:36px;background:#0f0f0f;border:1px solid #2a2a2a;display:none;z-index:200;box-shadow:0 6px 16px rgba(0,0,0,0.7);min-width:120px;border-radius:4px;overflow:hidden}}
-.config-menu.open{{display:block}}
-.config-menu-item{{padding:8px 14px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.15s}}
-.config-menu-item:hover{{background:#222;color:#fff}}
-.input-box{{width:100%;height:32px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:12px;padding:0 12px;border-radius:4px;margin-bottom:10px}}
-.config-btn{{width:100%;height:34px;background:#1a1a1a;border:1px solid #333;color:#cfcfcf;font-size:12px;cursor:pointer;border-radius:4px;transition:all 0.2s}}
-.config-btn:hover{{background:#252525;border-color:#555}}
-.modal-overlay{{position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:9999}}
-.modal-overlay.active{{display:flex}}
-.modal-box{{background:linear-gradient(#111,#0a0a0a);border:1px solid #2a2a2a;padding:28px;width:360px;max-width:90%;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.8)}}
-.modal-title{{color:#fff;font-size:14px;margin-bottom:20px;font-weight:600}}
-.modal-input{{width:100%;height:36px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:13px;padding:0 14px;border-radius:4px;margin-bottom:16px}}
-.modal-buttons{{display:flex;gap:12px}}
-.modal-btn{{flex:1;height:38px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:13px;cursor:pointer;border-radius:4px;transition:all 0.2s}}
-.modal-btn:hover{{background:#222}}
-.modal-btn.primary{{background:#222;border-color:#444}}
-.modal-btn.primary:hover{{background:#2a2a2a}}
+* {{margin:0;padding:0;box-sizing:border-box;user-select:none}}
+body {{
+    height:100vh;
+    background:radial-gradient(circle at top,#0f0f0f,#050505);
+    font-family:Arial,sans-serif;
+    color:#cfcfcf;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}}
+.window {{
+    width:760px;
+    height:520px;
+    background:linear-gradient(#111,#0a0a0a);
+    border:1px solid #2a2a2a;
+    box-shadow:0 0 40px rgba(0,0,0,0.8);
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+}}
+.topbar {{
+    height:38px;
+    background:linear-gradient(#1a1a1a,#0e0e0e);
+    border-bottom:1px solid #2b2b2b;
+    display:flex;
+    align-items:center;
+    padding:0 12px;
+    gap:16px;
+}}
+.title {{
+    font-size:13px;
+    color:#bfbfbf;
+    padding-right:16px;
+    border-right:1px solid #2a2a2a;
+}}
+.tabs {{
+    display:flex;
+    gap:18px;
+    font-size:12px;
+}}
+.tab {{
+    color:#9a9a9a;
+    cursor:pointer;
+    transition:color 0.2s;
+}}
+.tab:hover,.tab.active {{
+    color:#ffffff;
+    text-shadow:0 0 4px rgba(255,255,255,0.3);
+}}
+.topbar-right {{
+    margin-left:auto;
+    display:flex;
+    align-items:center;
+}}
+.search-container {{
+    position:relative;
+    width:180px;
+}}
+.search-bar {{
+    width:100%;
+    height:26px;
+    background:#0f0f0f;
+    border:1px solid #2a2a2a;
+    color:#cfcfcf;
+    font-size:11px;
+    padding:0 10px 0 32px;
+    outline:none;
+    transition:border-color 0.2s;
+}}
+.search-bar::placeholder {{color:#666}}
+.search-bar:focus {{border-color:#555}}
+.search-icon {{
+    position:absolute;
+    left:10px;
+    top:50%;
+    transform:translateY(-50%);
+    width:14px;
+    height:14px;
+    pointer-events:none;
+}}
+.content {{
+    flex:1;
+    padding:10px;
+    background:#0c0c0c;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+}}
+.tab-content {{
+    width:100%;
+    height:100%;
+    display:none;
+}}
+.tab-content.active {{display:block}}
+.merged-panel {{
+    width:100%;
+    height:100%;
+    background:#0c0c0c;
+    border:1px solid #222;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}}
+.inner-container {{
+    width:98%;
+    height:96%;
+    display:flex;
+    gap:14px;
+    overflow:hidden;
+}}
+.half-panel {{
+    flex:1;
+    background:#111;
+    border:1px solid #2a2a2a;
+    box-shadow:0 0 25px rgba(0,0,0,0.6) inset;
+    overflow-y:auto;
+    padding:14px 16px;
+    position:relative;
+}}
+.panel-header {{
+    position:absolute;
+    top:10px;
+    left:16px;
+    color:#bfbfbf;
+    font-size:11px;
+    font-weight:normal;
+    pointer-events:none;
+    z-index:1;
+}}
+.toggle-row {{
+    position:absolute;
+    left:16px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    z-index:1;
+}}
+.toggle-text {{
+    display:flex;
+    align-items:center;
+    gap:12px;
+}}
+.toggle {{
+    width:14px;
+    height:14px;
+    background:transparent;
+    border:0.8px solid #1a1a1a;
+    cursor:pointer;
+    transition:background 0.2s;
+    flex-shrink:0;
+}}
+.toggle.active {{
+    background:#ccc;
+    box-shadow:inset 0 0 4px rgba(0,0,0,0.5);
+}}
+.enable-text {{
+    color:#9a9a9a;
+    font-size:11px;
+    line-height:1;
+    transition:color 0.25s;
+    pointer-events:none;
+}}
+.toggle.active + .enable-text {{color:#e0e0e0}}
+.keybind-picker {{
+    width:80px;
+    height:20px;
+    background:#0f0f0f;
+    border:1px solid #2a2a2a;
+    color:#cfcfcf;
+    font-size:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+}}
+.slider-label {{
+    position:absolute;
+    left:16px;
+    color:#bfbfbf;
+    font-size:11px;
+    font-weight:normal;
+    z-index:1;
+}}
+.slider-container {{
+    position:absolute;
+    left:16px;
+    width:210px;
+    height:14px;
+    background:#0f0f0f;
+    border:1px solid #2a2a2a;
+    overflow:hidden;
+    z-index:10;
+}}
+.slider-track {{
+    position:absolute;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:#0f0f0f;
+}}
+.slider-fill {{
+    position:absolute;
+    top:0;
+    left:0;
+    height:100%;
+    background:#ccc;
+    width:50%;
+    transition:width 0.1s;
+}}
+.slider-value {{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    font-size:9px;
+    font-weight:bold;
+    pointer-events:none;
+    z-index:3;
+    transition:color 0.2s;
+}}
+.half-panel::-webkit-scrollbar {{width:5px}}
+.half-panel::-webkit-scrollbar-track {{
+    background:#0a0a0a;
+    border-left:1px solid #111;
+}}
+.half-panel::-webkit-scrollbar-thumb {{background:#222}}
+.half-panel::-webkit-scrollbar-thumb:hover {{background:#444}}
+.custom-dropdown {{
+    position:absolute;
+    left:16px;
+    width:210px;
+    height:16px;
+    z-index:100;
+}}
+.dropdown-header {{
+    width:100%;
+    height:100%;
+    background:#0f0f0f;
+    border:1px solid #2a2a2a;
+    display:flex;
+    align-items:center;
+    padding:0 8px;
+    cursor:pointer;
+    font-size:10px;
+    color:#cfcfcf;
+}}
+.dropdown-list {{
+    position:absolute;
+    top:100%;
+    left:0;
+    width:100%;
+    max-height:160px;
+    background:#0f0f0f;
+    border:1px solid #2a2a2a;
+    border-top:none;
+    overflow-y:auto;
+    display:none;
+    z-index:101;
+    box-shadow:0 8px 16px rgba(0,0,0,0.6);
+}}
+.dropdown-list.open {{display:block}}
+.dropdown-item {{
+    padding:5px 10px;
+    font-size:11px;
+    color:#cfcfcf;
+    cursor:pointer;
+    transition:background 0.15s;
+}}
+.dropdown-item:hover {{background:#1a1a1a}}
+.dropdown-item.selected {{background:#222;color:#fff}}
+.config-list {{
+    position:absolute;
+    top:32px;
+    left:16px;
+    right:16px;
+    bottom:16px;
+    overflow-y:auto;
+}}
+.config-list::-webkit-scrollbar {{width:6px}}
+.config-list::-webkit-scrollbar-track {{
+    background:#0a0a0a;
+    border-left:1px solid #111;
+}}
+.config-list::-webkit-scrollbar-thumb {{
+    background:#333;
+    border-radius:3px;
+}}
+.config-list::-webkit-scrollbar-thumb:hover {{background:#555}}
+.config-item {{
+    background:#0f0f0f;
+    border:1px solid #2a2a2a;
+    padding:6px 10px;
+    margin-bottom:6px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    position:relative;
+}}
+.config-item:hover {{background:#1a1a1a}}
+.config-name {{
+    flex:1;
+    font-size:10px;
+    color:#fff;
+    font-weight:normal;
+}}
+.config-dots {{
+    width:20px;
+    height:20px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    color:#9a9a9a;
+    font-size:16px;
+    font-weight:bold;
+    transition:color 0.2s;
+    flex-shrink:0;
+}}
+.config-dots:hover {{color:#fff}}
+.config-menu {{
+    position:absolute;
+    right:8px;
+    top:28px;
+    background:#0f0f0f;
+    border:1px solid #2a2a2a;
+    display:none;
+    z-index:200;
+    box-shadow:0 4px 12px rgba(0,0,0,0.6);
+    min-width:100px;
+}}
+.config-menu.open {{display:block}}
+.config-menu-item {{
+    padding:6px 12px;
+    font-size:10px;
+    color:#cfcfcf;
+    cursor:pointer;
+    transition:background 0.2s;
+    border-bottom:1px solid #1a1a1a;
+    white-space:nowrap;
+}}
+.config-menu-item:last-child {{border-bottom:none}}
+.config-menu-item:hover {{background:#1a1a1a;color:#fff}}
+.input-box {{
+    width:100%;
+    height:24px;
+    background:#0f0f0f;
+    border:1px solid #2a2a2a;
+    color:#cfcfcf;
+    font-size:11px;
+    padding:0 8px;
+    outline:none;
+}}
+.config-btn {{
+    background:#0f0f0f;
+    border:1px solid #2a2a2a;
+    padding:6px 12px;
+    font-size:11px;
+    color:#cfcfcf;
+    cursor:pointer;
+    transition:background 0.2s;
+    width:100%;
+    margin-top:6px;
+}}
+.config-btn:hover {{background:#222}}
+.modal-overlay {{
+    position:fixed;
+    top:0;
+    left:0;
+    width:100vw;
+    height:100vh;
+    background:rgba(0,0,0,0.7);
+    backdrop-filter:blur(4px);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:9999;
+}}
+.modal-overlay.active {{display:flex}}
+.modal-box {{
+    background:linear-gradient(#111,#0a0a0a);
+    border:1px solid #2a2a2a;
+    padding:24px;
+    min-width:300px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.8);
+}}
+.modal-title {{
+    color:#fff;
+    font-size:13px;
+    margin-bottom:16px;
+    font-weight:normal;
+}}
+.modal-input {{
+    width:100%;
+    height:28px;
+    background:#0f0f0f;
+    border:1px solid #2a2a2a;
+    color:#cfcfcf;
+    font-size:11px;
+    padding:0 10px;
+    outline:none;
+    margin-bottom:12px;
+}}
+.modal-input:focus {{border-color:#555}}
+.modal-buttons {{display:flex;gap:8px}}
+.modal-btn {{
+    flex:1;
+    height:28px;
+    background:#0f0f0f;
+    border:1px solid #2a2a2a;
+    color:#cfcfcf;
+    font-size:11px;
+    cursor:pointer;
+    transition:background 0.2s;
+}}
+.modal-btn:hover {{background:#222}}
+.modal-btn.primary {{background:#1a1a1a}}
+.modal-btn.primary:hover {{background:#252525}}
 </style>
 </head>
 <body>
-
 <div class="window">
-  <div class="topbar">
-    <div class="title">Axion</div>
-    <div class="tabs">
-      <div class="tab active" data-tab="aimbot">Aimbot</div>
-      <div class="tab" data-tab="triggerbot">Triggerbot</div>
-      <div class="tab" data-tab="settings">Settings</div>
-    </div>
-    <div class="topbar-right">
-      <div class="search-container">
-        <img src="https://img.icons8.com/ios-filled/50/ffffff/search.png" class="search-icon" alt="Search"/>
-        <input type="text" id="searchInput" class="search-bar" placeholder="Search settings..."/>
-      </div>
-    </div>
-  </div>
-
-  <div class="content">
-    <!-- Aimbot Tab -->
-    <div class="tab-content active" id="aimbot">
-      <div class="merged-panel">
-        <div class="inner-container">
-          <div class="half-panel">
-            <div class="panel-header">Aimbot</div>
-            <div class="toggle-row">
-              <div class="toggle-text">
-                <div class="toggle active" data-setting="camlock.Enabled"></div>
-                <span class="enable-text">Enable Camlock</span>
-              </div>
-              <div class="keybind-picker" data-setting="camlock.Keybind">Q</div>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle active" data-setting="camlock.EnableSmoothing"></div>
-              <span class="enable-text">Enable Smoothing</span>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle active" data-setting="camlock.EnablePrediction"></div>
-              <span class="enable-text">Enable Prediction</span>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle" data-setting="camlock.UnlockOnDeath"></div>
-              <span class="enable-text">Unlock on Death</span>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle" data-setting="camlock.SelfDeathCheck"></div>
-              <span class="enable-text">Self Death Check</span>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle" data-setting="camlock.ClosestPart"></div>
-              <span class="enable-text">Closest Part</span>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle active" data-setting="camlock.ScaleToggle"></div>
-              <span class="enable-text">Scale Toggle</span>
-            </div>
-
-            <div class="slider-label">Body Part</div>
-            <div class="custom-dropdown">
-              <div class="dropdown-header" id="bodyPartHeader">Head</div>
-              <div class="dropdown-list" id="bodyPartList">
-                <div class="dropdown-item selected" data-value="Head">Head</div>
-                <div class="dropdown-item" data-value="UpperTorso">UpperTorso</div>
-                <div class="dropdown-item" data-value="LowerTorso">LowerTorso</div>
-                <div class="dropdown-item" data-value="HumanoidRootPart">HumanoidRootPart</div>
-              </div>
-            </div>
-
-            <div class="slider-label">Easing Style</div>
-            <div class="custom-dropdown">
-              <div class="dropdown-header" id="easingHeader">Linear</div>
-              <div class="dropdown-list" id="easingList">
-                <div class="dropdown-item selected" data-value="Linear">Linear</div>
-                <div class="dropdown-item" data-value="Sine">Sine</div>
-                <div class="dropdown-item" data-value="Quad">Quad</div>
-                <div class="dropdown-item" data-value="Cubic">Cubic</div>
-                <div class="dropdown-item" data-value="Expo">Expo</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="half-panel">
-            <div class="panel-header">Aimbot Settings</div>
-
-            <div class="slider-label">FOV</div>
-            <div class="slider-container" id="fovSlider" data-setting="camlock.FOV">
-              <div class="slider-track">
-                <div class="slider-fill" id="fovFill"></div>
-                <div class="slider-value" id="fovValue">280</div>
-              </div>
-            </div>
-
-            <div class="slider-label">Smooth X</div>
-            <div class="slider-container" id="smoothXSlider" data-setting="camlock.SmoothX">
-              <div class="slider-track">
-                <div class="slider-fill" id="smoothXFill"></div>
-                <div class="slider-value" id="smoothXValue">14</div>
-              </div>
-            </div>
-
-            <div class="slider-label">Smooth Y</div>
-            <div class="slider-container" id="smoothYSlider" data-setting="camlock.SmoothY">
-              <div class="slider-track">
-                <div class="slider-fill" id="smoothYFill"></div>
-                <div class="slider-value" id="smoothYValue">14</div>
-              </div>
-            </div>
-
-            <div class="slider-label">Prediction</div>
-            <div class="slider-container" id="camlockPredSlider" data-setting="camlock.Prediction">
-              <div class="slider-track">
-                <div class="slider-fill" id="camlockPredFill"></div>
-                <div class="slider-value" id="camlockPredValue">0.14</div>
-              </div>
-            </div>
-
-            <div class="slider-label">Max Studs</div>
-            <div class="slider-container" id="camlockMaxStudsSlider" data-setting="camlock.MaxStuds">
-              <div class="slider-track">
-                <div class="slider-fill" id="camlockMaxStudsFill"></div>
-                <div class="slider-value" id="camlockMaxStudsValue">120</div>
-              </div>
-            </div>
-
-            <div class="slider-label">Scale</div>
-            <div class="slider-container" id="scaleSlider" data-setting="camlock.Scale">
-              <div class="slider-track">
-                <div class="slider-fill" id="scaleFill"></div>
-                <div class="slider-value" id="scaleValue">1.0</div>
-              </div>
-            </div>
-          </div>
+    <div class="topbar">
+        <div class="title">Axion</div>
+        <div class="tabs">
+            <div class="tab active" data-tab="aimbot">aimbot</div>
+            <div class="tab" data-tab="triggerbot">triggerbot</div>
+            <div class="tab" data-tab="settings">settings</div>
         </div>
-      </div>
-    </div>
-
-    <!-- Triggerbot Tab -->
-    <div class="tab-content" id="triggerbot">
-      <div class="merged-panel">
-        <div class="inner-container">
-          <div class="half-panel">
-            <div class="panel-header">Triggerbot</div>
-            <div class="toggle-row">
-              <div class="toggle-text">
-                <div class="toggle active" data-setting="triggerbot.Enabled"></div>
-                <span class="enable-text">Enable Triggerbot</span>
-              </div>
-              <div class="keybind-picker" data-setting="triggerbot.Keybind">Right Mouse</div>
+        <div class="topbar-right">
+            <div class="search-container">
+                <img src="https://img.icons8.com/?size=100&id=14079&format=png&color=FFFFFF" alt="Search" class="search-icon">
+                <input type="text" id="searchInput" class="search-bar" placeholder="Search...">
             </div>
-            <div class="toggle-row">
-              <div class="toggle-text">
-                <div class="toggle" data-setting="triggerbot.TargetMode"></div>
-                <span class="enable-text">Target Mode</span>
-              </div>
-              <div class="keybind-picker" data-setting="triggerbot.TargetKeybind">Middle Mouse</div>
-            </div>
-          </div>
-
-          <div class="half-panel">
-            <div class="panel-header">Triggerbot Settings</div>
-            <div class="toggle-row">
-              <div class="toggle active" data-setting="triggerbot.StudCheck"></div>
-              <span class="enable-text">Stud Check</span>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle active" data-setting="triggerbot.DeathCheck"></div>
-              <span class="enable-text">Death Check</span>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle active" data-setting="triggerbot.KnifeCheck"></div>
-              <span class="enable-text">Knife Check</span>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle active" data-setting="triggerbot.TeamCheck"></div>
-              <span class="enable-text">Team Check</span>
-            </div>
-
-            <div class="slider-label">Delay (s)</div>
-            <div class="slider-container" id="delaySlider" data-setting="triggerbot.Delay">
-              <div class="slider-track">
-                <div class="slider-fill" id="delayFill"></div>
-                <div class="slider-value" id="delayValue">0.00</div>
-              </div>
-            </div>
-
-            <div class="slider-label">Max Studs</div>
-            <div class="slider-container" id="maxStudsSlider" data-setting="triggerbot.MaxStuds">
-              <div class="slider-track">
-                <div class="slider-fill" id="maxStudsFill"></div>
-                <div class="slider-value" id="maxStudsValue">120</div>
-              </div>
-            </div>
-
-            <div class="slider-label">Prediction</div>
-            <div class="slider-container" id="predSlider" data-setting="triggerbot.Prediction">
-              <div class="slider-track">
-                <div class="slider-fill" id="predFill"></div>
-                <div class="slider-value" id="predValue">0.10</div>
-              </div>
-            </div>
-
-            <div class="slider-label">FOV</div>
-            <div class="slider-container" id="trigFovSlider" data-setting="triggerbot.FOV">
-              <div class="slider-track">
-                <div class="slider-fill" id="trigFovFill"></div>
-                <div class="slider-value" id="trigFovValue">25</div>
-              </div>
-            </div>
-          </div>
         </div>
-      </div>
     </div>
-
-    <!-- Settings / Configs Tab -->
-    <div class="tab-content" id="settings">
-      <div class="merged-panel">
-        <div class="inner-container">
-          <div class="half-panel">
-            <div class="panel-header">Saved Configs</div>
-            <div class="config-list" id="configList"></div>
-          </div>
-          <div class="half-panel">
-            <div class="panel-header">Actions</div>
-            <div style="padding:16px;">
-              <div style="margin-bottom:16px;">
-                <div style="font-size:12px;color:#bfbfbf;margin-bottom:6px;">Save Current Settings As</div>
-                <input type="text" id="saveConfigInput" class="input-box" placeholder="Enter config name..."/>
-                <button class="config-btn" onclick="saveCurrentConfig()">Save Config</button>
-              </div>
+    <div class="content">
+        <div class="tab-content active" id="aimbot">
+            <div class="merged-panel">
+                <div class="inner-container">
+                    <div class="half-panel">
+                        <div class="panel-header">aimbot</div>
+                        <div class="toggle-row" style="top:32px">
+                            <div class="toggle-text">
+                                <div class="toggle active" data-setting="camlock.Enabled"></div>
+                                <span class="enable-text">Enable Aimbot</span>
+                            </div>
+                            <div class="keybind-picker" data-setting="camlock.Keybind">Q</div>
+                        </div>
+                        <div class="toggle-row" style="top:58px">
+                            <div class="toggle" data-setting="camlock.UnlockOnDeath"></div>
+                            <span class="enable-text">Unlock On Death</span>
+                        </div>
+                        <div class="toggle-row" style="top:82px">
+                            <div class="toggle" data-setting="camlock.SelfDeathCheck"></div>
+                            <span class="enable-text">Self Death Check</span>
+                        </div>
+                        <div class="toggle-row" style="top:106px">
+                            <div class="toggle" data-setting="camlock.ClosestPart"></div>
+                            <span class="enable-text">Closest Part</span>
+                        </div>
+                        <div class="toggle-row" style="top:130px">
+                            <div class="toggle active" data-setting="camlock.EnableSmoothing"></div>
+                            <span class="enable-text">Enable Smoothing</span>
+                        </div>
+                        <div class="toggle-row" style="top:154px">
+                            <div class="toggle active" data-setting="camlock.EnablePrediction"></div>
+                            <span class="enable-text">Enable Prediction</span>
+                        </div>
+                        <div class="slider-label" style="top:180px">Body Part</div>
+                        <div class="custom-dropdown" style="top:194px" id="bodyPartDropdown" data-setting="camlock.BodyPart">
+                            <div class="dropdown-header" id="bodyPartHeader">Head</div>
+                            <div class="dropdown-list" id="bodyPartList">
+                                <div class="dropdown-item selected" data-value="Head">Head</div>
+                                <div class="dropdown-item" data-value="UpperTorso">UpperTorso</div>
+                                <div class="dropdown-item" data-value="LowerTorso">LowerTorso</div>
+                                <div class="dropdown-item" data-value="HumanoidRootPart">HumanoidRootPart</div>
+                                <div class="dropdown-item" data-value="LeftUpperArm">LeftUpperArm</div>
+                                <div class="dropdown-item" data-value="RightUpperArm">RightUpperArm</div>
+                                <div class="dropdown-item" data-value="LeftLowerArm">LeftLowerArm</div>
+                                <div class="dropdown-item" data-value="RightLowerArm">RightLowerArm</div>
+                                <div class="dropdown-item" data-value="LeftHand">LeftHand</div>
+                                <div class="dropdown-item" data-value="RightHand">RightHand</div>
+                                <div class="dropdown-item" data-value="LeftUpperLeg">LeftUpperLeg</div>
+                                <div class="dropdown-item" data-value="RightUpperLeg">RightUpperLeg</div>
+                                <div class="dropdown-item" data-value="LeftLowerLeg">LeftLowerLeg</div>
+                                <div class="dropdown-item" data-value="RightLowerLeg">RightLowerLeg</div>
+                                <div class="dropdown-item" data-value="LeftFoot">LeftFoot</div>
+                                <div class="dropdown-item" data-value="RightFoot">RightFoot</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="half-panel">
+                        <div class="panel-header">aimbot settings</div>
+                        <div class="slider-label" style="top:32px">FOV</div>
+                        <div class="slider-container" id="fovSlider" style="top:46px" data-setting="camlock.FOV">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="fovFill"></div>
+                                <div class="slider-value" id="fovValue">280</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top:72px">Smooth X</div>
+                        <div class="slider-container" id="smoothXSlider" style="top:86px" data-setting="camlock.SmoothX">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="smoothXFill"></div>
+                                <div class="slider-value" id="smoothXValue">14</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top:112px">Smooth Y</div>
+                        <div class="slider-container" id="smoothYSlider" style="top:126px" data-setting="camlock.SmoothY">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="smoothYFill"></div>
+                                <div class="slider-value" id="smoothYValue">14</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top:152px">Prediction</div>
+                        <div class="slider-container" id="camlockPredSlider" style="top:166px" data-setting="camlock.Prediction">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="camlockPredFill"></div>
+                                <div class="slider-value" id="camlockPredValue">0.14</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top:192px">Max Studs</div>
+                        <div class="slider-container" id="camlockMaxStudsSlider" style="top:206px" data-setting="camlock.MaxStuds">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="camlockMaxStudsFill"></div>
+                                <div class="slider-value" id="camlockMaxStudsValue">120</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top:232px">Easing Style</div>
+                        <div class="custom-dropdown" style="top:246px" id="easingDropdown" data-setting="camlock.EasingStyle">
+                            <div class="dropdown-header" id="easingHeader">Linear</div>
+                            <div class="dropdown-list" id="easingList">
+                                <div class="dropdown-item selected" data-value="Linear">Linear</div>
+                                <div class="dropdown-item" data-value="Sine">Sine</div>
+                                <div class="dropdown-item" data-value="Quad">Quad</div>
+                                <div class="dropdown-item" data-value="Cubic">Cubic</div>
+                                <div class="dropdown-item" data-value="Quart">Quart</div>
+                                <div class="dropdown-item" data-value="Quint">Quint</div>
+                                <div class="dropdown-item" data-value="Expo">Expo</div>
+                                <div class="dropdown-item" data-value="Circ">Circ</div>
+                                <div class="dropdown-item" data-value="Back">Back</div>
+                                <div class="dropdown-item" data-value="Elastic">Elastic</div>
+                                <div class="dropdown-item" data-value="Bounce">Bounce</div>
+                            </div>
+                        </div>
+                        <div class="toggle-row" style="top:272px">
+                            <div class="toggle active" data-setting="camlock.ScaleToggle"></div>
+                            <span class="enable-text">Scale Toggle</span>
+                        </div>
+                        <div class="slider-label" style="top:298px">Scale</div>
+                        <div class="slider-container" id="scaleSlider" style="top:312px" data-setting="camlock.Scale">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="scaleFill"></div>
+                                <div class="slider-value" id="scaleValue">1.0</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-          </div>
         </div>
-      </div>
+
+        <div class="tab-content" id="triggerbot">
+            <div class="merged-panel">
+                <div class="inner-container">
+                    <div class="half-panel">
+                        <div class="panel-header">triggerbot</div>
+                        <div class="toggle-row" style="top:32px">
+                            <div class="toggle-text">
+                                <div class="toggle active" data-setting="triggerbot.Enabled"></div>
+                                <span class="enable-text">Enable Triggerbot</span>
+                            </div>
+                            <div class="keybind-picker" data-setting="triggerbot.Keybind">Right Mouse</div>
+                        </div>
+                        <div class="toggle-row" style="top:58px">
+                            <div class="toggle-text">
+                                <div class="toggle" data-setting="triggerbot.TargetMode"></div>
+                                <span class="enable-text">Target Mode</span>
+                            </div>
+                            <div class="keybind-picker" data-setting="triggerbot.TargetKeybind">Middle Mouse</div>
+                        </div>
+                    </div>
+                    <div class="half-panel">
+                        <div class="panel-header">triggerbot settings</div>
+                        <div class="toggle-row" style="top:32px">
+                            <div class="toggle active" data-setting="triggerbot.StudCheck"></div>
+                            <span class="enable-text">Stud Check</span>
+                        </div>
+                        <div class="toggle-row" style="top:56px">
+                            <div class="toggle active" data-setting="triggerbot.DeathCheck"></div>
+                            <span class="enable-text">Death Check</span>
+                        </div>
+                        <div class="toggle-row" style="top:80px">
+                            <div class="toggle active" data-setting="triggerbot.KnifeCheck"></div>
+                            <span class="enable-text">Knife Check</span>
+                        </div>
+                        <div class="toggle-row" style="top:104px">
+                            <div class="toggle active" data-setting="triggerbot.TeamCheck"></div>
+                            <span class="enable-text">Team Check</span>
+                        </div>
+                        <div class="slider-label" style="top:130px">Delay (s)</div>
+                        <div class="slider-container" id="delaySlider" style="top:144px" data-setting="triggerbot.Delay">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="delayFill"></div>
+                                <div class="slider-value" id="delayValue">0.05</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top:170px">Max Studs</div>
+                        <div class="slider-container" id="maxStudsSlider" style="top:184px" data-setting="triggerbot.MaxStuds">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="maxStudsFill"></div>
+                                <div class="slider-value" id="maxStudsValue">120</div>
+                            </div>
+                        </div>
+                        <div class="slider-label" style="top:210px">Prediction</div>
+                        <div class="slider-container" id="predSlider" style="top:224px" data-setting="triggerbot.Prediction">
+                            <div class="slider-track">
+                                <div class="slider-fill" id="predFill"></div>
+                                <div class="slider-value" id="predValue">0.10</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="settings">
+            <div class="merged-panel">
+                <div class="inner-container">
+                    <div class="half-panel">
+                        <div class="panel-header">saved configs</div>
+                        <div class="config-list" id="configList"></div>
+                    </div>
+                    <div class="half-panel">
+                        <div class="panel-header">actions</div>
+                        <div style="position:absolute;top:32px;left:16px;right:16px">
+                            <div style="margin-bottom:12px">
+                                <div style="font-size:11px;color:#bfbfbf;margin-bottom:4px">Save Current Config</div>
+                                <input type="text" id="saveConfigInput" class="input-box" placeholder="Config name...">
+                                <button class="config-btn" style="margin-top:4px;width:100%" onclick="saveCurrentConfig()">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-  </div>
 </div>
 
-<!-- Rename Modal -->
 <div class="modal-overlay" id="renameModal">
-  <div class="modal-box">
-    <div class="modal-title">Rename Config</div>
-    <input type="text" id="renameInput" class="modal-input" placeholder="New name..."/>
-    <div class="modal-buttons">
-      <button class="modal-btn" onclick="closeRenameModal()">Cancel</button>
-      <button class="modal-btn primary" onclick="confirmRename()">Rename</button>
+    <div class="modal-box">
+        <div class="modal-title">Rename Config</div>
+        <input type="text" id="renameInput" class="modal-input" placeholder="Enter new name...">
+        <div class="modal-buttons">
+            <button class="modal-btn" onclick="closeRenameModal()">Cancel</button>
+            <button class="modal-btn primary" onclick="confirmRename()">Rename</button>
+        </div>
     </div>
-  </div>
 </div>
 
 <script>
-// ────────────────────────────────────────────────
-let config = {cfg};
+const key = "{key}";
 
-const sliders = {{}};
-
-// ─── Tab Switching ─────────────────────────────────
-document.querySelectorAll('.tab').forEach(tab => {{
-  tab.addEventListener('click', () => {{
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById(tab.dataset.tab).classList.add('active');
-  }});
-}});
-
-// ─── Toggle Click ──────────────────────────────────
-document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
-  toggle.addEventListener('click', () => {{
-    toggle.classList.toggle('active');
-    const [sec, key] = toggle.dataset.setting.split('.');
-    config[sec][key] = toggle.classList.contains('active');
-    saveConfig();
-  }});
-}});
-
-// ─── Keybind Picker ────────────────────────────────
-document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
-  picker.addEventListener('click', () => {{
-    picker.textContent = '...';
-    const listener = e => {{
-      e.preventDefault();
-      let name = '';
-      if (e.button !== undefined) {{
-        name = e.button === 0 ? 'Left Mouse' :
-               e.button === 2 ? 'Right Mouse' :
-               e.button === 1 ? 'Middle Mouse' : `Mouse ${{e.button}}`;
-      }} else if (e.key) {{
-        name = e.key.toUpperCase();
-        if (name === ' ') name = 'SPACE';
-      }}
-      picker.textContent = name || 'NONE';
-      const [sec, key] = picker.dataset.setting.split('.');
-      config[sec][key] = name;
-      saveConfig();
-      document.removeEventListener('keydown', listener);
-      document.removeEventListener('mousedown', listener);
-    }};
-    document.addEventListener('keydown', listener, {{once: true}});
-    document.addEventListener('mousedown', listener, {{once: true}});
-  }});
-}});
-
-// ─── Dropdowns ─────────────────────────────────────
-function setupDropdown(headerId, listId, settingPath) {{
-  const header = document.getElementById(headerId);
-  const list = document.getElementById(listId);
-  header.addEventListener('click', () => list.classList.toggle('open'));
-  list.querySelectorAll('.dropdown-item').forEach(item => {{
-    item.addEventListener('click', () => {{
-      header.textContent = item.textContent;
-      list.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
-      item.classList.add('selected');
-      list.classList.remove('open');
-      const [sec, key] = settingPath.split('.');
-      config[sec][key] = item.dataset.value;
-      saveConfig();
-    }});
-  }});
-}}
-
-setupDropdown('bodyPartHeader', 'bodyPartList', 'camlock.BodyPart');
-setupDropdown('easingHeader', 'easingList', 'camlock.EasingStyle');
-
-// ─── Custom Sliders ────────────────────────────────
-function makeSlider(containerId, fillId, valueId, min, max, step, decimals, setting) {{
-  const container = document.getElementById(containerId);
-  if (!container) return null;
-  const fill = document.getElementById(fillId);
-  const valEl = document.getElementById(valueId);
-
-  let current = parseFloat(valEl.textContent);
-  const obj = {{
-    get value() {{ return current; }},
-    set value(v) {{
-      current = Math.max(min, Math.min(max, Math.round(v / step) * step));
-      const pct = ((current - min) / (max - min)) * 100;
-      fill.style.width = pct + '%';
-      valEl.textContent = decimals > 0 ? current.toFixed(decimals) : Math.round(current);
+let config = {{
+    "triggerbot": {{
+        "Enabled": true,
+        "Keybind": "Right Mouse",
+        "Delay": 0.05,
+        "MaxStuds": 120,
+        "StudCheck": true,
+        "DeathCheck": true,
+        "KnifeCheck": true,
+        "TeamCheck": true,
+        "TargetMode": false,
+        "TargetKeybind": "Middle Mouse",
+        "Prediction": 0.1
     }},
-    updateUI() {{ this.value = current; }}
-  }};
+    "camlock": {{
+        "Enabled": true,
+        "Keybind": "Q",
+        "FOV": 280.0,
+        "SmoothX": 14.0,
+        "SmoothY": 14.0,
+        "EnableSmoothing": true,
+        "EasingStyle": "Linear",
+        "Prediction": 0.14,
+        "EnablePrediction": true,
+        "MaxStuds": 120.0,
+        "UnlockOnDeath": true,
+        "SelfDeathCheck": true,
+        "BodyPart": "Head",
+        "ClosestPart": false,
+        "ScaleToggle": true,
+        "Scale": 1.0
+    }}
+}};
 
-  container.addEventListener('mousedown', e => {{
-    const move = ev => {{
-      const rect = container.getBoundingClientRect();
-      let pct = (ev.clientX - rect.left) / rect.width;
-      pct = Math.max(0, Math.min(1, pct));
-      obj.value = min + pct * (max - min);
-      const [sec, key] = setting.split('.');
-      config[sec][key] = obj.value;
-      saveConfig();
-    }};
-    const up = () => {{
-      document.removeEventListener('mousemove', move);
-      document.removeEventListener('mouseup', up);
-    }};
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
-    move(e);
-  }});
-
-  obj.updateUI();
-  return obj;
-}}
-
-sliders.fov               = makeSlider('fovSlider',               'fovFill',               'fovValue',               10,  500,  1,   0, 'camlock.FOV');
-sliders.smoothX           = makeSlider('smoothXSlider',           'smoothXFill',           'smoothXValue',           1,   50,   1,   0, 'camlock.SmoothX');
-sliders.smoothY           = makeSlider('smoothYSlider',           'smoothYFill',           'smoothYValue',           1,   50,   1,   0, 'camlock.SmoothY');
-sliders.camlockPred       = makeSlider('camlockPredSlider',       'camlockPredFill',       'camlockPredValue',       0,   1,    0.01,2, 'camlock.Prediction');
-sliders.camlockMaxStuds   = makeSlider('camlockMaxStudsSlider',   'camlockMaxStudsFill',   'camlockMaxStudsValue',   50,  300,  1,   0, 'camlock.MaxStuds');
-sliders.scale             = makeSlider('scaleSlider',             'scaleFill',             'scaleValue',             0.5, 2,    0.1, 1, 'camlock.Scale');
-sliders.delay             = makeSlider('delaySlider',             'delayFill',             'delayValue',             0,   1,    0.01,2, 'triggerbot.Delay');
-sliders.maxStuds          = makeSlider('maxStudsSlider',          'maxStudsFill',          'maxStudsValue',          50,  300,  1,   0, 'triggerbot.MaxStuds');
-sliders.pred              = makeSlider('predSlider',              'predFill',              'predValue',              0,   1,    0.01,2, 'triggerbot.Prediction');
-sliders.trigFov           = makeSlider('trigFovSlider',           'trigFovFill',           'trigFovValue',           5,   100,  1,   0, 'triggerbot.FOV');
-
-// ─── Config Save / Load ────────────────────────────
-async function saveConfig() {{
-  try {{
-    await fetch(`/api/config/{key}`, {{
-      method: 'POST',
-      headers: {{ 'Content-Type': 'application/json' }},
-      body: JSON.stringify(config)
+document.querySelectorAll('.tab').forEach(tab => {{
+    tab.addEventListener('click', () => {{
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.getAttribute('data-tab')).classList.add('active');
     }});
-  }} catch(e) {{
-    console.error('Save failed', e);
-  }}
+}});
+
+async function saveConfig() {{
+    try {{
+        await fetch(`/api/config/${{key}}`, {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify(config)
+        }});
+    }} catch(e) {{
+        console.error('Save failed:', e);
+    }}
 }}
 
 async function loadConfig() {{
-  try {{
-    const res = await fetch(`/api/config/{key}`);
-    config = await res.json();
-    applyConfigToUI();
-  }} catch(e) {{
-    console.error('Load failed', e);
-  }}
+    try {{
+        const res = await fetch(`/api/config/${{key}}`);
+        config = await res.json();
+        applyConfigToUI();
+    }} catch(e) {{
+        console.error('Load failed:', e);
+    }}
 }}
 
 function applyConfigToUI() {{
-  // Toggles
-  document.querySelectorAll('.toggle[data-setting]').forEach(el => {{
-    const [sec, key] = el.dataset.setting.split('.');
-    if (config[sec]?.[key] !== undefined) {{
-      el.classList.toggle('active', !!config[sec][key]);
-    }}
-  }});
-
-  // Keybinds
-  document.querySelectorAll('.keybind-picker[data-setting]').forEach(el => {{
-    const [sec, key] = el.dataset.setting.split('.');
-    if (config[sec]?.[key]) el.textContent = config[sec][key];
-  }});
-
-  // Dropdowns
-  if (config.camlock?.BodyPart) {{
-    document.getElementById('bodyPartHeader').textContent = config.camlock.BodyPart;
-    document.querySelectorAll('#bodyPartList .dropdown-item').forEach(it => {{
-      it.classList.toggle('selected', it.dataset.value === config.camlock.BodyPart);
+    document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
+        const setting = toggle.dataset.setting;
+        const [section, key] = setting.split('.');
+        if (config[section] && config[section][key] !== undefined) {{
+            toggle.classList.toggle('active', config[section][key]);
+        }}
     }});
-  }}
-  if (config.camlock?.EasingStyle) {{
-    document.getElementById('easingHeader').textContent = config.camlock.EasingStyle;
-    document.querySelectorAll('#easingList .dropdown-item').forEach(it => {{
-      it.classList.toggle('selected', it.dataset.value === config.camlock.EasingStyle);
-    }});
-  }}
 
-  // Sliders
-  Object.entries(sliders).forEach(([name, slider]) => {{
-    if (slider) {{
-      const path = name.replace(/([A-Z])/g, '.$1').toLowerCase();
-      slider.value = eval(`config.${{path}}`) || slider.value;
-      slider.updateUI();
+    document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
+        const setting = picker.dataset.setting;
+        const [section, key] = setting.split('.');
+        if (config[section] && config[section][key] !== undefined) {{
+            picker.textContent = config[section][key];
+        }}
+    }});
+
+    if (sliders.delay)       {{ sliders.delay.current = config.triggerbot.Delay;       sliders.delay.update(); }}
+    if (sliders.maxStuds)    {{ sliders.maxStuds.current = config.triggerbot.MaxStuds; sliders.maxStuds.update(); }}
+    if (sliders.pred)        {{ sliders.pred.current = config.triggerbot.Prediction;   sliders.pred.update(); }}
+    if (sliders.fov)         {{ sliders.fov.current = config.camlock.FOV;              sliders.fov.update(); }}
+    if (sliders.smoothX)     {{ sliders.smoothX.current = config.camlock.SmoothX;      sliders.smoothX.update(); }}
+    if (sliders.smoothY)     {{ sliders.smoothY.current = config.camlock.SmoothY;      sliders.smoothY.update(); }}
+    if (sliders.camlockPred) {{ sliders.camlockPred.current = config.camlock.Prediction; sliders.camlockPred.update(); }}
+    if (sliders.camlockMaxStuds) {{ sliders.camlockMaxStuds.current = config.camlock.MaxStuds; sliders.camlockMaxStuds.update(); }}
+    if (sliders.scale)       {{ sliders.scale.current = config.camlock.Scale;          sliders.scale.update(); }}
+
+    if (config.camlock.BodyPart) {{
+        document.getElementById('bodyPartHeader').textContent = config.camlock.BodyPart;
+        document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item => {{
+            item.classList.toggle('selected', item.dataset.value === config.camlock.BodyPart);
+        }});
     }}
-  }});
+    if (config.camlock.EasingStyle) {{
+        document.getElementById('easingHeader').textContent = config.camlock.EasingStyle;
+        document.querySelectorAll('#easingList .dropdown-item').forEach(item => {{
+            item.classList.toggle('selected', item.dataset.value === config.camlock.EasingStyle);
+        }});
+    }}
 }}
 
-// ─── Saved Configs ─────────────────────────────────
-async function loadSavedConfigs() {{
-  try {{
-    const res = await fetch(`/api/configs/{key}/list`);
-    const data = await res.json();
-    const list = document.getElementById('configList');
-    list.innerHTML = '';
-    data.configs.forEach((cfg, i) => {{
-      const item = document.createElement('div');
-      item.className = 'config-item';
-      item.innerHTML = `
-        <div class="config-name">${{cfg}}</div>
-        <div class="config-dots" onclick="toggleConfigMenu(event, ${{i}})">⋮</div>
-        <div class="config-menu" id="menu${{i}}">
-          <div class="config-menu-item" onclick="loadConfigByName('${{cfg}}')">Load</div>
-          <div class="config-menu-item" onclick="renameConfigPrompt('${{cfg}}')">Rename</div>
-          <div class="config-menu-item" onclick="deleteConfigByName('${{cfg}}')">Delete</div>
-        </div>
-      `;
-      list.appendChild(item);
+document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
+    toggle.addEventListener('click', () => {{
+        toggle.classList.toggle('active');
+        const setting = toggle.dataset.setting;
+        const [section, key] = setting.split('.');
+        config[section][key] = toggle.classList.contains('active');
+        saveConfig();
     }});
-  }} catch(e) {{
-    console.error(e);
-  }}
+}});
+
+document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
+    picker.addEventListener('click', () => {{
+        picker.textContent = '...';
+        const listener = (e) => {{
+            e.preventDefault();
+            let keyName = '';
+            if (e.button !== undefined) {{
+                keyName = e.button === 0 ? 'Left Mouse' :
+                          e.button === 2 ? 'Right Mouse' :
+                          e.button === 1 ? 'Middle Mouse' : `Mouse${{e.button}}`;
+            }} else if (e.key) {{
+                keyName = e.key.toUpperCase();
+                if (keyName === ' ') keyName = 'SPACE';
+            }}
+            picker.textContent = keyName || 'NONE';
+            const setting = picker.dataset.setting;
+            const [section, key] = setting.split('.');
+            config[section][key] = keyName;
+            saveConfig();
+            document.removeEventListener('keydown', listener);
+            document.removeEventListener('mousedown', listener);
+        }};
+        document.addEventListener('keydown', listener, {{once: true}});
+        document.addEventListener('mousedown', listener, {{once: true}});
+    }});
+}});
+
+document.getElementById('bodyPartHeader').addEventListener('click', () => {{
+    document.getElementById('bodyPartList').classList.toggle('open');
+}});
+
+document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item => {{
+    item.addEventListener('click', () => {{
+        const value = item.dataset.value;
+        document.getElementById('bodyPartHeader').textContent = value;
+        document.querySelectorAll('#bodyPartList .dropdown-item').forEach(i => i.classList.remove('selected'));
+        item.classList.add('selected');
+        document.getElementById('bodyPartList').classList.remove('open');
+        config.camlock.BodyPart = value;
+        saveConfig();
+    }});
+}});
+
+document.getElementById('easingHeader').addEventListener('click', () => {{
+    document.getElementById('easingList').classList.toggle('open');
+}});
+
+document.querySelectorAll('#easingList .dropdown-item').forEach(item => {{
+    item.addEventListener('click', () => {{
+        const value = item.dataset.value;
+        document.getElementById('easingHeader').textContent = value;
+        document.querySelectorAll('#easingList .dropdown-item').forEach(i => i.classList.remove('selected'));
+        item.classList.add('selected');
+        document.getElementById('easingList').classList.remove('open');
+        config.camlock.EasingStyle = value;
+        saveConfig();
+    }});
+}});
+
+const sliders = {{}};
+
+function createDecimalSlider(id, fillId, valueId, defaultVal, min, max, step, setting, textColorThreshold = 0.5) {{
+    const slider = document.getElementById(id);
+    if (!slider) return null;
+    const fill = document.getElementById(fillId);
+    const valueText = document.getElementById(valueId);
+    
+    const obj = {{
+        current: defaultVal,
+        min: min,
+        max: max,
+        step: step,
+        setting: setting,
+        threshold: textColorThreshold,
+        update: function() {{
+            const percent = ((this.current - this.min) / (this.max - this.min)) * 100;
+            fill.style.width = percent + '%';
+            valueText.textContent = this.current.toFixed(2);
+            valueText.style.color = this.current < this.threshold ? '#fff' : '#000';
+        }}
+    }};
+
+    slider.addEventListener('mousedown', (e) => {{
+        const rect = slider.getBoundingClientRect();
+        function move(e) {{
+            const x = e.clientX - rect.left;
+            let percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            obj.current = obj.min + (percent / 100) * (obj.max - obj.min);
+            obj.current = Math.round(obj.current / obj.step) * obj.step;
+            obj.current = Math.max(obj.min, Math.min(obj.max, obj.current));
+            obj.update();
+            const [section, key] = obj.setting.split('.');
+            config[section][key] = obj.current;
+            saveConfig();
+        }}
+        function up() {{
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+        }}
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+        move(e);
+    }});
+
+    obj.update();
+    return obj;
+}}
+
+function createIntSlider(id, fillId, valueId, defaultVal, max, blackThreshold, setting) {{
+    const slider = document.getElementById(id);
+    if (!slider) return null;
+    const fill = document.getElementById(fillId);
+    const valueText = document.getElementById(valueId);
+    const obj = {{
+        current: defaultVal,
+        max: max,
+        blackThreshold: blackThreshold,
+        setting: setting,
+        update: function() {{
+            const percent = (this.current / this.max) * 100;
+            fill.style.width = percent + '%';
+            valueText.textContent = Math.round(this.current);
+            valueText.style.color = this.current >= this.blackThreshold ? '#000' : '#fff';
+        }}
+    }};
+    slider.addEventListener('mousedown', (e) => {{
+        const rect = slider.getBoundingClientRect();
+        function move(e) {{
+            const x = e.clientX - rect.left;
+            const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            obj.current = (percent / 100) * obj.max;
+            obj.update();
+            const [section, key] = obj.setting.split('.');
+            config[section][key] = Math.round(obj.current);
+            saveConfig();
+        }}
+        function up() {{
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+        }}
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+        move(e);
+    }});
+    obj.update();
+    return obj;
+}}
+
+sliders.delay           = createDecimalSlider('delaySlider',       'delayFill',       'delayValue',       0.05, 0.01, 1.00, 0.01, 'triggerbot.Delay');
+sliders.maxStuds        = createIntSlider(   'maxStudsSlider',    'maxStudsFill',    'maxStudsValue',    120,  300,  150,   'triggerbot.MaxStuds');
+sliders.pred            = createDecimalSlider('predSlider',        'predFill',        'predValue',        0.10, 0.01, 1.00, 0.01, 'triggerbot.Prediction');
+sliders.fov             = createIntSlider(   'fovSlider',         'fovFill',         'fovValue',         280,  500,  250,   'camlock.FOV');
+sliders.smoothX         = createIntSlider(   'smoothXSlider',     'smoothXFill',     'smoothXValue',     14,   30,   15,    'camlock.SmoothX');
+sliders.smoothY         = createIntSlider(   'smoothYSlider',     'smoothYFill',     'smoothYValue',     14,   30,   15,    'camlock.SmoothY');
+sliders.camlockPred     = createDecimalSlider('camlockPredSlider', 'camlockPredFill', 'camlockPredValue', 0.14, 0.01, 1.00, 0.01, 'camlock.Prediction');
+sliders.camlockMaxStuds = createIntSlider(   'camlockMaxStudsSlider', 'camlockMaxStudsFill', 'camlockMaxStudsValue', 120, 300, 150, 'camlock.MaxStuds');
+sliders.scale = createDecimalSlider('scaleSlider', 'scaleFill', 'scaleValue', 1.0, 0.5, 2.0, 0.1, 'camlock.Scale', 1.20);
+
+async function loadSavedConfigs() {{
+    try {{
+        const res = await fetch(`/api/configs/${{key}}/list`);
+        const data = await res.json();
+        const list = document.getElementById('configList');
+        list.innerHTML = '';
+        data.configs.forEach((cfg, idx) => {{
+            const div = document.createElement('div');
+            div.className = 'config-item';
+            div.innerHTML = `
+                <div class="config-name">${{cfg.name}}</div>
+                <div class="config-dots" onclick="toggleConfigMenu(event, ${{idx}})">⋮</div>
+                <div class="config-menu" id="configMenu${{idx}}">
+                    <div class="config-menu-item" onclick="loadConfigByName('${{cfg.name}}')">Load</div>
+                    <div class="config-menu-item" onclick="renameConfigPrompt('${{cfg.name}}')">Rename</div>
+                    <div class="config-menu-item" onclick="deleteConfigByName('${{cfg.name}}')">Delete</div>
+                </div>
+            `;
+            list.appendChild(div);
+        }});
+    }} catch(e) {{
+        console.error(e);
+    }}
 }}
 
 function toggleConfigMenu(e, idx) {{
-  e.stopPropagation();
-  document.querySelectorAll('.config-menu').forEach(m => m.classList.remove('open'));
-  document.getElementById(`menu${{idx}}`).classList.toggle('open');
+    e.stopPropagation();
+    const menu = document.getElementById(`configMenu${{idx}}`);
+    document.querySelectorAll('.config-menu').forEach(m => {{
+        if (m !== menu) m.classList.remove('open');
+    }});
+    menu.classList.toggle('open');
 }}
 
 document.addEventListener('click', () => {{
-  document.querySelectorAll('.config-menu').forEach(m => m.classList.remove('open'));
+    document.querySelectorAll('.config-menu').forEach(m => m.classList.remove('open'));
 }});
 
 async function saveCurrentConfig() {{
-  const name = document.getElementById('saveConfigInput').value.trim();
-  if (!name) return alert('Enter a name');
-  try {{
-    await fetch(`/api/configs/{key}/save`, {{
-      method: 'POST',
-      headers: {{ 'Content-Type': 'application/json' }},
-      body: JSON.stringify({{ name, data: config }})
-    }});
-    document.getElementById('saveConfigInput').value = '';
-    loadSavedConfigs();
-  }} catch(e) {{
-    alert('Save failed');
-  }}
+    const name = document.getElementById('saveConfigInput').value.trim();
+    if (!name) return alert('Enter config name');
+    try {{
+        await fetch(`/api/configs/${{key}}/save`, {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{config_name: name, config_data: config}})
+        }});
+        document.getElementById('saveConfigInput').value = '';
+        await loadSavedConfigs();
+    }} catch(e) {{
+        alert('Failed to save');
+    }}
 }}
 
 async function loadConfigByName(name) {{
-  try {{
-    const res = await fetch(`/api/configs/{key}/load/${{name}}`, {{method: 'POST'}});
-    const data = await res.json();
-    config = data.config_data;
-    applyConfigToUI();
-    saveConfig();
-  }} catch(e) {{
-    alert('Load failed');
-  }}
+    try {{
+        const res = await fetch(`/api/configs/${{key}}/load/${{name}}`);
+        config = await res.json();
+        applyConfigToUI();
+        await saveConfig();
+    }} catch(e) {{
+        alert('Failed to load');
+    }}
 }}
 
-let renameTarget = null;
+let currentRenameConfig = null;
+
 function renameConfigPrompt(oldName) {{
-  renameTarget = oldName;
-  document.getElementById('renameInput').value = oldName;
-  document.getElementById('renameModal').classList.add('active');
+    currentRenameConfig = oldName;
+    document.getElementById('renameInput').value = oldName;
+    document.getElementById('renameModal').classList.add('active');
+    document.getElementById('renameInput').focus();
+    document.getElementById('renameInput').select();
 }}
 
 function closeRenameModal() {{
-  document.getElementById('renameModal').classList.remove('active');
-  renameTarget = null;
+    document.getElementById('renameModal').classList.remove('active');
+    currentRenameConfig = null;
 }}
 
 async function confirmRename() {{
-  const newName = document.getElementById('renameInput').value.trim();
-  if (!newName || newName === renameTarget) return closeRenameModal();
-  try {{
-    await fetch(`/api/configs/{key}/rename`, {{
-      method: 'POST',
-      headers: {{ 'Content-Type': 'application/json' }},
-      body: JSON.stringify({{ old_name: renameTarget, new_name: newName }})
-    }});
-    loadSavedConfigs();
-    closeRenameModal();
-  }} catch(e) {{
-    alert('Rename failed');
-    closeRenameModal();
-  }}
+    const newName = document.getElementById('renameInput').value.trim();
+    if (!newName || newName === currentRenameConfig) {{
+        closeRenameModal();
+        return;
+    }}
+    try {{
+        await fetch(`/api/configs/${{key}}/rename`, {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{old_name: currentRenameConfig, new_name: newName}})
+        }});
+        await loadSavedConfigs();
+        closeRenameModal();
+    }} catch(e) {{
+        alert('Failed to rename');
+        closeRenameModal();
+    }}
 }}
+
+document.getElementById('renameInput').addEventListener('keypress', (e) => {{
+    if (e.key === 'Enter') confirmRename();
+    if (e.key === 'Escape') closeRenameModal();
+}});
 
 async function deleteConfigByName(name) {{
-  if (!confirm(`Delete ${{name}}?`)) return;
-  try {{
-    await fetch(`/api/configs/{key}/delete/${{name}}`, {{ method: 'POST' }});
-    loadSavedConfigs();
-  }} catch(e) {{
-    alert('Delete failed');
-  }}
+    try {{
+        await fetch(`/api/configs/${{key}}/delete/${{name}}`, {{method: 'DELETE'}});
+        await loadSavedConfigs();
+    }} catch(e) {{
+        alert('Failed to delete');
+    }}
 }}
 
-// Init
-loadConfig();
 loadSavedConfigs();
-setInterval(loadConfig, 3000);  // optional live refresh
-
-// Close modal on Esc
-document.addEventListener('keydown', e => {{
-  if (e.key === 'Escape') closeRenameModal();
-}});
+loadConfig();
+setInterval(loadConfig, 1000);
 </script>
 </body>
-</html>
-"""
+</html>"""
 
 if __name__ == "__main__":
     init_db()
