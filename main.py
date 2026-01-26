@@ -1,3 +1,4 @@
+# main.py
 from fastapi import FastAPI, HTTPException, Cookie, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -78,6 +79,7 @@ def init_db():
     cur = db.cursor()
     
     if USE_POSTGRES:
+        # PostgreSQL tables
         cur.execute("""CREATE TABLE IF NOT EXISTS keys (
             key TEXT PRIMARY KEY,
             duration TEXT NOT NULL,
@@ -142,7 +144,14 @@ def init_db():
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL
         )""")
+        
+        # Add settings table for config storage
+        cur.execute("""CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            config TEXT NOT NULL
+        )""")
     else:
+        # SQLite tables
         cur.execute("""CREATE TABLE IF NOT EXISTS keys (
             key TEXT PRIMARY KEY,
             duration TEXT NOT NULL,
@@ -209,6 +218,12 @@ def init_db():
             license_key TEXT NOT NULL,
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL
+        )""")
+        
+        # Add settings table for config storage
+        cur.execute("""CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            config TEXT NOT NULL
         )""")
     
     db.commit()
@@ -284,7 +299,71 @@ def validate_user(data: KeyValidate):
     db.close()
     return {"valid": True, "message": "Authentication successful"}
 
-# === CONFIG ENDPOINTS ===
+# === CONFIG ENDPOINTS (FIXED) ===
+
+@app.get("/api/config/{license_key}")
+def get_config(license_key: str):
+    """Get config for a license key - FIXED VERSION"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Check if config exists
+        cur.execute(q("SELECT config FROM settings WHERE key=%s"), (license_key,))
+        result = cur.fetchone()
+        
+        if not result:
+            # Insert default config if doesn't exist
+            if USE_POSTGRES:
+                cur.execute(
+                    "INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING",
+                    (license_key, json.dumps(DEFAULT_CONFIG))
+                )
+            else:
+                cur.execute(
+                    "INSERT OR IGNORE INTO settings (key, config) VALUES (?, ?)",
+                    (license_key, json.dumps(DEFAULT_CONFIG))
+                )
+            db.commit()
+            db.close()
+            return DEFAULT_CONFIG
+        
+        db.close()
+        return json.loads(result[0])
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in get_config: {e}")
+        return DEFAULT_CONFIG
+
+@app.post("/api/config/{license_key}")
+def set_config(license_key: str, data: dict):
+    """Save config for a license key - FIXED VERSION"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        if USE_POSTGRES:
+            cur.execute(
+                """INSERT INTO settings (key, config) VALUES (%s, %s)
+                   ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
+                (license_key, json.dumps(data))
+            )
+        else:
+            cur.execute(
+                """INSERT INTO settings (key, config) VALUES (?, ?)
+                   ON CONFLICT (key) DO UPDATE SET config = excluded.config""",
+                (license_key, json.dumps(data))
+            )
+        
+        db.commit()
+        db.close()
+        return {"status": "ok"}
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in set_config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/configs/{license_key}/list")
 def list_configs(license_key: str):
@@ -624,43 +703,18 @@ def reset_user_hwid(user_id: str):
     
     return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
 
-@app.get("/api/config/{key}")
-def get_config(key: str):
-    """Get config for a license key"""
-    db = get_db()
-    cur = db.cursor()
-    
-    # Insert default if doesn't exist
-    cur.execute(q("INSERT OR IGNORE INTO settings (key, config) VALUES (%s, %s)"), (key, json.dumps(DEFAULT_CONFIG)))
-    db.commit()
-    
-    cur.execute(q("SELECT config FROM settings WHERE key=%s"), (key,))
-    result = cur.fetchone()
-    db.close()
-    
-    return json.loads(result[0]) if result else DEFAULT_CONFIG
-
-@app.post("/api/config/{key}")
-def set_config(key: str, data: dict):
-    """Save config for a license key"""
-    db = get_db()
-    cur = db.cursor()
-    
-    cur.execute(q("INSERT INTO settings(key, config) VALUES(%s, %s) ON CONFLICT(key) DO UPDATE SET config=excluded.config"), 
-                (key, json.dumps(data)))
-    db.commit()
-    db.close()
-    
-    return {"status": "ok"}
-
 @app.get("/api/keepalive")
 def keepalive():
     """Keep server awake"""
     return {"status": "alive"}
 
-# === HTML CONSTANTS ===
+# === HTML ROUTES ===
 
-_INDEX_HTML = """<!DOCTYPE html>
+@app.get("/", response_class=HTMLResponse)
+@app.get("/home", response_class=HTMLResponse)
+def serve_home():
+    """Home page"""
+    _INDEX_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -722,170 +776,19 @@ _INDEX_HTML = """<!DOCTYPE html>
       color: rgba(255, 255, 255, 1);
     }
 
-    .nav-right {
-      display: flex;
-      gap: 1.5rem;
-      align-items: center;
-    }
-
-    .nav-right a {
-      color: rgba(255, 255, 255, 0.7);
-      text-decoration: none;
-      font-size: 0.95rem;
-      font-weight: 500;
-      transition: color 0.3s;
-    }
-
-    .nav-right a:hover {
-      color: rgba(255, 255, 255, 1);
-    }
-
-    .login-btn {
-      padding: 8px 20px;
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 6px;
-      color: white;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-size: 0.9rem;
-    }
-
-    .login-btn:hover {
-      background: rgba(255,255,255,0.15);
-    }
-
-    .user-info {
-      padding: 8px 20px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 6px;
-      color: white;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-size: 0.9rem;
-    }
-
-    .user-info:hover {
-      background: rgba(255,255,255,0.1);
-    }
-
     .content {
       position: fixed;
       inset: 0;
       z-index: 5;
       overflow-y: auto;
       pointer-events: none;
+      display: flex;
+      justify-content: center;
+      align-items: center;
     }
 
     .content > * {
       pointer-events: auto;
-    }
-
-    .page {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.6s ease;
-    }
-
-    .page.active {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    .configs-page {
-      justify-content: flex-start;
-      padding-top: 15vh;
-    }
-
-    .about-page {
-      padding: 20px;
-    }
-
-    .about-page .description {
-      max-width: 600px;
-      text-align: center;
-      font-size: 18px;
-      line-height: 1.8;
-      color: #aaa;
-      margin-top: 40px;
-    }
-
-    .pricing-page {
-      justify-content: flex-start;
-      padding-top: 15vh;
-    }
-
-    .pricing-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 30px;
-      width: 90%;
-      max-width: 1000px;
-      margin-top: 60px;
-    }
-
-    .pricing-card {
-      background: rgba(18,18,22,0.6);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 12px;
-      padding: 32px;
-      text-align: center;
-      transition: all 0.3s;
-    }
-
-    .pricing-card:hover {
-      transform: translateY(-8px);
-      border-color: rgba(255,255,255,0.2);
-      background: rgba(22,22,26,0.7);
-    }
-
-    .pricing-card.featured {
-      border-color: rgba(255,255,255,0.3);
-      background: rgba(25,25,30,0.8);
-    }
-
-    .plan-name {
-      font-size: 24px;
-      font-weight: 700;
-      color: #fff;
-      margin-bottom: 16px;
-    }
-
-    .plan-price {
-      font-size: 48px;
-      font-weight: 900;
-      color: #fff;
-      margin-bottom: 8px;
-    }
-
-    .plan-duration {
-      font-size: 14px;
-      color: #888;
-      margin-bottom: 24px;
-    }
-
-    .plan-features {
-      list-style: none;
-      text-align: left;
-      margin-top: 24px;
-    }
-
-    .plan-features li {
-      padding: 10px 0;
-      color: #aaa;
-      font-size: 15px;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
-    }
-
-    .plan-features li:last-child {
-      border-bottom: none;
     }
 
     .title-wrapper {
@@ -901,321 +804,6 @@ _INDEX_HTML = """<!DOCTYPE html>
       letter-spacing: -1.5px;
       text-shadow: 0 0 25px rgba(0,0,0,0.7);
     }
-
-    .configs-container {
-      width: 90%;
-      max-width: 1200px;
-      margin-top: 60px;
-    }
-
-    .login-required {
-      text-align: center;
-      padding: 60px 20px;
-      background: rgba(18,18,22,0.5);
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.08);
-    }
-
-    .create-btn {
-      padding: 14px 32px;
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 8px;
-      color: #fff;
-      font-size: 15px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      margin-bottom: 30px;
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-    }
-
-    .create-btn:hover {
-      background: rgba(255,255,255,0.05);
-      border-color: rgba(255,255,255,0.25);
-      transform: translateY(-2px);
-    }
-
-    .pagination {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      margin-top: 30px;
-      margin-bottom: 60px;
-    }
-
-    .page-btn {
-      padding: 8px 16px;
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 6px;
-      color: #fff;
-      font-size: 14px;
-      cursor: pointer;
-      transition: all 0.2s;
-      backdrop-filter: blur(10px);
-    }
-
-    .page-btn:hover:not(:disabled) {
-      background: rgba(255,255,255,0.05);
-      border-color: rgba(255,255,255,0.25);
-    }
-
-    .page-btn.active {
-      background: rgba(255,255,255,0.1);
-      border-color: rgba(255,255,255,0.3);
-    }
-
-    .page-btn:disabled {
-      opacity: 0.3;
-      cursor: not-allowed;
-    }
-
-    .config-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-      gap: 20px;
-      margin-bottom: 40px;
-    }
-
-    .config-card {
-      background: rgba(25,25,30,0.6);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 12px;
-      padding: 24px;
-      transition: all 0.3s;
-      cursor: pointer;
-    }
-
-    .config-card:hover {
-      background: rgba(30,30,35,0.7);
-      border-color: rgba(255,255,255,0.15);
-      transform: translateY(-4px);
-    }
-
-    .config-name {
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-
-    .config-game {
-      font-size: 12px;
-      color: #888;
-      background: rgba(255,255,255,0.05);
-      padding: 4px 10px;
-      border-radius: 4px;
-      display: inline-block;
-      margin-bottom: 12px;
-    }
-
-    .config-description {
-      font-size: 14px;
-      color: #aaa;
-      line-height: 1.5;
-      margin: 12px 0;
-    }
-
-    .config-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 16px;
-      padding-top: 16px;
-      border-top: 1px solid rgba(255,255,255,0.06);
-      font-size: 13px;
-      color: #666;
-    }
-
-    /* Modal */
-    .modal {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.85);
-      backdrop-filter: blur(10px);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-      opacity: 0;
-      transition: opacity 0.3s ease;
-    }
-
-    .modal.active {
-      display: flex;
-      animation: fadeIn 0.3s ease forwards;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-    .modal-content {
-      background: #1a1a1f;
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 8px;
-      padding: 24px;
-      width: 90%;
-      max-width: 460px;
-      max-height: 80vh;
-      overflow-y: auto;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-      transform: scale(0.95);
-      animation: modalZoom 0.3s ease forwards;
-    }
-
-    @keyframes modalZoom {
-      from { transform: scale(0.95); }
-      to { transform: scale(1); }
-    }
-
-    .modal-title {
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 20px;
-      color: #fff;
-    }
-
-    .form-group {
-      margin-bottom: 16px;
-    }
-
-    .form-label {
-      display: block;
-      font-size: 13px;
-      color: #888;
-      margin-bottom: 6px;
-      font-weight: 500;
-    }
-
-    .form-input, .form-select, .form-textarea {
-      width: 100%;
-      padding: 10px 14px;
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 6px;
-      color: #fff;
-      font-size: 14px;
-      font-family: inherit;
-      transition: all 0.2s;
-    }
-
-    .form-input:focus, .form-select:focus, .form-textarea:focus {
-      outline: none;
-      border-color: rgba(255,255,255,0.3);
-      background: rgba(255,255,255,0.02);
-    }
-
-    .form-textarea {
-      resize: vertical;
-      min-height: 90px;
-    }
-
-    .form-select {
-      cursor: pointer;
-    }
-
-    .form-select option {
-      background: #1a1a1f;
-      color: #fff;
-    }
-
-    .modal-actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 20px;
-    }
-
-    .modal-btn {
-      flex: 1;
-      padding: 11px;
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 6px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      color: #fff;
-      backdrop-filter: blur(5px);
-    }
-
-    .modal-btn:hover {
-      background: rgba(255,255,255,0.05);
-      border-color: rgba(255,255,255,0.25);
-    }
-
-    .config-detail-modal .modal-content {
-      max-width: 600px;
-      background: #16161a;
-      padding: 28px;
-    }
-
-    .config-stats {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-      margin: 20px 0;
-      padding: 20px;
-      background: rgba(255,255,255,0.02);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 8px;
-    }
-
-    .stat-item {
-      text-align: center;
-    }
-
-    .stat-label {
-      font-size: 11px;
-      color: #666;
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .stat-value {
-      font-size: 18px;
-      font-weight: 700;
-      color: #fff;
-    }
-
-    .detail-section {
-      margin: 20px 0;
-    }
-
-    .detail-label {
-      font-size: 12px;
-      color: #666;
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .detail-content {
-      color: #aaa;
-      line-height: 1.6;
-      font-size: 14px;
-      padding: 12px;
-      background: rgba(255,255,255,0.02);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 6px;
-    }
-
-    @media (max-width: 768px) {
-      .title-word {
-        font-size: 2.5rem;
-      }
-      
-      .config-grid {
-        grid-template-columns: 1fr;
-      }
-      
-      .pricing-grid {
-        grid-template-columns: 1fr;
-      }
-    }
   </style>
 </head>
 <body>
@@ -1223,499 +811,32 @@ _INDEX_HTML = """<!DOCTYPE html>
 
   <nav class="navbar">
     <div class="nav-links">
-      <a onclick="showPage('home')">Home</a>
-      <a onclick="showPage('about')">About</a>
-      <a onclick="showPage('pricing')">Pricing</a>
-      <a onclick="showPage('configs')">Configs</a>
-    </div>
-    <div class="nav-right">
-      <a href="https://dashboard.getaxion.lol">Menu</a>
-      <div id="userArea"></div>
+      <a href="/">Home</a>
+      <a href="https://discord.gg/yourserver">Discord</a>
     </div>
   </nav>
 
   <div class="content">
-    <!-- Home Page -->
-    <div id="home" class="page active">
-      <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">WELCOME</span>
-        <span class="title-word" style="color:#ffffff;">TO</span>
-        <span class="title-word" style="color:#888888;">Axion</span>
-      </div>
-    </div>
-
-    <!-- About Page -->
-    <div id="about" class="page about-page">
-      <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">About</span>
-        <span class="title-word" style="color:#888888;">Axion</span>
-      </div>
-      <div class="description">
-        Axion is a Da Hood external designed to integrate seamlessly in-game. It delivers smooth, reliable performance while bypassing PC checks, giving you a consistent edge during star tryouts and competitive play.
-      </div>
-    </div>
-
-    <!-- Pricing Page -->
-    <div id="pricing" class="page pricing-page">
-      <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">Pricing</span>
-      </div>
-      <div class="pricing-grid">
-        <div class="pricing-card">
-          <div class="plan-name">Weekly</div>
-          <div class="plan-price">$5</div>
-          <div class="plan-duration">7 days</div>
-          <ul class="plan-features">
-            <li>✓ Full access to Axion</li>
-            <li>✓ All features unlocked</li>
-            <li>✓ Discord support</li>
-          </ul>
-        </div>
-        <div class="pricing-card">
-          <div class="plan-name">Monthly</div>
-          <div class="plan-price">$15</div>
-          <div class="plan-duration">30 days</div>
-          <ul class="plan-features">
-            <li>✓ Full access to Axion</li>
-            <li>✓ All features unlocked</li>
-            <li>✓ Priority support</li>
-          </ul>
-        </div>
-        <div class="pricing-card featured">
-          <div class="plan-name">Lifetime</div>
-          <div class="plan-price">$40</div>
-          <div class="plan-duration">forever</div>
-          <ul class="plan-features">
-            <li>✓ Full access to Axion</li>
-            <li>✓ All features unlocked</li>
-            <li>✓ VIP support</li>
-            <li>✓ Best value</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-
-    <!-- Configs Page -->
-    <div id="configs" class="page configs-page">
-      <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">Community</span>
-        <span class="title-word" style="color:#888888;">Configs</span>
-      </div>
-      
-      <div class="configs-container" id="configsContent">
-        <div class="login-required">
-          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
-          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
-          <button class="login-btn" onclick="showLoginModal()">Login</button>
-        </div>
-      </div>
+    <div class="title-wrapper">
+      <span class="title-word" style="color:#ffffff;">WELCOME</span>
+      <span class="title-word" style="color:#ffffff;">TO</span>
+      <span class="title-word" style="color:#888888;">Axion</span>
     </div>
   </div>
-
-  <!-- Login Modal -->
-  <div class="modal" id="loginModal">
-    <div class="modal-content">
-      <h2 class="modal-title">Login to Axion</h2>
-      
-      <div class="form-group">
-        <label class="form-label">License Key</label>
-        <input type="text" class="form-input" id="licenseKeyInput" placeholder="XXXX-XXXX-XXXX-XXXX">
-      </div>
-
-      <div class="modal-actions">
-        <button class="modal-btn" onclick="closeLoginModal()">Cancel</button>
-        <button class="modal-btn" onclick="submitLogin()">Login</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Create Config Modal -->
-  <div class="modal" id="createModal">
-    <div class="modal-content">
-      <h2 class="modal-title">Create Public Config</h2>
-      
-      <div class="form-group">
-        <label class="form-label">Select Your Saved Config</label>
-        <select class="form-select" id="savedConfigSelect">
-          <option value="">Loading your configs...</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Config Name</label>
-        <input type="text" class="form-input" id="configName" placeholder="e.g., Pro Camlock Settings">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Author Name</label>
-        <input type="text" class="form-input" id="authorName" placeholder="Your name">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Game</label>
-        <input type="text" class="form-input" id="gameName" placeholder="e.g., Da Hood, Hood Modded, etc.">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Description</label>
-        <textarea class="form-textarea" id="configDescription" placeholder="Describe your config..."></textarea>
-      </div>
-
-      <div class="modal-actions">
-        <button class="modal-btn" onclick="closeCreateModal()">Cancel</button>
-        <button class="modal-btn" onclick="publishConfig()">Publish Config</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- View Config Modal -->
-  <div class="modal config-detail-modal" id="viewModal">
-    <div class="modal-content">
-      <h2 class="modal-title" id="viewConfigName">Config Name</h2>
-      
-      <div class="config-stats">
-        <div class="stat-item">
-          <div class="stat-label">Game</div>
-          <div class="stat-value" id="viewGame">-</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-label">Author</div>
-          <div class="stat-value" id="viewAuthor">-</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-label">Downloads</div>
-          <div class="stat-value" id="viewDownloads">0</div>
-        </div>
-      </div>
-
-      <div class="detail-section">
-        <div class="detail-label">Description</div>
-        <div class="detail-content" id="viewDescription">-</div>
-      </div>
-
-      <div class="modal-actions">
-        <button class="modal-btn" onclick="saveConfigToMenu()">Load to Menu</button>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    let currentUser = null;
-    let allConfigs = [];
-    let currentPage = 1;
-    let currentViewConfig = null;
-    const CONFIGS_PER_PAGE = 4;
-
-    function showPage(pageId) {
-      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-      document.getElementById(pageId).classList.add('active');
-      
-      if (pageId === 'configs' && currentUser) {
-        loadConfigs();
-      }
-    }
-
-    function showLoginModal() {
-      document.getElementById('loginModal').classList.add('active');
-    }
-
-    function closeLoginModal() {
-      document.getElementById('loginModal').classList.remove('active');
-    }
-
-    async function submitLogin() {
-      const licenseKey = document.getElementById('licenseKeyInput').value.trim();
-
-      if (!licenseKey) {
-        alert('Please enter your license key');
-        return;
-      }
-
-      try {
-        const res = await fetch(`https://dashboard.getaxion.lol/api/validate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: licenseKey, hwid: 'web-login' })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          
-          if (data.valid) {
-            currentUser = { 
-              license_key: licenseKey
-            };
-            
-            // Update UI - show first 12 chars of license
-            document.getElementById('userArea').innerHTML = `
-              <div class="user-info" onclick="logout()">
-                <span>${licenseKey.substring(0, 12)}...</span>
-              </div>
-            `;
-            
-            closeLoginModal();
-            loadConfigs();
-          } else {
-            alert('Invalid or expired license key');
-          }
-        } else {
-          alert('Invalid license key');
-        }
-      } catch (e) {
-        alert('Connection error. Please check your internet connection.');
-        console.error('Login error:', e);
-      }
-    }
-
-    function logout() {
-      currentUser = null;
-      document.getElementById('userArea').innerHTML = `
-        <button class="login-btn" onclick="showLoginModal()">Login</button>
-      `;
-      document.getElementById('configsContent').innerHTML = `
-        <div class="login-required">
-          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
-          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
-          <button class="login-btn" onclick="showLoginModal()">Login</button>
-        </div>
-      `;
-    }
-
-    async function loadConfigs() {
-      try {
-        const res = await fetch('https://dashboard.getaxion.lol/api/public-configs');
-        const data = await res.json();
-        
-        allConfigs = data.configs || [];
-        renderConfigsPage();
-      } catch (e) {
-        console.error('Load error:', e);
-        document.getElementById('configsContent').innerHTML = '<p>Error loading configs</p>';
-      }
-    }
-
-    function renderConfigsPage() {
-      const startIndex = (currentPage - 1) * CONFIGS_PER_PAGE;
-      const endIndex = startIndex + CONFIGS_PER_PAGE;
-      const pageConfigs = allConfigs.slice(startIndex, endIndex);
-      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
-
-      let html = '<button class="create-btn" onclick="openCreateModal()">+ Create Config</button>';
-      html += '<div class="config-grid">';
-      
-      if (pageConfigs.length > 0) {
-        pageConfigs.forEach(config => {
-          html += `
-            <div class="config-card" onclick="viewConfig(${config.id})">
-              <div class="config-name">${config.config_name}</div>
-              <div class="config-game">${config.game_name}</div>
-              <div class="config-description">${config.description}</div>
-              <div class="config-footer">
-                <div>by ${config.author_name}</div>
-                <div>${config.downloads} downloads</div>
-              </div>
-            </div>
-          `;
-        });
-      } else {
-        html += '<p style="color: #888; text-align: center; padding: 40px;">No configs yet! Be the first to create one.</p>';
-      }
-      
-      html += '</div>';
-
-      // Add pagination
-      if (totalPages > 1) {
-        html += '<div class="pagination">';
-        html += `<button class="page-btn" onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>`;
-        
-        for (let i = 1; i <= totalPages; i++) {
-          html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
-        }
-        
-        html += `<button class="page-btn" onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>`;
-        html += '</div>';
-      }
-      
-      document.getElementById('configsContent').innerHTML = html;
-    }
-
-    function changePage(page) {
-      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
-      if (page < 1 || page > totalPages) return;
-      currentPage = page;
-      renderConfigsPage();
-    }
-
-    async function openCreateModal() {
-      document.getElementById('createModal').classList.add('active');
-      
-      // Load user's saved configs from dashboard backend
-      try {
-        const res = await fetch(`https://dashboard.getaxion.lol/api/configs/${currentUser.license_key}/list`);
-        const data = await res.json();
-        
-        const select = document.getElementById('savedConfigSelect');
-        select.innerHTML = '<option value="">Select a config...</option>';
-        
-        if (data.configs && data.configs.length > 0) {
-          data.configs.forEach(name => {
-            select.innerHTML += `<option value="${name}">${name}</option>`;
-          });
-        } else {
-          select.innerHTML = '<option value="">No saved configs found</option>';
-        }
-      } catch (e) {
-        console.error('Error loading configs:', e);
-      }
-    }
-
-    function closeCreateModal() {
-      document.getElementById('createModal').classList.remove('active');
-    }
-
-    async function publishConfig() {
-      const selectedConfig = document.getElementById('savedConfigSelect').value;
-      const configName = document.getElementById('configName').value.trim();
-      const authorName = document.getElementById('authorName').value.trim();
-      const gameName = document.getElementById('gameName').value.trim();
-      const description = document.getElementById('configDescription').value.trim();
-
-      if (!selectedConfig) {
-        alert('Please select a config');
-        return;
-      }
-      if (!configName || !authorName || !gameName || !description) {
-        alert('Please fill in all fields');
-        return;
-      }
-
-      try {
-        // Load the actual config data
-        const configRes = await fetch(`https://dashboard.getaxion.lol/api/configs/${currentUser.license_key}/load/${selectedConfig}`, {
-          method: 'POST'
-        });
-        const configData = await configRes.json();
-
-        // Publish to public configs
-        const res = await fetch('https://dashboard.getaxion.lol/api/public-configs/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            config_name: configName,
-            author_name: authorName,
-            game_name: gameName,
-            description: description,
-            config_data: configData.config_data
-          })
-        });
-
-        if (res.ok) {
-          alert('Config published successfully!');
-          closeCreateModal();
-          loadConfigs();
-        } else {
-          const error = await res.json();
-          alert('Error: ' + (error.detail || 'Failed to publish'));
-        }
-      } catch (e) {
-        alert('Error publishing config: ' + e.message);
-      }
-    }
-
-    async function viewConfig(configId) {
-      try {
-        const res = await fetch(`/api/public-configs/${configId}`);
-        const data = await res.json();
-        
-        currentViewConfig = data;
-        
-        document.getElementById('viewConfigName').textContent = data.config_name;
-        document.getElementById('viewGame').textContent = data.game_name;
-        document.getElementById('viewAuthor').textContent = data.author_name;
-        document.getElementById('viewDownloads').textContent = data.downloads;
-        document.getElementById('viewDescription').textContent = data.description;
-        
-        document.getElementById('viewModal').classList.add('active');
-        
-        // Increment downloads
-        fetch(`/api/public-configs/${configId}/download`, { method: 'POST' });
-      } catch (e) {
-        alert('Error loading config');
-      }
-    }
-
-    function closeViewModal() {
-      document.getElementById('viewModal').classList.remove('active');
-    }
-
-    async function saveConfigToMenu() {
-      if (!currentUser || !currentViewConfig) {
-        alert('Please login first');
-        return;
-      }
-
-      try {
-        const res = await fetch(`https://dashboard.getaxion.lol/api/configs/${currentUser.license_key}/save`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: currentViewConfig.config_name,
-            data: currentViewConfig.config_data
-          })
-        });
-
-        if (res.ok) {
-          alert('Config loaded to your menu!');
-          closeViewModal();
-        } else {
-          alert('Failed to save config');
-        }
-      } catch (e) {
-        alert('Error saving config: ' + e.message);
-      }
-    }
-
-    // Close modals on Escape
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        closeLoginModal();
-        closeCreateModal();
-        closeViewModal();
-      }
-    });
-
-    // Initialize - show login button
-    document.getElementById('userArea').innerHTML = `
-      <button class="login-btn" onclick="showLoginModal()">Login</button>
-    `;
-  </script>
 </body>
-</html>
-"""
-
-# === HTML ROUTES (Must be after all API routes) ===
-
-@app.get("/", response_class=HTMLResponse)
-@app.get("/home", response_class=HTMLResponse)
-def serve_home():
-    """Home page"""
+</html>"""
     return _INDEX_HTML
 
 @app.get("/{license_key}", response_class=HTMLResponse)
-@app.get("/{license_key}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
     """Full dashboard with toggles, sliders, dropdowns"""
-    if license_key in ["api", "favicon.ico"]:
+    if license_key in ["api", "favicon.ico", "home"]:
         raise HTTPException(status_code=404)
    
     db = get_db()
     cur = db.cursor()
    
-    if USE_POSTGRES:
-        cur.execute("SELECT * FROM keys WHERE key=%s", (license_key,))
-    else:
-        cur.execute("SELECT * FROM keys WHERE key=?", (license_key,))
-   
+    cur.execute(q("SELECT * FROM keys WHERE key=%s"), (license_key,))
     result = cur.fetchone()
     db.close()
    
@@ -1732,461 +853,73 @@ def serve_dashboard(license_key: str):
 <meta charset="UTF-8"/>
 <title>Axion - {key}</title>
 <style>
-*{{
-    margin:0;
-    padding:0;
-    box-sizing:border-box;
-    user-select:none;
-}}
-body{{
-    height:100vh;
-    background:radial-gradient(circle at top,#0f0f0f,#050505);
-    font-family:Arial,sans-serif;
-    color:#cfcfcf;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-}}
-.window{{
-    width:860px;
-    height:620px;
-    background:linear-gradient(#111,#0a0a0a);
-    border:1px solid #2a2a2a;
-    box-shadow:0 0 40px rgba(0,0,0,0.8);
-    display:flex;
-    flex-direction:column;
-    overflow:hidden;
-    border-radius:8px;
-}}
-.topbar{{
-    height:42px;
-    background:linear-gradient(#1a1a1a,#0e0e0e);
-    border-bottom:1px solid #2b2b2b;
-    display:flex;
-    align-items:center;
-    padding:0 16px;
-    gap:20px;
-}}
-.title{{
-    font-size:14px;
-    color:#bfbfbf;
-    font-weight:600;
-    padding-right:20px;
-    border-right:1px solid #2a2a2a;
-}}
-.tabs{{
-    display:flex;
-    gap:24px;
-    font-size:13px;
-}}
-.tab{{
-    color:#9a9a9a;
-    cursor:pointer;
-    transition:color 0.2s;
-    padding:0 4px;
-}}
-.tab:hover,.tab.active{{
-    color:#ffffff;
-    text-shadow:0 0 4px rgba(255,255,255,0.3);
-}}
-.topbar-right{{
-    margin-left:auto;
-    display:flex;
-    align-items:center;
-    gap:12px;
-}}
-.search-container{{
-    position:relative;
-    width:200px;
-}}
-.search-bar{{
-    width:100%;
-    height:28px;
-    background:#0f0f0f;
-    border:1px solid #2a2a2a;
-    color:#cfcfcf;
-    font-size:12px;
-    padding:0 12px 0 36px;
-    outline:none;
-    border-radius:4px;
-}}
-.search-bar::placeholder{{
-    color:#666;
-}}
-.search-icon{{
-    position:absolute;
-    left:12px;
-    top:50%;
-    transform:translateY(-50%);
-    width:16px;
-    height:16px;
-    pointer-events:none;
-    opacity:0.6;
-}}
-.content{{
-    flex:1;
-    padding:16px;
-    background:#0c0c0c;
-    overflow:hidden;
-    position:relative;
-}}
-.tab-content{{
-    width:100%;
-    height:100%;
-    display:none;
-}}
-.tab-content.active{{
-    display:block;
-}}
-.merged-panel{{
-    width:100%;
-    height:100%;
-    background:#0c0c0c;
-    border:1px solid #222;
-    overflow:hidden;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-}}
-.inner-container{{
-    width:98%;
-    height:96%;
-    display:flex;
-    gap:16px;
-    overflow:hidden;
-}}
-.half-panel{{
-    flex:1;
-    background:#111;
-    border:1px solid #2a2a2a;
-    box-shadow:0 0 25px rgba(0,0,0,0.6) inset;
-    overflow-y:auto;
-    padding:20px 18px;
-    position:relative;
-    border-radius:6px;
-}}
-.panel-header{{
-    position:sticky;
-    top:0;
-    left:0;
-    background:#111;
-    color:#bfbfbf;
-    font-size:12px;
-    font-weight:600;
-    padding:8px 0 12px;
-    z-index:2;
-    border-bottom:1px solid #222;
-    margin-bottom:12px;
-}}
-.toggle-row{{
-    display:flex;
-    align-items:center;
-    gap:12px;
-    margin-bottom:14px;
-}}
-.toggle-text{{
-    display:flex;
-    align-items:center;
-    gap:12px;
-    flex:1;
-}}
-.toggle{{
-    width:16px;
-    height:16px;
-    background:transparent;
-    border:1.2px solid #444;
-    border-radius:3px;
-    cursor:pointer;
-    transition:all 0.15s;
-}}
-.toggle.active{{
-    background:#aaa;
-    border-color:#aaa;
-    box-shadow:inset 0 0 6px rgba(0,0,0,0.6);
-}}
-.enable-text{{
-    color:#9a9a9a;
-    font-size:12px;
-    transition:color 0.2s;
-}}
-.toggle.active + .enable-text{{
-    color:#e0e0e0;
-}}
-.keybind-picker{{
-    min-width:90px;
-    height:26px;
-    background:#0f0f0f;
-    border:1px solid #2a2a2a;
-    color:#cfcfcf;
-    font-size:11px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    cursor:pointer;
-    border-radius:4px;
-    transition:all 0.15s;
-}}
-.keybind-picker:hover{{
-    border-color:#555;
-    background:#1a1a1a;
-}}
-.slider-label{{
-    color:#bfbfbf;
-    font-size:11px;
-    margin-bottom:6px;
-    display:block;
-}}
-.slider-container{{
-    width:100%;
-    height:10px;
-    background:#0f0f0f;
-    border:1px solid #2a2a2a;
-    border-radius:5px;
-    overflow:hidden;
-    position:relative;
-    cursor:pointer;
-}}
-.slider-track{{
-    position:absolute;
-    inset:0;
-}}
-.slider-fill{{
-    position:absolute;
-    top:0;
-    left:0;
-    height:100%;
-    background:#888;
-    width:50%;
-    transition:width 0.08s;
-}}
-.slider-value{{
-    position:absolute;
-    top:50%;
-    left:50%;
-    transform:translate(-50%,-50%);
-    font-size:10px;
-    font-weight:bold;
-    pointer-events:none;
-    color:#000;
-    text-shadow:0 0 3px rgba(255,255,255,0.6);
-}}
-.half-panel::-webkit-scrollbar{{
-    width:6px;
-}}
-.half-panel::-webkit-scrollbar-track{{
-    background:#0a0a0a;
-}}
-.half-panel::-webkit-scrollbar-thumb{{
-    background:#333;
-    border-radius:3px;
-}}
-.half-panel::-webkit-scrollbar-thumb:hover{{
-    background:#555;
-}}
-.custom-dropdown{{
-    width:100%;
-    position:relative;
-    margin-bottom:16px;
-}}
-.dropdown-header{{
-    width:100%;
-    height:32px;
-    background:#0f0f0f;
-    border:1px solid #2a2a2a;
-    color:#cfcfcf;
-    font-size:12px;
-    display:flex;
-    align-items:center;
-    padding:0 12px;
-    cursor:pointer;
-    border-radius:4px;
-}}
-.dropdown-list{{
-    position:absolute;
-    top:100%;
-    left:0;
-    width:100%;
-    max-height:220px;
-    background:#0f0f0f;
-    border:1px solid #2a2a2a;
-    border-top:none;
-    overflow-y:auto;
-    display:none;
-    z-index:10;
-    box-shadow:0 8px 20px rgba(0,0,0,0.7);
-    border-radius:0 0 4px 4px;
-}}
-.dropdown-list.open{{
-    display:block;
-}}
-.dropdown-item{{
-    padding:8px 12px;
-    font-size:12px;
-    color:#cfcfcf;
-    cursor:pointer;
-    transition:background 0.15s;
-}}
-.dropdown-item:hover{{
-    background:#1e1e1e;
-}}
-.dropdown-item.selected{{
-    background:#2a2a2a;
-    color:#fff;
-}}
-.config-list{{
-    margin-top:8px;
-}}
-.config-item{{
-    background:#0f0f0f;
-    border:1px solid #2a2a2a;
-    padding:10px 12px;
-    margin-bottom:8px;
-    display:flex;
-    align-items:center;
-    gap:12px;
-    border-radius:4px;
-    transition:all 0.15s;
-}}
-.config-item:hover{{
-    background:#181818;
-    border-color:#444;
-}}
-.config-name{{
-    flex:1;
-    font-size:12px;
-    color:#fff;
-}}
-.config-dots{{
-    width:24px;
-    height:24px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    cursor:pointer;
-    color:#aaa;
-    font-size:18px;
-    font-weight:bold;
-}}
-.config-dots:hover{{
-    color:#fff;
-}}
-.config-menu{{
-    position:absolute;
-    right:12px;
-    top:36px;
-    background:#0f0f0f;
-    border:1px solid #2a2a2a;
-    display:none;
-    z-index:200;
-    box-shadow:0 6px 16px rgba(0,0,0,0.7);
-    min-width:120px;
-    border-radius:4px;
-    overflow:hidden;
-}}
-.config-menu.open{{
-    display:block;
-}}
-.config-menu-item{{
-    padding:8px 14px;
-    font-size:11px;
-    color:#cfcfcf;
-    cursor:pointer;
-    transition:background 0.15s;
-}}
-.config-menu-item:hover{{
-    background:#222;
-    color:#fff;
-}}
-.input-box{{
-    width:100%;
-    height:32px;
-    background:#0f0f0f;
-    border:1px solid #2a2a2a;
-    color:#cfcfcf;
-    font-size:12px;
-    padding:0 12px;
-    border-radius:4px;
-    margin-bottom:10px;
-}}
-.config-btn{{
-    width:100%;
-    height:34px;
-    background:#1a1a1a;
-    border:1px solid #333;
-    color:#cfcfcf;
-    font-size:12px;
-    cursor:pointer;
-    border-radius:4px;
-    transition:all 0.2s;
-}}
-.config-btn:hover{{
-    background:#252525;
-    border-color:#555;
-}}
-.modal-overlay{{
-    position:fixed;
-    inset:0;
-    background:rgba(0,0,0,0.75);
-    backdrop-filter:blur(6px);
-    display:none;
-    align-items:center;
-    justify-content:center;
-    z-index:9999;
-}}
-.modal-overlay.active{{
-    display:flex;
-}}
-.modal-box{{
-    background:linear-gradient(#111,#0a0a0a);
-    border:1px solid #2a2a2a;
-    padding:28px;
-    width:360px;
-    max-width:90%;
-    border-radius:8px;
-    box-shadow:0 10px 40px rgba(0,0,0,0.8);
-}}
-.modal-title{{
-    color:#fff;
-    font-size:14px;
-    margin-bottom:20px;
-    font-weight:600;
-}}
-.modal-input{{
-    width:100%;
-    height:36px;
-    background:#0f0f0f;
-    border:1px solid #2a2a2a;
-    color:#cfcfcf;
-    font-size:13px;
-    padding:0 14px;
-    border-radius:4px;
-    margin-bottom:16px;
-}}
-.modal-buttons{{
-    display:flex;
-    gap:12px;
-}}
-.modal-btn{{
-    flex:1;
-    height:38px;
-    background:#0f0f0f;
-    border:1px solid #2a2a2a;
-    color:#cfcfcf;
-    font-size:13px;
-    cursor:pointer;
-    border-radius:4px;
-    transition:all 0.2s;
-}}
-.modal-btn:hover{{
-    background:#222;
-}}
-.modal-btn.primary{{
-    background:#222;
-    border-color:#444;
-}}
-.modal-btn.primary:hover{{
-    background:#2a2a2a;
-}}
+*{{margin:0;padding:0;box-sizing:border-box;user-select:none}}
+body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);font-family:Arial,sans-serif;color:#cfcfcf;display:flex;align-items:center;justify-content:center}}
+.window{{width:860px;height:620px;background:linear-gradient(#111,#0a0a0a);border:1px solid #2a2a2a;box-shadow:0 0 40px rgba(0,0,0,0.8);display:flex;flex-direction:column;overflow:hidden;border-radius:8px}}
+.topbar{{height:42px;background:linear-gradient(#1a1a1a,#0e0e0e);border-bottom:1px solid #2b2b2b;display:flex;align-items:center;padding:0 16px;gap:20px}}
+.title{{font-size:14px;color:#bfbfbf;font-weight:600;padding-right:20px;border-right:1px solid #2a2a2a}}
+.tabs{{display:flex;gap:24px;font-size:13px}}
+.tab{{color:#9a9a9a;cursor:pointer;transition:color 0.2s;padding:0 4px}}
+.tab:hover,.tab.active{{color:#ffffff;text-shadow:0 0 4px rgba(255,255,255,0.3)}}
+.topbar-right{{margin-left:auto;display:flex;align-items:center;gap:12px}}
+.search-container{{position:relative;width:200px}}
+.search-bar{{width:100%;height:28px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:12px;padding:0 12px 0 36px;outline:none;border-radius:4px}}
+.search-bar::placeholder{{color:#666}}
+.search-icon{{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;pointer-events:none;opacity:0.6}}
+.content{{flex:1;padding:16px;background:#0c0c0c;overflow:hidden;position:relative}}
+.tab-content{{width:100%;height:100%;display:none}}
+.tab-content.active{{display:block}}
+.merged-panel{{width:100%;height:100%;background:#0c0c0c;border:1px solid #222;overflow:hidden;display:flex;align-items:center;justify-content:center}}
+.inner-container{{width:98%;height:96%;display:flex;gap:16px;overflow:hidden}}
+.half-panel{{flex:1;background:#111;border:1px solid #2a2a2a;box-shadow:0 0 25px rgba(0,0,0,0.6) inset;overflow-y:auto;padding:20px 18px;position:relative;border-radius:6px}}
+.panel-header{{position:sticky;top:0;left:0;background:#111;color:#bfbfbf;font-size:12px;font-weight:600;padding:8px 0 12px;z-index:2;border-bottom:1px solid #222;margin-bottom:12px}}
+.toggle-row{{display:flex;align-items:center;gap:12px;margin-bottom:14px}}
+.toggle-text{{display:flex;align-items:center;gap:12px;flex:1}}
+.toggle{{width:16px;height:16px;background:transparent;border:1.2px solid #444;border-radius:3px;cursor:pointer;transition:all 0.15s}}
+.toggle.active{{background:#aaa;border-color:#aaa;box-shadow:inset 0 0 6px rgba(0,0,0,0.6)}}
+.enable-text{{color:#9a9a9a;font-size:12px;transition:color 0.2s}}
+.toggle.active + .enable-text{{color:#e0e0e0}}
+.keybind-picker{{min-width:90px;height:26px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:4px;transition:all 0.15s}}
+.keybind-picker:hover{{border-color:#555;background:#1a1a1a}}
+.slider-label{{color:#bfbfbf;font-size:11px;margin-bottom:6px;display:block}}
+.slider-container{{width:100%;height:10px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:5px;overflow:hidden;position:relative;cursor:pointer}}
+.slider-track{{position:absolute;inset:0}}
+.slider-fill{{position:absolute;top:0;left:0;height:100%;background:#888;width:50%;transition:width 0.08s}}
+.slider-value{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:10px;font-weight:bold;pointer-events:none;color:#000;text-shadow:0 0 3px rgba(255,255,255,0.6)}}
+.half-panel::-webkit-scrollbar{{width:6px}}
+.half-panel::-webkit-scrollbar-track{{background:#0a0a0a}}
+.half-panel::-webkit-scrollbar-thumb{{background:#333;border-radius:3px}}
+.half-panel::-webkit-scrollbar-thumb:hover{{background:#555}}
+.custom-dropdown{{width:100%;position:relative;margin-bottom:16px}}
+.dropdown-header{{width:100%;height:32px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:12px;display:flex;align-items:center;padding:0 12px;cursor:pointer;border-radius:4px}}
+.dropdown-list{{position:absolute;top:100%;left:0;width:100%;max-height:220px;background:#0f0f0f;border:1px solid #2a2a2a;border-top:none;overflow-y:auto;display:none;z-index:10;box-shadow:0 8px 20px rgba(0,0,0,0.7);border-radius:0 0 4px 4px}}
+.dropdown-list.open{{display:block}}
+.dropdown-item{{padding:8px 12px;font-size:12px;color:#cfcfcf;cursor:pointer;transition:background 0.15s}}
+.dropdown-item:hover{{background:#1e1e1e}}
+.dropdown-item.selected{{background:#2a2a2a;color:#fff}}
+.config-list{{margin-top:8px}}
+.config-item{{background:#0f0f0f;border:1px solid #2a2a2a;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:12px;border-radius:4px;transition:all 0.15s}}
+.config-item:hover{{background:#181818;border-color:#444}}
+.config-name{{flex:1;font-size:12px;color:#fff}}
+.config-dots{{width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#aaa;font-size:18px;font-weight:bold}}
+.config-dots:hover{{color:#fff}}
+.config-menu{{position:absolute;right:12px;top:36px;background:#0f0f0f;border:1px solid #2a2a2a;display:none;z-index:200;box-shadow:0 6px 16px rgba(0,0,0,0.7);min-width:120px;border-radius:4px;overflow:hidden}}
+.config-menu.open{{display:block}}
+.config-menu-item{{padding:8px 14px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.15s}}
+.config-menu-item:hover{{background:#222;color:#fff}}
+.input-box{{width:100%;height:32px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:12px;padding:0 12px;border-radius:4px;margin-bottom:10px}}
+.config-btn{{width:100%;height:34px;background:#1a1a1a;border:1px solid #333;color:#cfcfcf;font-size:12px;cursor:pointer;border-radius:4px;transition:all 0.2s}}
+.config-btn:hover{{background:#252525;border-color:#555}}
+.modal-overlay{{position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:9999}}
+.modal-overlay.active{{display:flex}}
+.modal-box{{background:linear-gradient(#111,#0a0a0a);border:1px solid #2a2a2a;padding:28px;width:360px;max-width:90%;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.8)}}
+.modal-title{{color:#fff;font-size:14px;margin-bottom:20px;font-weight:600}}
+.modal-input{{width:100%;height:36px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:13px;padding:0 14px;border-radius:4px;margin-bottom:16px}}
+.modal-buttons{{display:flex;gap:12px}}
+.modal-btn{{flex:1;height:38px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:13px;cursor:pointer;border-radius:4px;transition:all 0.2s}}
+.modal-btn:hover{{background:#222}}
+.modal-btn.primary{{background:#222;border-color:#444}}
+.modal-btn.primary:hover{{background:#2a2a2a}}
 </style>
 </head>
 <body>
@@ -2638,12 +1371,12 @@ async function loadSavedConfigs() {{
       const item = document.createElement('div');
       item.className = 'config-item';
       item.innerHTML = `
-        <div class="config-name">${{cfg.name}}</div>
+        <div class="config-name">${{cfg}}</div>
         <div class="config-dots" onclick="toggleConfigMenu(event, ${{i}})">⋮</div>
         <div class="config-menu" id="menu${{i}}">
-          <div class="config-menu-item" onclick="loadConfigByName('${{cfg.name}}')">Load</div>
-          <div class="config-menu-item" onclick="renameConfigPrompt('${{cfg.name}}')">Rename</div>
-          <div class="config-menu-item" onclick="deleteConfigByName('${{cfg.name}}')">Delete</div>
+          <div class="config-menu-item" onclick="loadConfigByName('${{cfg}}')">Load</div>
+          <div class="config-menu-item" onclick="renameConfigPrompt('${{cfg}}')">Rename</div>
+          <div class="config-menu-item" onclick="deleteConfigByName('${{cfg}}')">Delete</div>
         </div>
       `;
       list.appendChild(item);
@@ -2681,8 +1414,9 @@ async function saveCurrentConfig() {{
 
 async function loadConfigByName(name) {{
   try {{
-    const res = await fetch(`/api/configs/{key}/load/${{name}}`);
-    config = await res.json();
+    const res = await fetch(`/api/configs/{key}/load/${{name}}`, {{method: 'POST'}});
+    const data = await res.json();
+    config = data.config_data;
     applyConfigToUI();
     saveConfig();
   }} catch(e) {{
@@ -2722,7 +1456,7 @@ async function confirmRename() {{
 async function deleteConfigByName(name) {{
   if (!confirm(`Delete ${{name}}?`)) return;
   try {{
-    await fetch(`/api/configs/{key}/delete/${{name}}`, {{ method: 'DELETE' }});
+    await fetch(`/api/configs/{key}/delete/${{name}}`, {{ method: 'POST' }});
     loadSavedConfigs();
   }} catch(e) {{
     alert('Delete failed');
