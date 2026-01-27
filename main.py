@@ -1289,7 +1289,7 @@ _INDEX_HTML = """<!DOCTYPE html>
       <a onclick="showPage('configs')">Configs</a>
     </div>
     <div class="nav-right">
-      <a onclick="showDashboard()" style="cursor:pointer">Dashboard</a>
+      <a href="/dashboard" style="cursor:pointer">Dashboard</a>
       <div id="userArea"></div>
     </div>
   </nav>
