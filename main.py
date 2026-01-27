@@ -2069,7 +2069,7 @@ def serve_dashboard(license_key: str):
     db.close()
    
     if not result:
-        return "<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>License key not found</p></div></body></html>"
+        return "<html><body style="margin:0;background:rgb(12,12,12);background-image:radial-gradient(circle at 2px 2px,rgb(20,20,20) 1px,transparent 0);background-size:6px 6px;color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh"><div style="font-size:20px;letter-spacing:1px">Invalid License</div></body></html>"
    
     return f"""<!DOCTYPE html>
 <html lang="en">
