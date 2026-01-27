@@ -1,17 +1,19 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+# main.py - Complete FastAPI Backend
+from fastapi import FastAPI, HTTPException, Cookie, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 import psycopg2
 import sqlite3
 import os
 import json
 import secrets
 from datetime import datetime, timedelta
-import re
 
 app = FastAPI()
 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,6 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Default configuration
 DEFAULT_CONFIG = {
     "triggerbot": {
         "Enabled": True,
@@ -55,16 +58,21 @@ DEFAULT_CONFIG = {
     }
 }
 
+# Database config
 DATABASE_URL = os.getenv("DATABASE_URL")
 USE_POSTGRES = DATABASE_URL is not None
 
 def get_db():
     if USE_POSTGRES:
         return psycopg2.connect(DATABASE_URL)
-    return sqlite3.connect("local.db")
+    else:
+        return sqlite3.connect("local.db")
 
 def q(query):
-    return query if USE_POSTGRES else query.replace("%s", "?")
+    """Convert PostgreSQL placeholders to SQLite if needed"""
+    if USE_POSTGRES:
+        return query
+    return query.replace("%s", "?")
 
 def init_db():
     db = get_db()
@@ -83,8 +91,12 @@ def init_db():
             active INTEGER DEFAULT 0,
             created_by TEXT
         )""")
-        try: cur.execute("ALTER TABLE keys ADD COLUMN IF NOT EXISTS hwid_resets INTEGER DEFAULT 0"); db.commit()
-        except: pass
+        
+        try:
+            cur.execute("ALTER TABLE keys ADD COLUMN IF NOT EXISTS hwid_resets INTEGER DEFAULT 0")
+            db.commit()
+        except:
+            pass
         
         cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
             id SERIAL PRIMARY KEY,
@@ -105,6 +117,31 @@ def init_db():
             license_key TEXT NOT NULL,
             created_at TEXT NOT NULL,
             downloads INTEGER DEFAULT 0
+        )""")
+        
+        try:
+            cur.execute("SELECT discord_id FROM public_configs LIMIT 1")
+            cur.execute("DROP TABLE IF EXISTS public_configs")
+            cur.execute("""CREATE TABLE public_configs (
+                id SERIAL PRIMARY KEY,
+                config_name TEXT NOT NULL,
+                author_name TEXT NOT NULL,
+                game_name TEXT NOT NULL,
+                description TEXT,
+                config_data TEXT NOT NULL,
+                license_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                downloads INTEGER DEFAULT 0
+            )""")
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            
+        cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
+            session_id TEXT PRIMARY KEY,
+            license_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
         )""")
         
         cur.execute("""CREATE TABLE IF NOT EXISTS settings (
@@ -124,8 +161,12 @@ def init_db():
             active INTEGER DEFAULT 0,
             created_by TEXT
         )""")
-        try: cur.execute("ALTER TABLE keys ADD COLUMN hwid_resets INTEGER DEFAULT 0"); db.commit()
-        except: pass
+        
+        try:
+            cur.execute("ALTER TABLE keys ADD COLUMN hwid_resets INTEGER DEFAULT 0")
+            db.commit()
+        except:
+            pass
         
         cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,6 +189,34 @@ def init_db():
             downloads INTEGER DEFAULT 0
         )""")
         
+        try:
+            cur.execute("SELECT discord_id FROM public_configs LIMIT 1")
+            cur.execute("DROP TABLE IF EXISTS public_configs")
+            cur.execute("""CREATE TABLE public_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                config_name TEXT NOT NULL,
+                author_name TEXT NOT NULL,
+                game_name TEXT NOT NULL,
+                description TEXT,
+                config_data TEXT NOT NULL,
+                license_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                downloads INTEGER DEFAULT 0
+            )""")
+            db.commit()
+        except Exception as e:
+            try:
+                db.rollback()
+            except:
+                pass
+                
+        cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
+            session_id TEXT PRIMARY KEY,
+            license_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        )""")
+        
         cur.execute("""CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             config TEXT NOT NULL
@@ -157,16 +226,14 @@ def init_db():
     db.close()
     print("✅ Database initialized")
 
-# ────────────────────────────────────────────────
-# Pydantic Models (all of them this time)
-# ────────────────────────────────────────────────
+# Pydantic models
 class KeyValidate(BaseModel):
     key: str
     hwid: str
 
-class SavedConfigRequest(BaseModel):
-    config_name: str
-    config_data: dict
+class ConfigData(BaseModel):
+    name: str
+    data: dict
 
 class KeyCreate(BaseModel):
     duration: str
@@ -179,89 +246,471 @@ class PublicConfig(BaseModel):
     description: str
     config_data: dict
 
+class SaveConfig(BaseModel):
+    name: str
+    data: dict
+
 class RedeemRequest(BaseModel):
     key: str
     discord_id: str
 
-# ────────────────────────────────────────────────
-# Anti-DevTools Protection
-# ────────────────────────────────────────────────
-ANTI_DEVTOOLS_SCRIPT = """
-<script>
-(function(){
-  'use strict';
-  const BLOCK = '/blocked';
-  document.addEventListener('contextmenu', e => { e.preventDefault(); location.replace(BLOCK); });
-  document.addEventListener('keydown', e => {
-    const k = e.key?.toLowerCase?.() || '';
-    const c = e.keyCode || e.which;
-    if (c === 123 || k === 'f12' ||
-        (e.ctrlKey && e.shiftKey && (k==='i'||k==='j'||k==='c'||k==='u')) ||
-        (e.ctrlKey && (k==='u'||k==='s'))) {
-      e.preventDefault();
-      location.replace(BLOCK);
+class SavedConfigRequest(BaseModel):
+    config_name: str
+    config_data: dict
+
+# === VALIDATION ===
+
+@app.post("/api/validate")
+def validate_user(data: KeyValidate):
+    """Validate license key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("SELECT key, active, expires_at, hwid FROM keys WHERE key=%s"), (data.key,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        return {"valid": False, "error": "Invalid license key"}
+    
+    key, active, expires_at, hwid = result
+    
+    if active == 0:
+        db.close()
+        return {"valid": False, "error": "License inactive"}
+    
+    if expires_at and datetime.now() > datetime.fromisoformat(expires_at):
+        db.close()
+        return {"valid": False, "error": "License expired"}
+    
+    if data.hwid != 'web-login':
+        if hwid is None:
+            cur.execute(q("UPDATE keys SET hwid=%s WHERE key=%s"), (data.hwid, data.key))
+            db.commit()
+            db.close()
+            return {"valid": True, "message": "HWID bound successfully"}
+        elif hwid == data.hwid:
+            db.close()
+            return {"valid": True, "message": "Authentication successful"}
+        else:
+            db.close()
+            return {"valid": False, "error": "HWID mismatch"}
+    
+    db.close()
+    return {"valid": True, "message": "Authentication successful"}
+
+# === CONFIG SYNC ENDPOINTS (FIXED) ===
+
+@app.get("/api/config/{key}")
+def get_config(key: str):
+    """Get config for a license key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT config FROM settings WHERE key=%s"), (key,))
+        result = cur.fetchone()
+        
+        if not result:
+            if USE_POSTGRES:
+                cur.execute(
+                    "INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING",
+                    (key, json.dumps(DEFAULT_CONFIG))
+                )
+            else:
+                cur.execute(
+                    "INSERT OR IGNORE INTO settings (key, config) VALUES (?, ?)",
+                    (key, json.dumps(DEFAULT_CONFIG))
+                )
+            db.commit()
+            db.close()
+            return DEFAULT_CONFIG
+        
+        db.close()
+        return json.loads(result[0])
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in get_config: {e}")
+        return DEFAULT_CONFIG
+
+@app.post("/api/config/{key}")
+def set_config(key: str, data: dict):
+    """Save config for a license key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        if USE_POSTGRES:
+            cur.execute(
+                """INSERT INTO settings (key, config) VALUES (%s, %s)
+                   ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
+                (key, json.dumps(data))
+            )
+        else:
+            cur.execute(
+                """INSERT INTO settings (key, config) VALUES (?, ?)
+                   ON CONFLICT (key) DO UPDATE SET config = excluded.config""",
+                (key, json.dumps(data))
+            )
+        
+        db.commit()
+        db.close()
+        return {"status": "ok"}
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in set_config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# === SAVED CONFIGS ENDPOINTS ===
+
+@app.get("/api/configs/{license_key}/list")
+def list_configs(license_key: str):
+    """List saved configs"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT config_name, created_at FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC"), (license_key,))
+    rows = cur.fetchall()
+    db.close()
+    
+    configs = [{"name": row[0], "created_at": row[1]} for row in rows]
+    return {"configs": configs}
+
+@app.post("/api/configs/{license_key}/save")
+def save_config(license_key: str, data: SavedConfigRequest):
+    """Save a config"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, data.config_name))
+        existing = cur.fetchone()
+        
+        if existing:
+            cur.execute(q("UPDATE saved_configs SET config_data=%s WHERE license_key=%s AND config_name=%s"),
+                       (json.dumps(data.config_data), license_key, data.config_name))
+        else:
+            cur.execute(q("INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (%s, %s, %s, %s)"),
+                       (license_key, data.config_name, json.dumps(data.config_data), datetime.now().isoformat()))
+        
+        db.commit()
+        db.close()
+        return {"success": True, "message": "Config saved"}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/configs/{license_key}/load/{config_name}")
+def load_config(license_key: str, config_name: str):
+    """Load a saved config"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
+    row = cur.fetchone()
+    db.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Config not found")
+    
+    return json.loads(row[0])
+
+@app.post("/api/configs/{license_key}/rename")
+def rename_config(license_key: str, data: dict):
+    """Rename a config"""
+    old_name = data.get("old_name")
+    new_name = data.get("new_name")
+    
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("UPDATE saved_configs SET config_name=%s WHERE license_key=%s AND config_name=%s"),
+               (new_name, license_key, old_name))
+    db.commit()
+    db.close()
+    
+    return {"success": True}
+
+@app.delete("/api/configs/{license_key}/delete/{config_name}")
+def delete_config(license_key: str, config_name: str):
+    """Delete a config"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("DELETE FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
+    db.commit()
+    db.close()
+    
+    return {"success": True}
+
+# === PUBLIC CONFIGS ===
+
+@app.get("/api/public-configs")
+def get_public_configs():
+    """Get all public configs"""
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(q("SELECT id, config_name, author_name, game_name, description, downloads, created_at FROM public_configs ORDER BY created_at DESC"))
+        rows = cur.fetchall()
+        db.close()
+        
+        configs = []
+        for row in rows:
+            configs.append({
+                "id": row[0],
+                "config_name": row[1],
+                "author_name": row[2],
+                "game_name": row[3],
+                "description": row[4],
+                "downloads": row[5],
+                "created_at": row[6]
+            })
+        
+        return {"configs": configs}
+    except Exception as e:
+        print(f"Error: {e}")
+        return {"configs": []}
+
+@app.post("/api/public-configs/create")
+def create_public_config(data: PublicConfig):
+    """Create a public config"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("INSERT INTO public_configs (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads) VALUES (%s, %s, %s, %s, %s, %s, %s, 0)"),
+                   (data.config_name, data.author_name, data.game_name, data.description, json.dumps(data.config_data), "web-user", datetime.now().isoformat()))
+        db.commit()
+        db.close()
+        return {"success": True}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/public-configs/{config_id}")
+def get_public_config(config_id: int):
+    """Get a single config"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT id, config_name, author_name, game_name, description, config_data, downloads FROM public_configs WHERE id=%s"), (config_id,))
+    row = cur.fetchone()
+    db.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    return {
+        "id": row[0],
+        "config_name": row[1],
+        "author_name": row[2],
+        "game_name": row[3],
+        "description": row[4],
+        "config_data": json.loads(row[5]) if row[5] else {},
+        "downloads": row[6]
     }
-  });
-  let devOpen = false;
-  function checkDev() {
-    if ((window.outerWidth - window.innerWidth > 100) || (window.outerHeight - window.innerHeight > 100)) {
-      if (!devOpen) { devOpen = true; location.replace(BLOCK); }
-    } else devOpen = false;
-  }
-  setInterval(checkDev, 400);
-  setInterval(() => {
-    const s = performance.now(); debugger; const e = performance.now();
-    if (e - s > 60) location.replace(BLOCK);
-  }, 800);
-})();
-</script>
-"""
 
-BLOCKED_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Blocked - Axion</title>
-  <style>
-    body{margin:0;height:100vh;background:#0a0a0a;color:#eee;font-family:Arial;display:flex;align-items:center;justify-content:center;}
-    .box{text-align:center;padding:60px 40px;background:#111;border:1px solid #444;border-radius:12px;max-width:500px;}
-    h1{font-size:48px;color:#f44;margin:0 0 20px;}
-    p{font-size:18px;color:#aaa;line-height:1.6;}
-    a{color:#4af;text-decoration:none;font-size:18px;}
-    a:hover{text-decoration:underline;}
-  </style>
-</head>
-<body>
-  <div class="box">
-    <h1>ACCESS BLOCKED</h1>
-    <p>Developer tools detected.<br>Close them and return.</p>
-    <br>
-    <a href="/">← Back to Home</a>
-  </div>
-  <script>
-    document.addEventListener('contextmenu',e=>e.preventDefault());
-    document.addEventListener('keydown',e=>{
-      if(e.key==='F12'||e.keyCode===123||
-         (e.ctrlKey&&e.shiftKey&&(e.key==='I'||e.key==='J'||e.key==='C'||e.key==='U'))) e.preventDefault();
-    });
-    setTimeout(()=>location.href='/', 10000);
-  </script>
-</body>
-</html>"""
+@app.post("/api/public-configs/{config_id}/download")
+def download_config(config_id: int):
+    """Increment downloads"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("UPDATE public_configs SET downloads = downloads + 1 WHERE id=%s"), (config_id,))
+    db.commit()
+    db.close()
+    return {"success": True}
 
-@app.get("/blocked", response_class=HTMLResponse)
-def blocked():
-    return BLOCKED_HTML
+# === KEY MANAGEMENT ===
 
-def protect_html(html: str) -> str:
-    if '</body>' in html:
-        return html.replace('</body>', ANTI_DEVTOOLS_SCRIPT + '</body>')
-    return html + ANTI_DEVTOOLS_SCRIPT
+@app.post("/api/keys/create")
+def create_key(data: KeyCreate):
+    """Create a license key"""
+    key = f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}"
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("INSERT INTO keys (key, duration, created_at, active, created_by) VALUES (%s, %s, %s, 0, %s)"),
+                   (key, data.duration, datetime.now().isoformat(), data.created_by))
+        db.commit()
+        db.close()
+        return {"key": key, "duration": data.duration}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=str(e))
 
-# ────────────────────────────────────────────────
-# Homepage (full, no cut)
-# ────────────────────────────────────────────────
+@app.delete("/api/keys/{license_key}")
+def delete_key(license_key: str):
+    """Delete a key"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("DELETE FROM keys WHERE key=%s"), (license_key,))
+    db.commit()
+    db.close()
+    return {"success": True}
+
+# === DASHBOARD API ===
+
+@app.get("/api/dashboard/{license_key}")
+def get_dashboard_data(license_key: str):
+    """Get dashboard data"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("SELECT key, duration, expires_at, active, hwid, redeemed_by, hwid_resets FROM keys WHERE key=%s"), (license_key,))
+    result = cur.fetchone()
+    
+    db.close()
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    key, duration, expires_at, active, hwid, discord_id, hwid_resets = result
+    
+    return {
+        "license_key": key,
+        "duration": duration,
+        "expires_at": expires_at,
+        "active": active,
+        "hwid": hwid,
+        "discord_id": discord_id,
+        "hwid_resets": hwid_resets if hwid_resets else 0
+    }
+
+@app.post("/api/redeem")
+def redeem_key(data: RedeemRequest):
+    """Redeem a key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("SELECT key, duration, redeemed_at FROM keys WHERE key=%s"), (data.key,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="Invalid key")
+    
+    key, duration, redeemed_at = result
+    
+    if redeemed_at:
+        db.close()
+        raise HTTPException(status_code=400, detail="Already redeemed")
+    
+    now = datetime.now()
+    expires_at = None
+    if duration == "monthly":
+        expires_at = (now + timedelta(days=30)).isoformat()
+    elif duration == "weekly":
+        expires_at = (now + timedelta(days=7)).isoformat()
+    elif duration == "3monthly":
+        expires_at = (now + timedelta(days=90)).isoformat()
+    
+    cur.execute(q("UPDATE keys SET redeemed_at=%s, redeemed_by=%s, expires_at=%s, active=1 WHERE key=%s"),
+               (now.isoformat(), data.discord_id, expires_at, data.key))
+    db.commit()
+    db.close()
+    
+    return {"success": True, "duration": duration, "expires_at": expires_at, "message": "Key redeemed successfully"}
+
+@app.post("/api/reset-hwid/{license_key}")
+def reset_hwid(license_key: str):
+    """Reset HWID"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("SELECT hwid_resets FROM keys WHERE key=%s"), (license_key,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    resets = result[0] if result[0] else 0
+    
+    cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE key=%s"), (resets + 1, license_key))
+    db.commit()
+    db.close()
+    
+    return {"success": True, "hwid_resets": resets + 1}
+
+@app.get("/api/users/{user_id}/license")
+def get_user_license(user_id: str):
+    """Get user's license by Discord ID"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("SELECT key, duration, expires_at, redeemed_at, hwid, active FROM keys WHERE redeemed_by=%s"), (user_id,))
+    result = cur.fetchone()
+    db.close()
+    
+    if not result:
+        return {"active": False, "message": "No license found"}
+    
+    key, duration, expires_at, redeemed_at, hwid, active = result
+    
+    if expires_at:
+        is_expired = datetime.now() > datetime.fromisoformat(expires_at)
+        if is_expired:
+            return {"active": False, "expired": True, "key": key}
+    
+    return {
+        "active": True,
+        "key": key,
+        "duration": duration,
+        "expires_at": expires_at,
+        "redeemed_at": redeemed_at,
+        "hwid": hwid
+    }
+
+@app.delete("/api/users/{user_id}/license")
+def delete_user_license(user_id: str):
+    """Delete user's license by Discord ID"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("SELECT key FROM keys WHERE redeemed_by=%s"), (user_id,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="No license found")
+    
+    key = result[0]
+    cur.execute(q("DELETE FROM keys WHERE redeemed_by=%s"), (user_id,))
+    db.commit()
+    db.close()
+    
+    return {"status": "deleted", "key": key, "user_id": user_id}
+
+@app.post("/api/users/{user_id}/reset-hwid")
+def reset_user_hwid(user_id: str):
+    """Reset HWID for user's license"""
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(q("SELECT hwid, hwid_resets FROM keys WHERE redeemed_by=%s"), (user_id,))
+    result = cur.fetchone()
+    
+    if not result:
+        db.close()
+        raise HTTPException(status_code=404, detail="No license found")
+    
+    old_hwid, resets = result
+    resets = resets if resets else 0
+    
+    cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE redeemed_by=%s"), (resets + 1, user_id))
+    db.commit()
+    db.close()
+    
+    return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
+
+@app.get("/api/keepalive")
+def keepalive():
+    """Keep server awake"""
+    return {"status": "alive"}
+
+
+# === HTML ROUTES ===
+
 _INDEX_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -270,84 +719,568 @@ _INDEX_HTML = """<!DOCTYPE html>
   <title>Axion — Home</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body, html { height: 100%; background-color: rgb(12, 12, 12); color: #fff; font-family: system-ui, -apple-system, sans-serif; overflow-x: hidden; }
-    .image-container { width: 100%; height: 100vh; background-image: url('https://image2url.com/r2/default/images/1768674767693-4fff24d5-abfa-4be9-a3ee-bd44454bad9f.blob'); background-size: cover; background-position: center; opacity: 0.01; position: fixed; inset: 0; z-index: 1; }
-    .navbar { position: fixed; top: 0; left: 0; right: 0; padding: 1.2rem 2rem; display: flex; justify-content: space-between; align-items: center; z-index: 100; backdrop-filter: blur(12px); background: rgba(12, 12, 12, 0.6); border-bottom: 1px solid rgba(255,255,255,0.08); }
-    .nav-links { display: flex; gap: 2rem; }
-    .nav-links a { color: rgba(255, 255, 255, 0.6); text-decoration: none; font-size: 0.95rem; font-weight: 500; transition: color 0.3s; cursor: pointer; }
-    .nav-links a:hover { color: rgba(255, 255, 255, 1); }
-    .nav-right { display: flex; gap: 1.5rem; align-items: center; }
-    .nav-right a { color: rgba(255, 255, 255, 0.7); text-decoration: none; font-size: 0.95rem; font-weight: 500; transition: color 0.3s; }
-    .nav-right a:hover { color: rgba(255, 255, 255, 1); }
-    .login-btn { padding: 8px 20px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: white; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }
-    .login-btn:hover { background: rgba(255,255,255,0.15); }
-    .user-info { padding: 8px 20px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: white; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }
-    .user-info:hover { background: rgba(255,255,255,0.1); }
-    .content { position: fixed; inset: 0; z-index: 5; overflow-y: auto; pointer-events: none; }
-    .content > * { pointer-events: auto; }
-    .page { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: opacity 0.6s ease; }
-    .page.active { opacity: 1; pointer-events: auto; }
-    .configs-page { justify-content: flex-start; padding-top: 15vh; }
-    .about-page { padding: 20px; }
-    .about-page .description { max-width: 600px; text-align: center; font-size: 18px; line-height: 1.8; color: #aaa; margin-top: 40px; }
-    .pricing-page { justify-content: flex-start; padding-top: 15vh; }
-    .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 30px; width: 90%; max-width: 1000px; margin-top: 60px; }
-    .pricing-card { background: rgba(18,18,22,0.6); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 32px; text-align: center; transition: all 0.3s; }
-    .pricing-card:hover { transform: translateY(-8px); border-color: rgba(255,255,255,0.2); background: rgba(22,22,26,0.7); }
-    .pricing-card.featured { border-color: rgba(255,255,255,0.3); background: rgba(25,25,30,0.8); }
-    .plan-name { font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 16px; }
-    .plan-price { font-size: 48px; font-weight: 900; color: #fff; margin-bottom: 8px; }
-    .plan-duration { font-size: 14px; color: #888; margin-bottom: 24px; }
-    .plan-features { list-style: none; text-align: left; margin-top: 24px; }
-    .plan-features li { padding: 10px 0; color: #aaa; font-size: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-    .plan-features li:last-child { border-bottom: none; }
-    .title-wrapper { display: flex; gap: 0.8rem; flex-wrap: wrap; justify-content: center; }
-    .title-word { font-size: 3.8rem; font-weight: 900; letter-spacing: -1.5px; text-shadow: 0 0 25px rgba(0,0,0,0.7); }
-    .configs-container { width: 90%; max-width: 1200px; margin-top: 60px; }
-    .login-required { text-align: center; padding: 60px 20px; background: rgba(18,18,22,0.5); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); }
-    .create-btn { padding: 14px 32px; background: transparent; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff; font-size: 15px; cursor: pointer; transition: all 0.3s ease; margin-bottom: 30px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-    .create-btn:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.25); transform: translateY(-2px); }
-    .pagination { display: flex; justify-content: center; gap: 10px; margin-top: 30px; margin-bottom: 60px; }
-    .page-btn { padding: 8px 16px; background: transparent; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #fff; font-size: 14px; cursor: pointer; transition: all 0.2s; backdrop-filter: blur(10px); }
-    .page-btn:hover:not(:disabled) { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.25); }
-    .page-btn.active { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); }
-    .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-    .config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; margin-bottom: 40px; }
-    .config-card { background: rgba(25,25,30,0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 24px; transition: all 0.3s; cursor: pointer; }
-    .config-card:hover { background: rgba(30,30,35,0.7); border-color: rgba(255,255,255,0.15); transform: translateY(-4px); }
-    .config-name { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
-    .config-game { font-size: 12px; color: #888; background: rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 4px; display: inline-block; margin-bottom: 12px; }
-    .config-description { font-size: 14px; color: #aaa; line-height: 1.5; margin: 12px 0; }
-    .config-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 13px; color: #666; }
-    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 1000; justify-content: center; align-items: center; opacity: 0; transition: opacity 0.3s ease; }
-    .modal.active { display: flex; animation: fadeIn 0.3s ease forwards; }
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    .modal-content { background: #1a1a1f; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 24px; width: 90%; max-width: 460px; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); transform: scale(0.95); animation: modalZoom 0.3s ease forwards; }
-    @keyframes modalZoom { from { transform: scale(0.95); } to { transform: scale(1); } }
-    .modal-title { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #fff; }
-    .form-group { margin-bottom: 16px; }
-    .form-label { display: block; font-size: 13px; color: #888; margin-bottom: 6px; font-weight: 500; }
-    .form-input, .form-select, .form-textarea { width: 100%; padding: 10px 14px; background: transparent; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; color: #fff; font-size: 14px; font-family: inherit; transition: all 0.2s; }
-    .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.02); }
-    .form-textarea { resize: vertical; min-height: 90px; }
-    .form-select { cursor: pointer; }
-    .form-select option { background: #1a1a1f; color: #fff; }
-    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
-    .modal-btn { flex: 1; padding: 11px; background: transparent; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; color: #fff; backdrop-filter: blur(5px); }
-    .modal-btn:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.25); }
-    .config-detail-modal .modal-content { max-width: 600px; background: #16161a; padding: 28px; }
-    .config-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 20px 0; padding: 20px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; }
-    .stat-item { text-align: center; }
-    .stat-label { font-size: 11px; color: #666; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-value { font-size: 18px; font-weight: 700; color: #fff; }
-    .detail-section { margin: 20px 0; }
-    .detail-label { font-size: 12px; color: #666; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .detail-content { color: #aaa; line-height: 1.6; font-size: 14px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; }
-    @media (max-width: 768px) { .title-word { font-size: 2.5rem; } .config-grid { grid-template-columns: 1fr; } .pricing-grid { grid-template-columns: 1fr; } }
+    
+    body, html {
+      height: 100%;
+      background-color: rgb(12, 12, 12);
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow-x: hidden;
+    }
+
+    function showDashboard() {
+  if (!currentUser) {
+    showLoginModal();
+    return;
+  }
+  localStorage.setItem('axion_license', currentUser.license_key);
+  window.location.href = '/dashboard';
+}
+
+    .image-container {
+      width: 100%;
+      height: 100vh;
+      background-image: url('https://image2url.com/r2/default/images/1768674767693-4fff24d5-abfa-4be9-a3ee-bd44454bad9f.blob');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.01;
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+    }
+
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 1.2rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      background: rgba(12, 12, 12, 0.6);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+    }
+
+    .nav-links a {
+      color: rgba(255, 255, 255, 0.6);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.3s;
+      cursor: pointer;
+    }
+
+    .nav-links a:hover {
+      color: rgba(255, 255, 255, 1);
+    }
+
+    .nav-right {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    .nav-right a {
+      color: rgba(255, 255, 255, 0.7);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.3s;
+    }
+
+    .nav-right a:hover {
+      color: rgba(255, 255, 255, 1);
+    }
+
+    .login-btn {
+      padding: 8px 20px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.9rem;
+    }
+
+    .login-btn:hover {
+      background: rgba(255,255,255,0.15);
+    }
+
+    .user-info {
+      padding: 8px 20px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.9rem;
+    }
+
+    .user-info:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .content {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      overflow-y: auto;
+      pointer-events: none;
+    }
+
+    .content > * {
+      pointer-events: auto;
+    }
+
+    .page {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.6s ease;
+    }
+
+    .page.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .configs-page {
+      justify-content: flex-start;
+      padding-top: 15vh;
+    }
+
+    .about-page {
+      padding: 20px;
+    }
+
+    .about-page .description {
+      max-width: 600px;
+      text-align: center;
+      font-size: 18px;
+      line-height: 1.8;
+      color: #aaa;
+      margin-top: 40px;
+    }
+
+    .pricing-page {
+      justify-content: flex-start;
+      padding-top: 15vh;
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 30px;
+      width: 90%;
+      max-width: 1000px;
+      margin-top: 60px;
+    }
+
+    .pricing-card {
+      background: rgba(18,18,22,0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+      transition: all 0.3s;
+    }
+
+    .pricing-card:hover {
+      transform: translateY(-8px);
+      border-color: rgba(255,255,255,0.2);
+      background: rgba(22,22,26,0.7);
+    }
+
+    .pricing-card.featured {
+      border-color: rgba(255,255,255,0.3);
+      background: rgba(25,25,30,0.8);
+    }
+
+    .plan-name {
+      font-size: 24px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 16px;
+    }
+
+    .plan-price {
+      font-size: 48px;
+      font-weight: 900;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+
+    .plan-duration {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 24px;
+    }
+
+    .plan-features {
+      list-style: none;
+      text-align: left;
+      margin-top: 24px;
+    }
+
+    .plan-features li {
+      padding: 10px 0;
+      color: #aaa;
+      font-size: 15px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .plan-features li:last-child {
+      border-bottom: none;
+    }
+
+    .title-wrapper {
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .title-word {
+      font-size: 3.8rem;
+      font-weight: 900;
+      letter-spacing: -1.5px;
+      text-shadow: 0 0 25px rgba(0,0,0,0.7);
+    }
+
+    .configs-container {
+      width: 90%;
+      max-width: 1200px;
+      margin-top: 60px;
+    }
+
+    .login-required {
+      text-align: center;
+      padding: 60px 20px;
+      background: rgba(18,18,22,0.5);
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .create-btn {
+      padding: 14px 32px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 30px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .create-btn:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
+      transform: translateY(-2px);
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 30px;
+      margin-bottom: 60px;
+    }
+
+    .page-btn {
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      backdrop-filter: blur(10px);
+    }
+
+    .page-btn:hover:not(:disabled) {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
+    }
+
+    .page-btn.active {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.3);
+    }
+
+    .page-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+
+    .config-card {
+      background: rgba(25,25,30,0.6);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+
+    .config-card:hover {
+      background: rgba(30,30,35,0.7);
+      border-color: rgba(255,255,255,0.15);
+      transform: translateY(-4px);
+    }
+
+    .config-name {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .config-game {
+      font-size: 12px;
+      color: #888;
+      background: rgba(255,255,255,0.05);
+      padding: 4px 10px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 12px;
+    }
+
+    .config-description {
+      font-size: 14px;
+      color: #aaa;
+      line-height: 1.5;
+      margin: 12px 0;
+    }
+
+    .config-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+      color: #666;
+    }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(10px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .modal.active {
+      display: flex;
+      animation: fadeIn 0.3s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .modal-content {
+      background: #1a1a1f;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 24px;
+      width: 90%;
+      max-width: 460px;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      transform: scale(0.95);
+      animation: modalZoom 0.3s ease forwards;
+    }
+
+    @keyframes modalZoom {
+      from { transform: scale(0.95); }
+      to { transform: scale(1); }
+    }
+
+    .modal-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #fff;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      padding: 10px 14px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      outline: none;
+      border-color: rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.02);
+    }
+
+    .form-textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
+
+    .form-select {
+      cursor: pointer;
+    }
+
+    .form-select option {
+      background: #1a1a1f;
+      color: #fff;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .modal-btn {
+      flex: 1;
+      padding: 11px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: #fff;
+      backdrop-filter: blur(5px);
+    }
+
+    .modal-btn:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.25);
+    }
+
+    .config-detail-modal .modal-content {
+      max-width: 600px;
+      background: #16161a;
+      padding: 28px;
+    }
+
+    .config-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin: 20px 0;
+      padding: 20px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .detail-section {
+      margin: 20px 0;
+    }
+
+    .detail-label {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-content {
+      color: #aaa;
+      line-height: 1.6;
+      font-size: 14px;
+      padding: 12px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 6px;
+    }
+
+    @media (max-width: 768px) {
+      .title-word {
+        font-size: 2.5rem;
+      }
+      
+      .config-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .pricing-grid {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="image-container"></div>
+
   <nav class="navbar">
     <div class="nav-links">
       <a onclick="showPage('home')">Home</a>
@@ -360,7 +1293,9 @@ _INDEX_HTML = """<!DOCTYPE html>
       <div id="userArea"></div>
     </div>
   </nav>
+
   <div class="content">
+    <!-- Home Page -->
     <div id="home" class="page active">
       <div class="title-wrapper">
         <span class="title-word" style="color:#ffffff;">WELCOME</span>
@@ -368,6 +1303,8 @@ _INDEX_HTML = """<!DOCTYPE html>
         <span class="title-word" style="color:#888888;">Axion</span>
       </div>
     </div>
+
+    <!-- About Page -->
     <div id="about" class="page about-page">
       <div class="title-wrapper">
         <span class="title-word" style="color:#ffffff;">About</span>
@@ -377,6 +1314,8 @@ _INDEX_HTML = """<!DOCTYPE html>
         Axion is a Da Hood external designed to integrate seamlessly in-game. It delivers smooth, reliable performance while bypassing PC checks, giving you a consistent edge during star tryouts and competitive play.
       </div>
     </div>
+
+    <!-- Pricing Page -->
     <div id="pricing" class="page pricing-page">
       <div class="title-wrapper">
         <span class="title-word" style="color:#ffffff;">Pricing</span>
@@ -415,11 +1354,14 @@ _INDEX_HTML = """<!DOCTYPE html>
         </div>
       </div>
     </div>
+
+    <!-- Configs Page -->
     <div id="configs" class="page configs-page">
       <div class="title-wrapper">
         <span class="title-word" style="color:#ffffff;">Community</span>
         <span class="title-word" style="color:#888888;">Configs</span>
       </div>
+      
       <div class="configs-container" id="configsContent">
         <div class="login-required">
           <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
@@ -429,53 +1371,68 @@ _INDEX_HTML = """<!DOCTYPE html>
       </div>
     </div>
   </div>
+
+  <!-- Login Modal -->
   <div class="modal" id="loginModal">
     <div class="modal-content">
       <h2 class="modal-title">Login to Axion</h2>
+      
       <div class="form-group">
         <label class="form-label">License Key</label>
         <input type="text" class="form-input" id="licenseKeyInput" placeholder="XXXX-XXXX-XXXX-XXXX">
       </div>
+
       <div class="modal-actions">
         <button class="modal-btn" onclick="closeLoginModal()">Cancel</button>
         <button class="modal-btn" onclick="submitLogin()">Login</button>
       </div>
     </div>
   </div>
+
+  <!-- Create Config Modal -->
   <div class="modal" id="createModal">
     <div class="modal-content">
       <h2 class="modal-title">Create Public Config</h2>
+      
       <div class="form-group">
         <label class="form-label">Select Your Saved Config</label>
         <select class="form-select" id="savedConfigSelect">
           <option value="">Loading your configs...</option>
         </select>
       </div>
+
       <div class="form-group">
         <label class="form-label">Config Name</label>
         <input type="text" class="form-input" id="configName" placeholder="e.g., Pro Camlock Settings">
       </div>
+
       <div class="form-group">
         <label class="form-label">Author Name</label>
         <input type="text" class="form-input" id="authorName" placeholder="Your name">
       </div>
+
       <div class="form-group">
         <label class="form-label">Game</label>
         <input type="text" class="form-input" id="gameName" placeholder="e.g., Da Hood, Hood Modded, etc.">
       </div>
+
       <div class="form-group">
         <label class="form-label">Description</label>
         <textarea class="form-textarea" id="configDescription" placeholder="Describe your config..."></textarea>
       </div>
+
       <div class="modal-actions">
         <button class="modal-btn" onclick="closeCreateModal()">Cancel</button>
         <button class="modal-btn" onclick="publishConfig()">Publish Config</button>
       </div>
     </div>
   </div>
+
+  <!-- View Config Modal -->
   <div class="modal config-detail-modal" id="viewModal">
     <div class="modal-content">
       <h2 class="modal-title" id="viewConfigName">Config Name</h2>
+      
       <div class="config-stats">
         <div class="stat-item">
           <div class="stat-label">Game</div>
@@ -490,61 +1447,105 @@ _INDEX_HTML = """<!DOCTYPE html>
           <div class="stat-value" id="viewDownloads">0</div>
         </div>
       </div>
+
       <div class="detail-section">
         <div class="detail-label">Description</div>
         <div class="detail-content" id="viewDescription">-</div>
       </div>
+
       <div class="modal-actions">
         <button class="modal-btn" onclick="closeViewModal()">Close</button>
         <button class="modal-btn" onclick="saveConfigToMenu()">Load to Menu</button>
       </div>
     </div>
   </div>
+
   <script>
     let currentUser = null;
     let allConfigs = [];
     let currentPage = 1;
     let currentViewConfig = null;
     const CONFIGS_PER_PAGE = 6;
+
     function showPage(pageId) {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.getElementById(pageId).classList.add('active');
-      if (pageId === 'configs' && currentUser) loadConfigs();
+      
+      if (pageId === 'configs' && currentUser) {
+        loadConfigs();
+      }
     }
-    function showLoginModal() { document.getElementById('loginModal').classList.add('active'); }
-    function closeLoginModal() { document.getElementById('loginModal').classList.remove('active'); }
+
+    function showLoginModal() {
+      document.getElementById('loginModal').classList.add('active');
+    }
+
+    function closeLoginModal() {
+      document.getElementById('loginModal').classList.remove('active');
+    }
+
     async function submitLogin() {
       const licenseKey = document.getElementById('licenseKeyInput').value.trim();
-      if (!licenseKey) return alert('Please enter your license key');
+
+      if (!licenseKey) {
+        alert('Please enter your license key');
+        return;
+      }
+
       try {
         const res = await fetch(`/api/validate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: licenseKey, hwid: 'web-login' })
         });
+
         if (res.ok) {
           const data = await res.json();
+          
           if (data.valid) {
-            currentUser = { license_key: licenseKey };
-            document.getElementById('userArea').innerHTML = `<div class="user-info" onclick="logout()"><span>${licenseKey.substring(0,12)}...</span></div>`;
+            currentUser = { 
+              license_key: licenseKey
+            };
+            
+            document.getElementById('userArea').innerHTML = `
+              <div class="user-info" onclick="logout()">
+                <span>${licenseKey.substring(0, 12)}...</span>
+              </div>
+            `;
+            
             closeLoginModal();
             loadConfigs();
-          } else alert('Invalid or expired license key');
-        } else alert('Invalid license key');
+          } else {
+            alert('Invalid or expired license key');
+          }
+        } else {
+          alert('Invalid license key');
+        }
       } catch (e) {
-        alert('Connection error');
-        console.error(e);
+        alert('Connection error. Please check your internet connection.');
+        console.error('Login error:', e);
       }
     }
+
     function logout() {
       currentUser = null;
-      document.getElementById('userArea').innerHTML = `<button class="login-btn" onclick="showLoginModal()">Login</button>`;
-      document.getElementById('configsContent').innerHTML = `<div class="login-required"><h3 style="font-size:24px;margin-bottom:12px;">Login Required</h3><p style="color:#888;margin-bottom:20px;">Please login to view and create configs</p><button class="login-btn" onclick="showLoginModal()">Login</button></div>`;
+      document.getElementById('userArea').innerHTML = `
+        <button class="login-btn" onclick="showLoginModal()">Login</button>
+      `;
+      document.getElementById('configsContent').innerHTML = `
+        <div class="login-required">
+          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
+          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
+          <button class="login-btn" onclick="showLoginModal()">Login</button>
+        </div>
+      `;
     }
+
     async function loadConfigs() {
       try {
         const res = await fetch('/api/public-configs');
         const data = await res.json();
+        
         allConfigs = data.configs || [];
         renderConfigsPage();
       } catch (e) {
@@ -552,31 +1553,51 @@ _INDEX_HTML = """<!DOCTYPE html>
         document.getElementById('configsContent').innerHTML = '<p>Error loading configs</p>';
       }
     }
+
     function renderConfigsPage() {
-      const start = (currentPage - 1) * CONFIGS_PER_PAGE;
-      const end = start + CONFIGS_PER_PAGE;
-      const pageConfigs = allConfigs.slice(start, end);
+      const startIndex = (currentPage - 1) * CONFIGS_PER_PAGE;
+      const endIndex = startIndex + CONFIGS_PER_PAGE;
+      const pageConfigs = allConfigs.slice(startIndex, endIndex);
       const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
-      let html = '<button class="create-btn" onclick="openCreateModal()">+ Create Config</button><div class="config-grid">';
+
+      let html = '<button class="create-btn" onclick="openCreateModal()">+ Create Config</button>';
+      html += '<div class="config-grid">';
+      
       if (pageConfigs.length > 0) {
         pageConfigs.forEach(config => {
-          html += `<div class="config-card" onclick="viewConfig(${config.id})"><div class="config-name">${config.config_name}</div><div class="config-game">${config.game_name}</div><div class="config-description">${config.description}</div><div class="config-footer"><div>by ${config.author_name}</div><div>${config.downloads} downloads</div></div></div>`;
+          html += `
+            <div class="config-card" onclick="viewConfig(${config.id})">
+              <div class="config-name">${config.config_name}</div>
+              <div class="config-game">${config.game_name}</div>
+              <div class="config-description">${config.description}</div>
+              <div class="config-footer">
+                <div>by ${config.author_name}</div>
+                <div>${config.downloads} downloads</div>
+              </div>
+            </div>
+          `;
         });
       } else {
         html += '<p style="color: #888; text-align: center; padding: 40px;">No configs yet! Be the first to create one.</p>';
       }
+      
       html += '</div>';
+
       if (totalPages > 1) {
         html += '<div class="pagination">';
         html += `<button class="page-btn" onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>`;
+        
         for (let i = 1; i <= totalPages; i++) {
           html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
         }
+        
         html += `<button class="page-btn" onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>`;
         html += '</div>';
       }
+      
       document.getElementById('configsContent').innerHTML = html;
     }
+
     function changePage(page) {
       const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
       if (page < 1 || page > totalPages) return;
@@ -584,70 +1605,109 @@ _INDEX_HTML = """<!DOCTYPE html>
       renderConfigsPage();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+
     async function openCreateModal() {
       document.getElementById('createModal').classList.add('active');
+      
       try {
         const res = await fetch(`/api/configs/${currentUser.license_key}/list`);
         const data = await res.json();
+        
         const select = document.getElementById('savedConfigSelect');
         select.innerHTML = '<option value="">Select a config...</option>';
+        
         if (data.configs && data.configs.length > 0) {
-          data.configs.forEach(cfg => select.innerHTML += `<option value="${cfg.name}">${cfg.name}</option>`);
+          data.configs.forEach(cfg => {
+            select.innerHTML += `<option value="${cfg.name}">${cfg.name}</option>`;
+          });
         } else {
           select.innerHTML = '<option value="">No saved configs found</option>';
         }
-      } catch (e) { console.error('Error loading configs:', e); }
+      } catch (e) {
+        console.error('Error loading configs:', e);
+      }
     }
-    function closeCreateModal() { document.getElementById('createModal').classList.remove('active'); }
+
+    function closeCreateModal() {
+      document.getElementById('createModal').classList.remove('active');
+    }
+
     async function publishConfig() {
-      const selected = document.getElementById('savedConfigSelect').value;
-      const name = document.getElementById('configName').value.trim();
-      const author = document.getElementById('authorName').value.trim();
-      const game = document.getElementById('gameName').value.trim();
-      const desc = document.getElementById('configDescription').value.trim();
-      if (!selected) return alert('Please select a config');
-      if (!name || !author || !game || !desc) return alert('Please fill in all fields');
+      const selectedConfig = document.getElementById('savedConfigSelect').value;
+      const configName = document.getElementById('configName').value.trim();
+      const authorName = document.getElementById('authorName').value.trim();
+      const gameName = document.getElementById('gameName').value.trim();
+      const description = document.getElementById('configDescription').value.trim();
+
+      if (!selectedConfig) {
+        alert('Please select a config');
+        return;
+      }
+      if (!configName || !authorName || !gameName || !description) {
+        alert('Please fill in all fields');
+        return;
+      }
+
       try {
-        const configRes = await fetch(`/api/configs/${currentUser.license_key}/load/${selected}`);
+        const configRes = await fetch(`/api/configs/${currentUser.license_key}/load/${selectedConfig}`);
         const configData = await configRes.json();
+
         const res = await fetch('/api/public-configs/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            config_name: name,
-            author_name: author,
-            game_name: game,
-            description: desc,
+            config_name: configName,
+            author_name: authorName,
+            game_name: gameName,
+            description: description,
             config_data: configData
           })
         });
+
         if (res.ok) {
-          alert('Config published!');
+          alert('Config published successfully!');
           closeCreateModal();
           loadConfigs();
         } else {
           const error = await res.json();
           alert('Error: ' + (error.detail || 'Failed to publish'));
         }
-      } catch (e) { alert('Error publishing config: ' + e.message); }
+      } catch (e) {
+        alert('Error publishing config: ' + e.message);
+      }
     }
+
     async function viewConfig(configId) {
       try {
         const res = await fetch(`/api/public-configs/${configId}`);
         const data = await res.json();
+        
         currentViewConfig = data;
+        
         document.getElementById('viewConfigName').textContent = data.config_name;
         document.getElementById('viewGame').textContent = data.game_name;
         document.getElementById('viewAuthor').textContent = data.author_name;
         document.getElementById('viewDownloads').textContent = data.downloads;
         document.getElementById('viewDescription').textContent = data.description;
+        
         document.getElementById('viewModal').classList.add('active');
+        
         fetch(`/api/public-configs/${configId}/download`, { method: 'POST' });
-      } catch (e) { alert('Error loading config'); }
+      } catch (e) {
+        alert('Error loading config');
+      }
     }
-    function closeViewModal() { document.getElementById('viewModal').classList.remove('active'); }
+
+    function closeViewModal() {
+      document.getElementById('viewModal').classList.remove('active');
+    }
+
     async function saveConfigToMenu() {
-      if (!currentUser || !currentViewConfig) return alert('Please login first');
+      if (!currentUser || !currentViewConfig) {
+        alert('Please login first');
+        return;
+      }
+
       try {
         const res = await fetch(`/api/configs/${currentUser.license_key}/save`, {
           method: 'POST',
@@ -657,27 +1717,49 @@ _INDEX_HTML = """<!DOCTYPE html>
             config_data: currentViewConfig.config_data
           })
         });
+
         if (res.ok) {
           alert('Config loaded to your menu!');
           closeViewModal();
-        } else alert('Failed to save config');
-      } catch (e) { alert('Error saving config: ' + e.message); }
+        } else {
+          alert('Failed to save config');
+        }
+      } catch (e) {
+        alert('Error saving config: ' + e.message);
+      }
     }
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLoginModal(); closeCreateModal(); closeViewModal(); } });
-    document.getElementById('userArea').innerHTML = `<button class="login-btn" onclick="showLoginModal()">Login</button>`;
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeLoginModal();
+        closeCreateModal();
+        closeViewModal();
+      }
+    });
+
+    document.getElementById('userArea').innerHTML = `
+      <button class="login-btn" onclick="showLoginModal()">Login</button>
+    `;
   </script>
 </body>
-</html>"""
+</html>
+"""
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/home", response_class=HTMLResponse)
 def serve_home():
-    return protect_html(_INDEX_HTML)
+    """SPA Homepage with all tabs"""
+    return _INDEX_HTML
 
-# Customer dashboard route (full)
+# ============================================================================
+# UPDATED CUSTOMER DASHBOARD WITH LOGIN MODAL
+# Replace your @app.get("/dashboard") route with this
+# ============================================================================
+
 @app.get("/dashboard", response_class=HTMLResponse)
 def serve_customer_dashboard():
-    dashboard_html = """<!DOCTYPE html>
+    """Customer Account Dashboard with Modal Login"""
+    return """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -752,11 +1834,13 @@ def serve_customer_dashboard():
       </ul>
     </nav>
   </aside>
+
   <main class="main-content">
     <div class="container">
       <h1 id="page-title">Subscriptions</h1>
       <div class="subtitle">Manage and view your active subscriptions</div>
       <div class="divider"></div>
+
       <div id="subscriptions" class="tab-content active">
         <div class="stats">
           <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value" id="activeSubs">Unknown</div><div class="stat-sub">subscriptions</div></div>
@@ -769,6 +1853,7 @@ def serve_customer_dashboard():
           <button id="redeem-from-subs">Redeem Key</button>
         </div>
       </div>
+
       <div id="manage" class="tab-content">
         <div class="manage-grid">
           <div class="card">
@@ -782,6 +1867,7 @@ def serve_customer_dashboard():
           </div>
         </div>
       </div>
+
       <div id="security" class="tab-content">
         <div class="security-grid">
           <div class="card">
@@ -800,6 +1886,8 @@ def serve_customer_dashboard():
       </div>
     </div>
   </main>
+
+  <!-- Login Modal -->
   <div id="loginModal" class="modal">
     <div class="modal-content">
       <div class="modal-title">Welcome to Axion Dashboard</div>
@@ -813,6 +1901,8 @@ def serve_customer_dashboard():
       </div>
     </div>
   </div>
+
+  <!-- Redeem Modal -->
   <div id="redeemModal" class="modal">
     <div class="modal-content">
       <div class="modal-title">Redeem Axion Key</div>
@@ -823,11 +1913,19 @@ def serve_customer_dashboard():
       <button class="redeem-btn" id="continueBtn">Continue</button>
     </div>
   </div>
+
   <script>
     let licenseKey = localStorage.getItem('axion_license');
     let hasLicense = localStorage.getItem('axion_has_license') === 'true';
-    if (!localStorage.getItem('axion_dashboard_visited')) document.getElementById('loginModal').classList.add('show');
-    else if (hasLicense && licenseKey) loadDashboard();
+
+    // Show login modal on first visit
+    if (!localStorage.getItem('axion_dashboard_visited')) {
+      document.getElementById('loginModal').classList.add('show');
+    } else if (hasLicense && licenseKey) {
+      loadDashboard();
+    }
+
+    // No license button - browse without license
     document.getElementById('noLicenseBtn').onclick = () => {
       localStorage.setItem('axion_dashboard_visited', 'true');
       localStorage.setItem('axion_has_license', 'false');
@@ -836,22 +1934,38 @@ def serve_customer_dashboard():
       document.getElementById('loginModal').classList.remove('show');
       setUnknownState();
     };
+
+    // Yes license button - validate and login
     document.getElementById('yesLicenseBtn').onclick = async () => {
       const key = document.getElementById('loginKeyInput').value.trim();
-      if (!key) return alert('Please enter your license key');
+      
+      if (!key) {
+        alert('Please enter your license key');
+        return;
+      }
+
       try {
         const res = await fetch(`/api/dashboard/${key}`);
-        if (!res.ok) return alert('Invalid license key');
+        if (!res.ok) {
+          alert('Invalid license key');
+          return;
+        }
+
         const data = await res.json();
         licenseKey = key;
         hasLicense = true;
         localStorage.setItem('axion_license', key);
         localStorage.setItem('axion_has_license', 'true');
         localStorage.setItem('axion_dashboard_visited', 'true');
+        
         document.getElementById('loginModal').classList.remove('show');
         loadDashboard();
-      } catch (e) { alert('Error validating license: ' + e.message); }
+      } catch (e) {
+        alert('Error validating license: ' + e.message);
+      }
     };
+
+    // Set everything to "Unknown" for no license mode
     function setUnknownState() {
       document.getElementById('activeSubs').textContent = 'Unknown';
       document.getElementById('totalResets').textContent = 'Unknown';
@@ -860,29 +1974,51 @@ def serve_customer_dashboard():
       document.getElementById('licenseDisplay').textContent = 'Unknown';
       document.getElementById('hwidDisplay').textContent = 'Unknown';
     }
+
+    // Load dashboard data with license
     async function loadDashboard() {
-      if (!hasLicense || !licenseKey) return setUnknownState();
+      if (!hasLicense || !licenseKey) {
+        setUnknownState();
+        return;
+      }
+
       try {
         const res = await fetch(`/api/dashboard/${licenseKey}`);
         if (!res.ok) {
           alert('Invalid license key');
           localStorage.removeItem('axion_license');
           localStorage.setItem('axion_has_license', 'false');
-          return setUnknownState();
+          setUnknownState();
+          return;
         }
+        
         const data = await res.json();
+        
+        // Update stats
         document.getElementById('activeSubs').textContent = data.active ? '1' : '0';
         document.getElementById('totalResets').textContent = data.hwid_resets || 0;
         document.getElementById('subStatus').textContent = data.active ? 'Active' : 'Inactive';
-        const durationMap = {'weekly':'Weekly','monthly':'Monthly','3monthly':'Quarterly','lifetime':'Lifetime'};
+        
+        // Update duration display
+        const durationMap = {
+          'weekly': 'Weekly',
+          'monthly': 'Monthly',
+          '3monthly': 'Quarterly',
+          'lifetime': 'Lifetime'
+        };
         document.getElementById('subDuration').textContent = durationMap[data.duration] || data.duration.toUpperCase();
+        
+        // Update security info
         document.getElementById('licenseDisplay').textContent = data.license_key;
         document.getElementById('hwidDisplay').textContent = data.hwid || 'Not bound';
+        
       } catch (e) {
         console.error('Error loading dashboard:', e);
         setUnknownState();
       }
     }
+
+    // Tab navigation
     document.querySelectorAll('nav a').forEach(link => {
       link.addEventListener('click', e => {
         e.preventDefault();
@@ -892,45 +2028,79 @@ def serve_customer_dashboard():
         document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
         link.classList.add('active');
         document.getElementById('page-title').textContent = link.textContent;
-        document.querySelector('.subtitle').textContent = targetId === 'subscriptions' ? 'Manage and view your active subscriptions' :
-                                                          targetId === 'manage' ? 'Redeem keys and manage security information' :
-                                                          'Manage account security and HWID';
+        const sub = document.querySelector('.subtitle');
+        sub.textContent = targetId === 'subscriptions' ? 'Manage and view your active subscriptions' :
+                          targetId === 'manage' ? 'Redeem keys and manage security information' :
+                          'Manage account security and HWID';
       });
     });
-    document.getElementById('redeem-from-subs').onclick = () => document.querySelector('a[href="#manage"]').click();
+
+    // Redeem from subscriptions button
+    document.getElementById('redeem-from-subs').onclick = () => {
+      document.querySelector('a[href="#manage"]').click();
+    };
+
+    // HWID reset
     document.getElementById('hwidDisplay').onclick = async () => {
-      if (!hasLicense || !licenseKey) return alert('Please login with a license key to reset HWID');
+      if (!hasLicense || !licenseKey) {
+        alert('Please login with a license key to reset HWID');
+        return;
+      }
+
       if (!confirm("Are you sure you want to reset your HWID? This action cannot be undone.")) return;
+      
       try {
         const res = await fetch(`/api/reset-hwid/${licenseKey}`, { method: 'POST' });
         if (res.ok) {
           const data = await res.json();
           document.getElementById('hwidDisplay').textContent = 'Not bound';
           document.getElementById('totalResets').textContent = data.hwid_resets;
-          const hwidEl = document.getElementById('hwidDisplay');
-          hwidEl.classList.add('resetting');
-          setTimeout(() => hwidEl.classList.remove('resetting'), 2200);
-        } else alert('Failed to reset HWID');
-      } catch (e) { alert('Error: ' + e.message); }
+          
+          const hwid = document.getElementById('hwidDisplay');
+          hwid.classList.add('resetting');
+          setTimeout(() => hwid.classList.remove('resetting'), 2200);
+        } else {
+          alert('Failed to reset HWID');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
     };
+
+    // Modal handling for redeem
     const redeemModal = document.getElementById('redeemModal');
-    document.getElementById('redeemBtn').onclick = () => {
-      const key = document.getElementById('redeemKeyInput').value.trim();
-      if (!key) return alert('Please enter a key');
+    const redeemBtn = document.getElementById('redeemBtn');
+    const continueBtn = document.getElementById('continueBtn');
+    const discordInput = document.getElementById('discordIdInput');
+    const redeemKeyInput = document.getElementById('redeemKeyInput');
+
+    redeemBtn.onclick = () => {
+      const key = redeemKeyInput.value.trim();
+      if (!key) {
+        alert('Please enter a key');
+        return;
+      }
       redeemModal.style.display = 'flex';
       setTimeout(() => redeemModal.classList.add('show'), 10);
-      document.getElementById('discordIdInput').value = '';
+      discordInput.value = '';
     };
-    document.getElementById('continueBtn').onclick = async () => {
-      const id = document.getElementById('discordIdInput').value.trim();
-      const key = document.getElementById('redeemKeyInput').value.trim();
-      if (!/^\d{17,19}$/.test(id)) return alert('Invalid Discord ID');
+
+    continueBtn.onclick = async () => {
+      const id = discordInput.value.trim();
+      const key = redeemKeyInput.value.trim();
+      
+      if (!/^\d{17,19}$/.test(id)) {
+        alert('Invalid Discord ID');
+        return;
+      }
+      
       try {
         const res = await fetch('/api/redeem', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key, discord_id: id })
+          body: JSON.stringify({ key: key, discord_id: id })
         });
+        
         if (res.ok) {
           alert('Key redeemed successfully!');
           localStorage.setItem('axion_license', key);
@@ -939,14 +2109,17 @@ def serve_customer_dashboard():
           hasLicense = true;
           redeemModal.classList.remove('show');
           setTimeout(() => redeemModal.style.display = 'none', 300);
-          document.getElementById('redeemKeyInput').value = '';
+          redeemKeyInput.value = '';
           loadDashboard();
         } else {
           const error = await res.json();
           alert('Error: ' + error.detail);
         }
-      } catch (e) { alert('Error: ' + e.message); }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
     };
+
     redeemModal.onclick = e => {
       if (e.target === redeemModal) {
         redeemModal.classList.remove('show');
@@ -956,25 +2129,23 @@ def serve_customer_dashboard():
   </script>
 </body>
 </html>"""
-    return protect_html(dashboard_html)
-
-# Per-license personal dashboard (this is the full one — no cut)
 @app.get("/{license_key}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
-    if license_key in ["api", "favicon.ico", "home", "blocked"]:
+    """Personal dashboard"""
+    if license_key in ["api", "favicon.ico", "home"]:
         raise HTTPException(status_code=404)
-    
+   
     db = get_db()
     cur = db.cursor()
+   
     cur.execute(q("SELECT * FROM keys WHERE key=%s"), (license_key,))
     result = cur.fetchone()
     db.close()
-    
+   
     if not result:
-        error_html = "<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>License key not found</p></div></body></html>"
-        return protect_html(error_html)
-    
-    dashboard_html = f"""<!DOCTYPE html>
+        return "<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>License key not found</p></div></body></html>"
+   
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -1196,6 +2367,7 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
                 </div>
             </div>
         </div>
+
         <div class="tab-content" id="triggerbot">
             <div class="merged-panel">
                 <div class="inner-container">
@@ -1266,6 +2438,7 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
                 </div>
             </div>
         </div>
+
         <div class="tab-content" id="settings">
             <div class="merged-panel">
                 <div class="inner-container">
@@ -1288,6 +2461,7 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
         </div>
     </div>
 </div>
+
 <div class="modal-overlay" id="renameModal">
     <div class="modal-box">
         <div class="modal-title">Rename Config</div>
@@ -1298,9 +2472,45 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
         </div>
     </div>
 </div>
+
 <script>
 const key = "{license_key}";
-let config = {json.dumps(DEFAULT_CONFIG)};
+
+let config = {{
+    "triggerbot": {{
+        "Enabled": true,
+        "Keybind": "Right Mouse",
+        "Delay": 0.05,
+        "MaxStuds": 120,
+        "StudCheck": true,
+        "DeathCheck": true,
+        "KnifeCheck": true,
+        "TeamCheck": true,
+        "TargetMode": false,
+        "TargetKeybind": "Middle Mouse",
+        "Prediction": 0.1,
+        "FOV": 25
+    }},
+    "camlock": {{
+        "Enabled": true,
+        "Keybind": "Q",
+        "FOV": 280.0,
+        "SmoothX": 14.0,
+        "SmoothY": 14.0,
+        "EnableSmoothing": true,
+        "EasingStyle": "Linear",
+        "Prediction": 0.14,
+        "EnablePrediction": true,
+        "MaxStuds": 120.0,
+        "UnlockOnDeath": true,
+        "SelfDeathCheck": true,
+        "BodyPart": "Head",
+        "ClosestPart": false,
+        "ScaleToggle": true,
+        "Scale": 1.0
+    }}
+}};
+
 document.querySelectorAll('.tab').forEach(tab => {{
     tab.addEventListener('click', () => {{
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -1309,6 +2519,7 @@ document.querySelectorAll('.tab').forEach(tab => {{
         document.getElementById(tab.getAttribute('data-tab')).classList.add('active');
     }});
 }});
+
 async function saveConfig() {{
     try {{
         await fetch(`/api/config/${{key}}`, {{
@@ -1316,200 +2527,270 @@ async function saveConfig() {{
             headers: {{'Content-Type': 'application/json'}},
             body: JSON.stringify(config)
         }});
-    }} catch(e) {{ console.error('Save failed:', e); }}
+    }} catch(e) {{
+        console.error('Save failed:', e);
+    }}
 }}
+
 async function loadConfig() {{
     try {{
         const res = await fetch(`/api/config/${{key}}`);
         config = await res.json();
         applyConfigToUI();
-    }} catch(e) {{ console.error('Load failed:', e); }}
+    }} catch(e) {{
+        console.error('Load failed:', e);
+    }}
 }}
+
 function applyConfigToUI() {{
     document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
-        const [section, key] = toggle.dataset.setting.split('.');
-        if (config[section]?.[key] !== undefined) toggle.classList.toggle('active', config[section][key]);
+        const setting = toggle.dataset.setting;
+        const [section, key] = setting.split('.');
+        if (config[section] && config[section][key] !== undefined) {{
+            toggle.classList.toggle('active', config[section][key]);
+        }}
     }});
+
     document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
-        const [section, key] = picker.dataset.setting.split('.');
-        if (config[section]?.[key] !== undefined) picker.textContent = config[section][key];
+        const setting = picker.dataset.setting;
+        const [section, key] = setting.split('.');
+        if (config[section] && config[section][key] !== undefined) {{
+            picker.textContent = config[section][key];
+        }}
     }});
-    if (sliders.delay) {{ sliders.delay.current = config.triggerbot.Delay ?? 0.05; sliders.delay.update(); }}
-    if (sliders.maxStuds) {{ sliders.maxStuds.current = config.triggerbot.MaxStuds ?? 120; sliders.maxStuds.update(); }}
-    if (sliders.pred) {{ sliders.pred.current = config.triggerbot.Prediction ?? 0.1; sliders.pred.update(); }}
-    if (sliders.trigFov) {{ sliders.trigFov.current = config.triggerbot.FOV ?? 25; sliders.trigFov.update(); }}
-    if (sliders.fov) {{ sliders.fov.current = config.camlock.FOV ?? 280; sliders.fov.update(); }}
-    if (sliders.smoothX) {{ sliders.smoothX.current = config.camlock.SmoothX ?? 14; sliders.smoothX.update(); }}
-    if (sliders.smoothY) {{ sliders.smoothY.current = config.camlock.SmoothY ?? 14; sliders.smoothY.update(); }}
-    if (sliders.camlockPred) {{ sliders.camlockPred.current = config.camlock.Prediction ?? 0.14; sliders.camlockPred.update(); }}
-    if (sliders.camlockMaxStuds) {{ sliders.camlockMaxStuds.current = config.camlock.MaxStuds ?? 120; sliders.camlockMaxStuds.update(); }}
-    if (sliders.scale) {{ sliders.scale.current = config.camlock.Scale ?? 1.0; sliders.scale.update(); }}
-    if (config.camlock?.BodyPart) {{
+
+    if (sliders.delay)       {{ sliders.delay.current = config.triggerbot.Delay;       sliders.delay.update(); }}
+    if (sliders.maxStuds)    {{ sliders.maxStuds.current = config.triggerbot.MaxStuds; sliders.maxStuds.update(); }}
+    if (sliders.pred)        {{ sliders.pred.current = config.triggerbot.Prediction;   sliders.pred.update(); }}
+    if (sliders.trigFov)     {{ sliders.trigFov.current = config.triggerbot.FOV;       sliders.trigFov.update(); }}
+    if (sliders.fov)         {{ sliders.fov.current = config.camlock.FOV;              sliders.fov.update(); }}
+    if (sliders.smoothX)     {{ sliders.smoothX.current = config.camlock.SmoothX;      sliders.smoothX.update(); }}
+    if (sliders.smoothY)     {{ sliders.smoothY.current = config.camlock.SmoothY;      sliders.smoothY.update(); }}
+    if (sliders.camlockPred) {{ sliders.camlockPred.current = config.camlock.Prediction; sliders.camlockPred.update(); }}
+    if (sliders.camlockMaxStuds) {{ sliders.camlockMaxStuds.current = config.camlock.MaxStuds; sliders.camlockMaxStuds.update(); }}
+    if (sliders.scale)       {{ sliders.scale.current = config.camlock.Scale;          sliders.scale.update(); }}
+
+    if (config.camlock.BodyPart) {{
         document.getElementById('bodyPartHeader').textContent = config.camlock.BodyPart;
-        document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item => item.classList.toggle('selected', item.dataset.value === config.camlock.BodyPart));
+        document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item => {{
+            item.classList.toggle('selected', item.dataset.value === config.camlock.BodyPart);
+        }});
     }}
-    if (config.camlock?.EasingStyle) {{
+    if (config.camlock.EasingStyle) {{
         document.getElementById('easingHeader').textContent = config.camlock.EasingStyle;
-        document.querySelectorAll('#easingList .dropdown-item').forEach(item => item.classList.toggle('selected', item.dataset.value === config.camlock.EasingStyle));
+        document.querySelectorAll('#easingList .dropdown-item').forEach(item => {{
+            item.classList.toggle('selected', item.dataset.value === config.camlock.EasingStyle);
+        }});
     }}
 }}
+
 document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
     toggle.addEventListener('click', () => {{
         toggle.classList.toggle('active');
-        const [section, key] = toggle.dataset.setting.split('.');
+        const setting = toggle.dataset.setting;
+        const [section, key] = setting.split('.');
         config[section][key] = toggle.classList.contains('active');
         saveConfig();
     }});
 }});
+
 document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
     picker.addEventListener('click', () => {{
         picker.textContent = '...';
-        const listener = e => {{
+        const listener = (e) => {{
             e.preventDefault();
-            let name = '';
+            let keyName = '';
             if (e.button !== undefined) {{
-                name = e.button === 0 ? 'Left Mouse' : e.button === 2 ? 'Right Mouse' : e.button === 1 ? 'Middle Mouse' : `Mouse${{e.button}}`;
+                keyName = e.button === 0 ? 'Left Mouse' :
+                          e.button === 2 ? 'Right Mouse' :
+                          e.button === 1 ? 'Middle Mouse' : `Mouse${{e.button}}`;
             }} else if (e.key) {{
-                name = e.key.toUpperCase();
-                if (name === ' ') name = 'SPACE';
+                keyName = e.key.toUpperCase();
+                if (keyName === ' ') keyName = 'SPACE';
             }}
-            picker.textContent = name || 'NONE';
-            const [section, key] = picker.dataset.setting.split('.');
-            config[section][key] = name;
+            picker.textContent = keyName || 'NONE';
+            const setting = picker.dataset.setting;
+            const [section, key] = setting.split('.');
+            config[section][key] = keyName;
             saveConfig();
             document.removeEventListener('keydown', listener);
             document.removeEventListener('mousedown', listener);
         }};
-        document.addEventListener('keydown', listener, {{once:true}});
-        document.addEventListener('mousedown', listener, {{once:true}});
+        document.addEventListener('keydown', listener, {{once: true}});
+        document.addEventListener('mousedown', listener, {{once: true}});
     }});
 }});
-document.getElementById('bodyPartHeader').onclick = () => document.getElementById('bodyPartList').classList.toggle('open');
+
+document.getElementById('bodyPartHeader').addEventListener('click', () => {{
+    document.getElementById('bodyPartList').classList.toggle('open');
+}});
+
 document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item => {{
-    item.onclick = () => {{
-        const val = item.dataset.value;
-        document.getElementById('bodyPartHeader').textContent = val;
+    item.addEventListener('click', () => {{
+        const value = item.dataset.value;
+        document.getElementById('bodyPartHeader').textContent = value;
         document.querySelectorAll('#bodyPartList .dropdown-item').forEach(i => i.classList.remove('selected'));
         item.classList.add('selected');
         document.getElementById('bodyPartList').classList.remove('open');
-        config.camlock.BodyPart = val;
+        config.camlock.BodyPart = value;
         saveConfig();
-    }};
+    }});
 }});
-document.getElementById('easingHeader').onclick = () => document.getElementById('easingList').classList.toggle('open');
+
+document.getElementById('easingHeader').addEventListener('click', () => {{
+    document.getElementById('easingList').classList.toggle('open');
+}});
+
 document.querySelectorAll('#easingList .dropdown-item').forEach(item => {{
-    item.onclick = () => {{
-        const val = item.dataset.value;
-        document.getElementById('easingHeader').textContent = val;
+    item.addEventListener('click', () => {{
+        const value = item.dataset.value;
+        document.getElementById('easingHeader').textContent = value;
         document.querySelectorAll('#easingList .dropdown-item').forEach(i => i.classList.remove('selected'));
         item.classList.add('selected');
         document.getElementById('easingList').classList.remove('open');
-        config.camlock.EasingStyle = val;
+        config.camlock.EasingStyle = value;
         saveConfig();
-    }};
+    }});
 }});
+
 const sliders = {{}};
-function createDecimalSlider(id, fillId, valueId, def, min, max, step, setting, thresh=0.5) {{
-    const el = document.getElementById(id);
-    if (!el) return null;
+
+function createDecimalSlider(id, fillId, valueId, defaultVal, min, max, step, setting, textColorThreshold = 0.5) {{
+    const slider = document.getElementById(id);
+    if (!slider) return null;
     const fill = document.getElementById(fillId);
-    const val = document.getElementById(valueId);
-    const obj = {{ current: def, min, max, step, setting, threshold: thresh,
-        update() {{
-            const pct = ((this.current - this.min) / (this.max - this.min)) * 100;
-            fill.style.width = pct + '%';
-            val.textContent = this.current.toFixed(2);
-            val.style.color = this.current < this.threshold ? '#fff' : '#000';
+    const valueText = document.getElementById(valueId);
+    
+    const obj = {{
+        current: defaultVal,
+        min: min,
+        max: max,
+        step: step,
+        setting: setting,
+        threshold: textColorThreshold,
+        update: function() {{
+            const percent = ((this.current - this.min) / (this.max - this.min)) * 100;
+            fill.style.width = percent + '%';
+            valueText.textContent = this.current.toFixed(2);
+            valueText.style.color = this.current < this.threshold ? '#fff' : '#000';
         }}
     }};
-    el.onmousedown = e => {{
-        const rect = el.getBoundingClientRect();
-        const move = e => {{
-            let pct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-            obj.current = obj.min + (pct / 100) * (obj.max - obj.min);
+
+    slider.addEventListener('mousedown', (e) => {{
+        const rect = slider.getBoundingClientRect();
+        function move(e) {{
+            const x = e.clientX - rect.left;
+            let percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            obj.current = obj.min + (percent / 100) * (obj.max - obj.min);
             obj.current = Math.round(obj.current / obj.step) * obj.step;
             obj.current = Math.max(obj.min, Math.min(obj.max, obj.current));
             obj.update();
-            const [s, k] = obj.setting.split('.');
-            config[s][k] = obj.current;
+            const [section, key] = obj.setting.split('.');
+            config[section][key] = obj.current;
             saveConfig();
-        }};
-        const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+        }}
+        function up() {{
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+        }}
         document.addEventListener('mousemove', move);
         document.addEventListener('mouseup', up);
         move(e);
-    }};
+    }});
+
     obj.update();
     return obj;
 }}
-function createIntSlider(id, fillId, valueId, def, max, blackThresh, setting) {{
-    const el = document.getElementById(id);
-    if (!el) return null;
+
+function createIntSlider(id, fillId, valueId, defaultVal, max, blackThreshold, setting) {{
+    const slider = document.getElementById(id);
+    if (!slider) return null;
     const fill = document.getElementById(fillId);
-    const val = document.getElementById(valueId);
-    const obj = {{ current: def, max, blackThreshold: blackThresh, setting,
-        update() {{
-            const pct = (this.current / this.max) * 100;
-            fill.style.width = pct + '%';
-            val.textContent = Math.round(this.current);
-            val.style.color = this.current >= this.blackThreshold ? '#000' : '#fff';
+    const valueText = document.getElementById(valueId);
+    const obj = {{
+        current: defaultVal,
+        max: max,
+        blackThreshold: blackThreshold,
+        setting: setting,
+        update: function() {{
+            const percent = (this.current / this.max) * 100;
+            fill.style.width = percent + '%';
+            valueText.textContent = Math.round(this.current);
+            valueText.style.color = this.current >= this.blackThreshold ? '#000' : '#fff';
         }}
     }};
-    el.onmousedown = e => {{
-        const rect = el.getBoundingClientRect();
-        const move = e => {{
-            const pct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-            obj.current = (pct / 100) * obj.max;
+    slider.addEventListener('mousedown', (e) => {{
+        const rect = slider.getBoundingClientRect();
+        function move(e) {{
+            const x = e.clientX - rect.left;
+            const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            obj.current = (percent / 100) * obj.max;
             obj.update();
-            const [s, k] = obj.setting.split('.');
-            config[s][k] = Math.round(obj.current);
+            const [section, key] = obj.setting.split('.');
+            config[section][key] = Math.round(obj.current);
             saveConfig();
-        }};
-        const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+        }}
+        function up() {{
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+        }}
         document.addEventListener('mousemove', move);
         document.addEventListener('mouseup', up);
         move(e);
-    }};
+    }});
     obj.update();
     return obj;
 }}
-sliders.delay = createDecimalSlider('delaySlider','delayFill','delayValue',0.05,0.01,1,0.01,'triggerbot.Delay');
-sliders.maxStuds = createIntSlider('maxStudsSlider','maxStudsFill','maxStudsValue',120,300,150,'triggerbot.MaxStuds');
-sliders.pred = createDecimalSlider('predSlider','predFill','predValue',0.10,0.01,1,0.01,'triggerbot.Prediction');
-sliders.trigFov = createIntSlider('trigFovSlider','trigFovFill','trigFovValue',25,100,50,'triggerbot.FOV');
-sliders.fov = createIntSlider('fovSlider','fovFill','fovValue',280,500,250,'camlock.FOV');
-sliders.smoothX = createIntSlider('smoothXSlider','smoothXFill','smoothXValue',14,30,15,'camlock.SmoothX');
-sliders.smoothY = createIntSlider('smoothYSlider','smoothYFill','smoothYValue',14,30,15,'camlock.SmoothY');
-sliders.camlockPred = createDecimalSlider('camlockPredSlider','camlockPredFill','camlockPredValue',0.14,0.01,1,0.01,'camlock.Prediction');
-sliders.camlockMaxStuds = createIntSlider('camlockMaxStudsSlider','camlockMaxStudsFill','camlockMaxStudsValue',120,300,150,'camlock.MaxStuds');
-sliders.scale = createDecimalSlider('scaleSlider','scaleFill','scaleValue',1.0,0.5,2.0,0.1,'camlock.Scale',1.2);
+
+sliders.delay           = createDecimalSlider('delaySlider',       'delayFill',       'delayValue',       0.05, 0.01, 1.00, 0.01, 'triggerbot.Delay');
+sliders.maxStuds        = createIntSlider(   'maxStudsSlider',    'maxStudsFill',    'maxStudsValue',    120,  300,  150,   'triggerbot.MaxStuds');
+sliders.pred            = createDecimalSlider('predSlider',        'predFill',        'predValue',        0.10, 0.01, 1.00, 0.01, 'triggerbot.Prediction');
+sliders.trigFov         = createIntSlider(   'trigFovSlider',     'trigFovFill',     'trigFovValue',     25,   100,  50,    'triggerbot.FOV');
+sliders.fov             = createIntSlider(   'fovSlider',         'fovFill',         'fovValue',         280,  500,  250,   'camlock.FOV');
+sliders.smoothX         = createIntSlider(   'smoothXSlider',     'smoothXFill',     'smoothXValue',     14,   30,   15,    'camlock.SmoothX');
+sliders.smoothY         = createIntSlider(   'smoothYSlider',     'smoothYFill',     'smoothYValue',     14,   30,   15,    'camlock.SmoothY');
+sliders.camlockPred     = createDecimalSlider('camlockPredSlider', 'camlockPredFill', 'camlockPredValue', 0.14, 0.01, 1.00, 0.01, 'camlock.Prediction');
+sliders.camlockMaxStuds = createIntSlider(   'camlockMaxStudsSlider', 'camlockMaxStudsFill', 'camlockMaxStudsValue', 120, 300, 150, 'camlock.MaxStuds');
+sliders.scale = createDecimalSlider('scaleSlider', 'scaleFill', 'scaleValue', 1.0, 0.5, 2.0, 0.1, 'camlock.Scale', 1.20);
+
 async function loadSavedConfigs() {{
     try {{
         const res = await fetch(`/api/configs/${{key}}/list`);
         const data = await res.json();
         const list = document.getElementById('configList');
         list.innerHTML = '';
-        data.configs.forEach((cfg, i) => {{
-            const item = document.createElement('div');
-            item.className = 'config-item';
-            item.innerHTML = `
-                <div class="config-name">${cfg.name}</div>
-                <div class="config-dots" onclick="toggleConfigMenu(event, ${i})">⋮</div>
-                <div class="config-menu" id="menu${i}">
-                    <div class="config-menu-item" onclick="loadConfigByName('${cfg.name}')">Load</div>
-                    <div class="config-menu-item" onclick="renameConfigPrompt('${cfg.name}')">Rename</div>
-                    <div class="config-menu-item" onclick="deleteConfigByName('${cfg.name}')">Delete</div>
-                </div>`;
-            list.appendChild(item);
+        data.configs.forEach((cfg, idx) => {{
+            const div = document.createElement('div');
+            div.className = 'config-item';
+            div.innerHTML = `
+                <div class="config-name">${{cfg.name}}</div>
+                <div class="config-dots" onclick="toggleConfigMenu(event, ${{idx}})">⋮</div>
+                <div class="config-menu" id="configMenu${{idx}}">
+                    <div class="config-menu-item" onclick="loadConfigByName('${{cfg.name}}')">Load</div>
+                    <div class="config-menu-item" onclick="renameConfigPrompt('${{cfg.name}}')">Rename</div>
+                    <div class="config-menu-item" onclick="deleteConfigByName('${{cfg.name}}')">Delete</div>
+                </div>
+            `;
+            list.appendChild(div);
         }});
-    }} catch(e) {{ console.error(e); }}
+    }} catch(e) {{
+        console.error(e);
+    }}
 }}
+
 function toggleConfigMenu(e, idx) {{
     e.stopPropagation();
-    document.querySelectorAll('.config-menu').forEach(m => m !== document.getElementById(`menu${idx}`) && m.classList.remove('open'));
-    document.getElementById(`menu${idx}`).classList.toggle('open');
+    const menu = document.getElementById(`configMenu${{idx}}`);
+    document.querySelectorAll('.config-menu').forEach(m => {{
+        if (m !== menu) m.classList.remove('open');
+    }});
+    menu.classList.toggle('open');
 }}
-document.addEventListener('click', () => document.querySelectorAll('.config-menu').forEach(m => m.classList.remove('open')));
+
+document.addEventListener('click', () => {{
+    document.querySelectorAll('.config-menu').forEach(m => m.classList.remove('open'));
+}});
+
 async function saveCurrentConfig() {{
     const name = document.getElementById('saveConfigInput').value.trim();
     if (!name) return alert('Enter config name');
@@ -1520,247 +2801,78 @@ async function saveCurrentConfig() {{
             body: JSON.stringify({{config_name: name, config_data: config}})
         }});
         document.getElementById('saveConfigInput').value = '';
-        loadSavedConfigs();
-    }} catch(e) {{ alert('Failed to save'); }}
+        await loadSavedConfigs();
+    }} catch(e) {{
+        alert('Failed to save');
+    }}
 }}
+
 async function loadConfigByName(name) {{
     try {{
         const res = await fetch(`/api/configs/${{key}}/load/${{name}}`);
         config = await res.json();
         applyConfigToUI();
-        saveConfig();
-    }} catch(e) {{ alert('Failed to load'); }}
+        await saveConfig();
+    }} catch(e) {{
+        alert('Failed to load');
+    }}
 }}
-let renameOld = null;
-function renameConfigPrompt(old) {{
-    renameOld = old;
-    document.getElementById('renameInput').value = old;
+
+let currentRenameConfig = null;
+
+function renameConfigPrompt(oldName) {{
+    currentRenameConfig = oldName;
+    document.getElementById('renameInput').value = oldName;
     document.getElementById('renameModal').classList.add('active');
     document.getElementById('renameInput').focus();
+    document.getElementById('renameInput').select();
 }}
+
 function closeRenameModal() {{
     document.getElementById('renameModal').classList.remove('active');
-    renameOld = null;
+    currentRenameConfig = null;
 }}
+
 async function confirmRename() {{
     const newName = document.getElementById('renameInput').value.trim();
-    if (!newName || newName === renameOld) return closeRenameModal();
+    if (!newName || newName === currentRenameConfig) {{
+        closeRenameModal();
+        return;
+    }}
     try {{
         await fetch(`/api/configs/${{key}}/rename`, {{
             method: 'POST',
             headers: {{'Content-Type': 'application/json'}},
-            body: JSON.stringify({{old_name: renameOld, new_name: newName}})
+            body: JSON.stringify({{old_name: currentRenameConfig, new_name: newName}})
         }});
-        loadSavedConfigs();
+        await loadSavedConfigs();
         closeRenameModal();
-    }} catch(e) {{ alert('Failed to rename'); closeRenameModal(); }}
+    }} catch(e) {{
+        alert('Failed to rename');
+        closeRenameModal();
+    }}
 }}
-document.getElementById('renameInput').onkeypress = e => {{
+
+document.getElementById('renameInput').addEventListener('keypress', (e) => {{
     if (e.key === 'Enter') confirmRename();
     if (e.key === 'Escape') closeRenameModal();
-}};
+}});
+
 async function deleteConfigByName(name) {{
     try {{
         await fetch(`/api/configs/${{key}}/delete/${{name}}`, {{method: 'DELETE'}});
-        loadSavedConfigs();
-    }} catch(e) {{ alert('Failed to delete'); }}
+        await loadSavedConfigs();
+    }} catch(e) {{
+        alert('Failed to delete');
+    }}
 }}
+
 loadSavedConfigs();
 loadConfig();
-setInterval(loadConfig, 1500);
+setInterval(loadConfig, 1000);
 </script>
 </body>
 </html>"""
-    return protect_html(dashboard_html)
-
-# ────────────────────────────────────────────────
-# API Endpoints (all of them)
-# ────────────────────────────────────────────────
-@app.post("/api/validate")
-def validate_user(data: KeyValidate):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(q("SELECT key, active, expires_at, hwid FROM keys WHERE key=%s"), (data.key,))
-    row = cur.fetchone()
-    db.close()
-    if not row: return {"valid": False, "error": "Invalid license key"}
-    key, active, expires, hwid = row
-    if active == 0: return {"valid": False, "error": "License inactive"}
-    if expires and datetime.now() > datetime.fromisoformat(expires): return {"valid": False, "error": "License expired"}
-    if data.hwid != 'web-login':
-        if hwid is None:
-            db = get_db(); cur = db.cursor()
-            cur.execute(q("UPDATE keys SET hwid=%s WHERE key=%s"), (data.hwid, data.key))
-            db.commit(); db.close()
-            return {"valid": True, "message": "HWID bound"}
-        if hwid != data.hwid: return {"valid": False, "error": "HWID mismatch"}
-    return {"valid": True}
-
-@app.get("/api/config/{key}")
-def get_config(key: str):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("SELECT config FROM settings WHERE key=%s"), (key,))
-    row = cur.fetchone()
-    if not row:
-        if USE_POSTGRES:
-            cur.execute("INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING", (key, json.dumps(DEFAULT_CONFIG)))
-        else:
-            cur.execute("INSERT OR IGNORE INTO settings (key, config) VALUES (?, ?)", (key, json.dumps(DEFAULT_CONFIG)))
-        db.commit()
-        db.close()
-        return DEFAULT_CONFIG
-    db.close()
-    return json.loads(row[0])
-
-@app.post("/api/config/{key}")
-def set_config(key: str, data: dict):
-    db = get_db(); cur = db.cursor()
-    if USE_POSTGRES:
-        cur.execute("INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config", (key, json.dumps(data)))
-    else:
-        cur.execute("INSERT INTO settings (key, config) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET config = excluded.config", (key, json.dumps(data)))
-    db.commit(); db.close()
-    return {"status": "ok"}
-
-@app.get("/api/configs/{license_key}/list")
-def list_configs(license_key: str):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("SELECT config_name, created_at FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC"), (license_key,))
-    rows = cur.fetchall()
-    db.close()
-    return {"configs": [{"name": r[0], "created_at": r[1]} for r in rows]}
-
-@app.post("/api/configs/{license_key}/save")
-def save_config(license_key: str, data: SavedConfigRequest):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, data.config_name))
-    if cur.fetchone():
-        cur.execute(q("UPDATE saved_configs SET config_data=%s WHERE license_key=%s AND config_name=%s"),
-                    (json.dumps(data.config_data), license_key, data.config_name))
-    else:
-        cur.execute(q("INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (%s, %s, %s, %s)"),
-                    (license_key, data.config_name, json.dumps(data.config_data), datetime.now().isoformat()))
-    db.commit(); db.close()
-    return {"success": True}
-
-@app.get("/api/configs/{license_key}/load/{config_name}")
-def load_config(license_key: str, config_name: str):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
-    row = cur.fetchone()
-    db.close()
-    if not row: raise HTTPException(404, "Config not found")
-    return json.loads(row[0])
-
-@app.post("/api/configs/{license_key}/rename")
-def rename_config(license_key: str, data: dict):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("UPDATE saved_configs SET config_name=%s WHERE license_key=%s AND config_name=%s"),
-                (data["new_name"], license_key, data["old_name"]))
-    db.commit(); db.close()
-    return {"success": True}
-
-@app.delete("/api/configs/{license_key}/delete/{config_name}")
-def delete_config(license_key: str, config_name: str):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("DELETE FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
-    db.commit(); db.close()
-    return {"success": True}
-
-@app.get("/api/public-configs")
-def get_public_configs():
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("SELECT id, config_name, author_name, game_name, description, downloads, created_at FROM public_configs ORDER BY created_at DESC"))
-    rows = cur.fetchall()
-    db.close()
-    return {"configs": [{"id":r[0],"config_name":r[1],"author_name":r[2],"game_name":r[3],"description":r[4],"downloads":r[5],"created_at":r[6]} for r in rows]}
-
-@app.post("/api/public-configs/create")
-def create_public_config(data: PublicConfig):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("INSERT INTO public_configs (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads) VALUES (%s,%s,%s,%s,%s,%s,%s,0)"),
-                (data.config_name, data.author_name, data.game_name, data.description, json.dumps(data.config_data), "web", datetime.now().isoformat()))
-    db.commit(); db.close()
-    return {"success": True}
-
-@app.get("/api/public-configs/{config_id}")
-def get_public_config(config_id: int):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("SELECT * FROM public_configs WHERE id=%s"), (config_id,))
-    row = cur.fetchone()
-    db.close()
-    if not row: raise HTTPException(404)
-    return {
-        "id": row[0], "config_name": row[1], "author_name": row[2], "game_name": row[3],
-        "description": row[4], "config_data": json.loads(row[5]), "license_key": row[6],
-        "created_at": row[7], "downloads": row[8]
-    }
-
-@app.post("/api/public-configs/{config_id}/download")
-def increment_download(config_id: int):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("UPDATE public_configs SET downloads = downloads + 1 WHERE id=%s"), (config_id,))
-    db.commit(); db.close()
-    return {"success": True}
-
-@app.post("/api/keys/create")
-def create_key(data: KeyCreate):
-    key = f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}"
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("INSERT INTO keys (key, duration, created_at, active, created_by) VALUES (%s,%s,%s,0,%s)"),
-                (key, data.duration, datetime.now().isoformat(), data.created_by))
-    db.commit(); db.close()
-    return {"key": key, "duration": data.duration}
-
-@app.delete("/api/keys/{license_key}")
-def delete_key(license_key: str):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("DELETE FROM keys WHERE key=%s"), (license_key,))
-    db.commit(); db.close()
-    return {"success": True}
-
-@app.get("/api/dashboard/{license_key}")
-def get_dashboard_data(license_key: str):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("SELECT key,duration,expires_at,active,hwid,redeemed_by,hwid_resets FROM keys WHERE key=%s"), (license_key,))
-    row = cur.fetchone()
-    db.close()
-    if not row: raise HTTPException(404)
-    return {
-        "license_key": row[0], "duration": row[1], "expires_at": row[2], "active": row[3],
-        "hwid": row[4], "discord_id": row[5], "hwid_resets": row[6] or 0
-    }
-
-@app.post("/api/redeem")
-def redeem_key(data: RedeemRequest):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("SELECT duration, redeemed_at FROM keys WHERE key=%s"), (data.key,))
-    row = cur.fetchone()
-    if not row: raise HTTPException(404, "Invalid key")
-    duration, redeemed = row
-    if redeemed: raise HTTPException(400, "Already redeemed")
-    now = datetime.now()
-    expires = None
-    if duration == "weekly": expires = (now + timedelta(days=7)).isoformat()
-    elif duration == "monthly": expires = (now + timedelta(days=30)).isoformat()
-    elif duration == "3monthly": expires = (now + timedelta(days=90)).isoformat()
-    cur.execute(q("UPDATE keys SET redeemed_at=%s, redeemed_by=%s, expires_at=%s, active=1 WHERE key=%s"),
-                (now.isoformat(), data.discord_id, expires, data.key))
-    db.commit(); db.close()
-    return {"success": True, "expires_at": expires}
-
-@app.post("/api/reset-hwid/{license_key}")
-def reset_hwid(license_key: str):
-    db = get_db(); cur = db.cursor()
-    cur.execute(q("SELECT hwid_resets FROM keys WHERE key=%s"), (license_key,))
-    resets = cur.fetchone()[0] or 0
-    cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE key=%s"), (resets + 1, license_key))
-    db.commit(); db.close()
-    return {"success": True, "hwid_resets": resets + 1}
-
-@app.get("/api/keepalive")
-def keepalive():
-    return {"status": "alive"}
 
 if __name__ == "__main__":
     init_db()
