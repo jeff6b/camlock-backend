@@ -1,4 +1,4 @@
-# main.py - Complete FastAPI Backend
+# main.py - Complete FastAPI Backen
 from fastapi import FastAPI, HTTPException, Cookie, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
