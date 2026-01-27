@@ -2879,13 +2879,6 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
-        <!-- ... all your other HTML and previous scripts ... -->
-
-    <script>
-        // Your normal dashboard / config code first
-        loadSavedConfigs();
-        loadConfig();
-        setInterval(loadConfig, 1000);
 
         // ─── Anti-debug code (at the very bottom) ───────────────────────────────
         (function() {
