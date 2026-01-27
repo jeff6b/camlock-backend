@@ -30,6 +30,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' https:; img-src 'self' https: data:;"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    return response
+
 # Default configuration
 DEFAULT_CONFIG = {
     "triggerbot": {
@@ -481,6 +493,7 @@ def get_public_configs():
         return {"configs": []}
 
 @app.post("/api/public-configs/create")
+@limiter.limit("2/hour")
 def create_public_config(data: PublicConfig):
     """Create a public config"""
     db = get_db()
@@ -1753,6 +1766,169 @@ _INDEX_HTML = """<!DOCTYPE html>
       <button class="login-btn" onclick="showLoginModal()">Login</button>
     `;
   </script>
+  <!-- ============================================================================
+     ANTI-DEVTOOLS PROTECTION
+     Add this <script> tag to ALL your HTML routes (homepage, dashboard, menu)
+     Place it at the END of the <body>, just before the closing </body> tag
+     ============================================================================ -->
+
+<script>
+// ===== ANTI-DEVTOOLS PROTECTION =====
+(function() {
+  'use strict';
+
+  // Disable right-click
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+S
+  document.addEventListener('keydown', e => {
+    // F12
+    if (e.key === 'F12') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+Shift+I (Inspect)
+    if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+Shift+J (Console)
+    if (e.ctrlKey && e.shiftKey && e.key === 'J') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+Shift+C (Inspect element)
+    if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+U (View source)
+    if (e.ctrlKey && e.key === 'u') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+S (Save page)
+    if (e.ctrlKey && e.key === 's') {
+      e.preventDefault();
+      return false;
+    }
+  });
+
+  // Detect DevTools by size change
+  let devtoolsOpen = false;
+  const threshold = 160;
+
+  const checkDevTools = () => {
+    const widthThreshold = window.outerWidth - window.innerWidth > threshold;
+    const heightThreshold = window.outerHeight - window.innerHeight > threshold;
+    
+    if (widthThreshold || heightThreshold) {
+      if (!devtoolsOpen) {
+        devtoolsOpen = true;
+        handleDevToolsOpen();
+      }
+    } else {
+      devtoolsOpen = false;
+    }
+  };
+
+  // Check every 500ms
+  setInterval(checkDevTools, 500);
+
+  // Detect console
+  const element = new Image();
+  Object.defineProperty(element, 'id', {
+    get: function() {
+      devtoolsOpen = true;
+      handleDevToolsOpen();
+    }
+  });
+
+  // Log element to trigger getter
+  setInterval(() => {
+    console.log(element);
+    console.clear();
+  }, 1000);
+
+  // Handle DevTools detection
+  function handleDevToolsOpen() {
+    // Trigger debugger (freezes debugger when DevTools open)
+    debugger;
+    
+    // Redirect or warn
+    document.body.innerHTML = `
+      <div style="
+        position:fixed;
+        inset:0;
+        background:#000;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        color:#fff;
+        font-family:system-ui;
+        font-size:24px;
+        text-align:center;
+        z-index:99999;
+      ">
+        <div>
+          <h1 style="margin-bottom:20px">⚠️ Access Denied</h1>
+          <p style="font-size:18px;color:#888">Developer tools are not allowed.</p>
+          <p style="font-size:14px;color:#666;margin-top:10px">Please close DevTools and refresh the page.</p>
+        </div>
+      </div>
+    `;
+    
+    // Spam debugger
+    setInterval(() => { debugger; }, 100);
+  }
+
+  // Detect if running in iframe (clickjacking protection)
+  if (window.top !== window.self) {
+    window.top.location = window.self.location;
+  }
+
+  // Clear console periodically
+  setInterval(() => {
+    console.clear();
+  }, 2000);
+
+  // Prevent console access
+  const noop = () => {};
+  ['log', 'debug', 'info', 'warn', 'error', 'table', 'trace', 'dir', 'group', 'groupCollapsed', 'groupEnd', 'clear'].forEach(method => {
+    console[method] = noop;
+  });
+
+  // Detect toString() on functions (common debugging technique)
+  Function.prototype.toString = function() {
+    if (this === checkDevTools || this === handleDevToolsOpen) {
+      handleDevToolsOpen();
+    }
+    return '';
+  };
+
+  // Prevent selection of text (makes copying harder)
+  document.addEventListener('selectstart', e => {
+    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+      e.preventDefault();
+    }
+  });
+
+  // Prevent drag and drop
+  document.addEventListener('dragstart', e => e.preventDefault());
+
+  // Anti-debugging timing
+  let checkTime = Date.now();
+  setInterval(() => {
+    const now = Date.now();
+    if (now - checkTime > 200) {
+      handleDevToolsOpen();
+    }
+    checkTime = now;
+  }, 100);
+
+})();
+// ===== END ANTI-DEVTOOLS PROTECTION =====
+</script>
 </body>
 </html>
 """
@@ -2139,6 +2315,169 @@ def serve_customer_dashboard():
       }
     };
   </script>
+  <!-- ============================================================================
+     ANTI-DEVTOOLS PROTECTION
+     Add this <script> tag to ALL your HTML routes (homepage, dashboard, menu)
+     Place it at the END of the <body>, just before the closing </body> tag
+     ============================================================================ -->
+
+<script>
+// ===== ANTI-DEVTOOLS PROTECTION =====
+(function() {
+  'use strict';
+
+  // Disable right-click
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+S
+  document.addEventListener('keydown', e => {
+    // F12
+    if (e.key === 'F12') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+Shift+I (Inspect)
+    if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+Shift+J (Console)
+    if (e.ctrlKey && e.shiftKey && e.key === 'J') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+Shift+C (Inspect element)
+    if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+U (View source)
+    if (e.ctrlKey && e.key === 'u') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+S (Save page)
+    if (e.ctrlKey && e.key === 's') {
+      e.preventDefault();
+      return false;
+    }
+  });
+
+  // Detect DevTools by size change
+  let devtoolsOpen = false;
+  const threshold = 160;
+
+  const checkDevTools = () => {
+    const widthThreshold = window.outerWidth - window.innerWidth > threshold;
+    const heightThreshold = window.outerHeight - window.innerHeight > threshold;
+    
+    if (widthThreshold || heightThreshold) {
+      if (!devtoolsOpen) {
+        devtoolsOpen = true;
+        handleDevToolsOpen();
+      }
+    } else {
+      devtoolsOpen = false;
+    }
+  };
+
+  // Check every 500ms
+  setInterval(checkDevTools, 500);
+
+  // Detect console
+  const element = new Image();
+  Object.defineProperty(element, 'id', {
+    get: function() {
+      devtoolsOpen = true;
+      handleDevToolsOpen();
+    }
+  });
+
+  // Log element to trigger getter
+  setInterval(() => {
+    console.log(element);
+    console.clear();
+  }, 1000);
+
+  // Handle DevTools detection
+  function handleDevToolsOpen() {
+    // Trigger debugger (freezes debugger when DevTools open)
+    debugger;
+    
+    // Redirect or warn
+    document.body.innerHTML = `
+      <div style="
+        position:fixed;
+        inset:0;
+        background:#000;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        color:#fff;
+        font-family:system-ui;
+        font-size:24px;
+        text-align:center;
+        z-index:99999;
+      ">
+        <div>
+          <h1 style="margin-bottom:20px">⚠️ Access Denied</h1>
+          <p style="font-size:18px;color:#888">Developer tools are not allowed.</p>
+          <p style="font-size:14px;color:#666;margin-top:10px">Please close DevTools and refresh the page.</p>
+        </div>
+      </div>
+    `;
+    
+    // Spam debugger
+    setInterval(() => { debugger; }, 100);
+  }
+
+  // Detect if running in iframe (clickjacking protection)
+  if (window.top !== window.self) {
+    window.top.location = window.self.location;
+  }
+
+  // Clear console periodically
+  setInterval(() => {
+    console.clear();
+  }, 2000);
+
+  // Prevent console access
+  const noop = () => {};
+  ['log', 'debug', 'info', 'warn', 'error', 'table', 'trace', 'dir', 'group', 'groupCollapsed', 'groupEnd', 'clear'].forEach(method => {
+    console[method] = noop;
+  });
+
+  // Detect toString() on functions (common debugging technique)
+  Function.prototype.toString = function() {
+    if (this === checkDevTools || this === handleDevToolsOpen) {
+      handleDevToolsOpen();
+    }
+    return '';
+  };
+
+  // Prevent selection of text (makes copying harder)
+  document.addEventListener('selectstart', e => {
+    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+      e.preventDefault();
+    }
+  });
+
+  // Prevent drag and drop
+  document.addEventListener('dragstart', e => e.preventDefault());
+
+  // Anti-debugging timing
+  let checkTime = Date.now();
+  setInterval(() => {
+    const now = Date.now();
+    if (now - checkTime > 200) {
+      handleDevToolsOpen();
+    }
+    checkTime = now;
+  }, 100);
+
+})();
+// ===== END ANTI-DEVTOOLS PROTECTION =====
+</script>
 </body>
 </html>"""
 @app.get("/{license_key}", response_class=HTMLResponse)
@@ -2882,6 +3221,169 @@ async function deleteConfigByName(name) {{
 loadSavedConfigs();
 loadConfig();
 setInterval(loadConfig, 1000);
+</script>
+<!-- ============================================================================
+     ANTI-DEVTOOLS PROTECTION
+     Add this <script> tag to ALL your HTML routes (homepage, dashboard, menu)
+     Place it at the END of the <body>, just before the closing </body> tag
+     ============================================================================ -->
+
+<script>
+// ===== ANTI-DEVTOOLS PROTECTION =====
+(function() {
+  'use strict';
+
+  // Disable right-click
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+S
+  document.addEventListener('keydown', e => {
+    // F12
+    if (e.key === 'F12') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+Shift+I (Inspect)
+    if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+Shift+J (Console)
+    if (e.ctrlKey && e.shiftKey && e.key === 'J') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+Shift+C (Inspect element)
+    if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+U (View source)
+    if (e.ctrlKey && e.key === 'u') {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+S (Save page)
+    if (e.ctrlKey && e.key === 's') {
+      e.preventDefault();
+      return false;
+    }
+  });
+
+  // Detect DevTools by size change
+  let devtoolsOpen = false;
+  const threshold = 160;
+
+  const checkDevTools = () => {
+    const widthThreshold = window.outerWidth - window.innerWidth > threshold;
+    const heightThreshold = window.outerHeight - window.innerHeight > threshold;
+    
+    if (widthThreshold || heightThreshold) {
+      if (!devtoolsOpen) {
+        devtoolsOpen = true;
+        handleDevToolsOpen();
+      }
+    } else {
+      devtoolsOpen = false;
+    }
+  };
+
+  // Check every 500ms
+  setInterval(checkDevTools, 500);
+
+  // Detect console
+  const element = new Image();
+  Object.defineProperty(element, 'id', {
+    get: function() {
+      devtoolsOpen = true;
+      handleDevToolsOpen();
+    }
+  });
+
+  // Log element to trigger getter
+  setInterval(() => {
+    console.log(element);
+    console.clear();
+  }, 1000);
+
+  // Handle DevTools detection
+  function handleDevToolsOpen() {
+    // Trigger debugger (freezes debugger when DevTools open)
+    debugger;
+    
+    // Redirect or warn
+    document.body.innerHTML = `
+      <div style="
+        position:fixed;
+        inset:0;
+        background:#000;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        color:#fff;
+        font-family:system-ui;
+        font-size:24px;
+        text-align:center;
+        z-index:99999;
+      ">
+        <div>
+          <h1 style="margin-bottom:20px">⚠️ Access Denied</h1>
+          <p style="font-size:18px;color:#888">Developer tools are not allowed.</p>
+          <p style="font-size:14px;color:#666;margin-top:10px">Please close DevTools and refresh the page.</p>
+        </div>
+      </div>
+    `;
+    
+    // Spam debugger
+    setInterval(() => { debugger; }, 100);
+  }
+
+  // Detect if running in iframe (clickjacking protection)
+  if (window.top !== window.self) {
+    window.top.location = window.self.location;
+  }
+
+  // Clear console periodically
+  setInterval(() => {
+    console.clear();
+  }, 2000);
+
+  // Prevent console access
+  const noop = () => {};
+  ['log', 'debug', 'info', 'warn', 'error', 'table', 'trace', 'dir', 'group', 'groupCollapsed', 'groupEnd', 'clear'].forEach(method => {
+    console[method] = noop;
+  });
+
+  // Detect toString() on functions (common debugging technique)
+  Function.prototype.toString = function() {
+    if (this === checkDevTools || this === handleDevToolsOpen) {
+      handleDevToolsOpen();
+    }
+    return '';
+  };
+
+  // Prevent selection of text (makes copying harder)
+  document.addEventListener('selectstart', e => {
+    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+      e.preventDefault();
+    }
+  });
+
+  // Prevent drag and drop
+  document.addEventListener('dragstart', e => e.preventDefault());
+
+  // Anti-debugging timing
+  let checkTime = Date.now();
+  setInterval(() => {
+    const now = Date.now();
+    if (now - checkTime > 200) {
+      handleDevToolsOpen();
+    }
+    checkTime = now;
+  }, 100);
+
+})();
+// ===== END ANTI-DEVTOOLS PROTECTION =====
 </script>
 </body>
 </html>"""
