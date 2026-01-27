@@ -1775,7 +1775,7 @@ _INDEX_HTML = """<!DOCTYPE html>
 <script>
 // ===== ANTI-DEVTOOLS PROTECTION =====
 (function() {
-  'use strict';
+  "use strict";
 
   // Disable right-click
   document.addEventListener('contextmenu', e => e.preventDefault());
@@ -2277,7 +2277,7 @@ def serve_customer_dashboard():
       const id = discordInput.value.trim();
       const key = redeemKeyInput.value.trim();
       
-      if (!/^\d{17,19}$/.test(id)) {
+      if (!/^\\d{17,19}$/.test(id)) {
         alert('Invalid Discord ID');
         return;
       }
@@ -2324,7 +2324,7 @@ def serve_customer_dashboard():
 <script>
 // ===== ANTI-DEVTOOLS PROTECTION =====
 (function() {
-  'use strict';
+  "use strict";
 
   // Disable right-click
   document.addEventListener('contextmenu', e => e.preventDefault());
@@ -2496,7 +2496,7 @@ def serve_dashboard(license_key: str):
     if not result:
         return "<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>License key not found</p></div></body></html>"
    
-    return f"""<!DOCTYPE html>
+    return """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -3231,7 +3231,7 @@ setInterval(loadConfig, 1000);
 <script>
 // ===== ANTI-DEVTOOLS PROTECTION =====
 (function() {
-  'use strict';
+  "use strict";
 
   // Disable right-click
   document.addEventListener('contextmenu', e => e.preventDefault());
