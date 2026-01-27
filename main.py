@@ -1752,13 +1752,13 @@ def serve_home():
     return _INDEX_HTML
 
 # ============================================================================
-# FIXED CUSTOMER DASHBOARD ROUTE
-# Replace the @app.get("/dashboard") route with this corrected version
+# UPDATED CUSTOMER DASHBOARD WITH LOGIN MODAL
+# Replace your @app.get("/dashboard") route with this
 # ============================================================================
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def serve_customer_dashboard():
-    """Customer Account Dashboard"""
+    """Customer Account Dashboard with Modal Login"""
     return """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1807,10 +1807,14 @@ def serve_customer_dashboard():
     #redeem-from-subs{background:transparent;border:1px solid rgb(35,35,35);color:#ddd;padding:12px 40px;border-radius:6px;font-size:15px;font-weight:500;cursor:pointer;transition:all .2s}
     #redeem-from-subs:hover{border-color:#777;color:#fff}
     .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);justify-content:center;align-items:center;z-index:1000;opacity:0;transition:opacity .3s ease}
-    .modal.show{opacity:1}
+    .modal.show{display:flex;opacity:1}
     .modal-content{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:32px;max-width:420px;width:90%;text-align:center;transform:scale(.95);transition:transform .3s ease}
     .modal.show .modal-content{transform:scale(1)}
     .modal-title{font-size:20px;color:#fff;margin-bottom:24px}
+    .modal-question{font-size:15px;color:#fff;margin-bottom:16px;text-align:left}
+    .modal-buttons{display:flex;gap:12px;margin-top:20px}
+    .modal-btn{flex:1;padding:12px;background:transparent;border:1px solid rgb(35,35,35);border-radius:8px;color:#fff;font-size:14px;font-weight:500;cursor:pointer;transition:all .2s}
+    .modal-btn:hover{background:rgba(255,255,255,0.05);border-color:rgb(55,55,55)}
     @media (max-width:900px){.sidebar{width:100%;height:auto;position:relative;border-right:none;border-bottom:1px solid rgb(35,35,35);padding:20px;display:flex;flex-direction:column;align-items:center;text-align:center;background:rgb(13,13,13)}
       .logo{margin-bottom:20px}
       nav ul{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
@@ -1839,9 +1843,9 @@ def serve_customer_dashboard():
 
       <div id="subscriptions" class="tab-content active">
         <div class="stats">
-          <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value" id="activeSubs">0</div><div class="stat-sub">subscriptions</div></div>
-          <div class="stat-card"><div class="stat-label">Total HWID Resets</div><div class="stat-value" id="totalResets">0</div><div class="stat-sub">All time</div></div>
-          <div class="stat-card"><div class="stat-label">Subscription</div><div class="stat-value" id="subStatus">Active</div><div class="stat-sub" id="subDuration">Loading...</div></div>
+          <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value" id="activeSubs">Unknown</div><div class="stat-sub">subscriptions</div></div>
+          <div class="stat-card"><div class="stat-label">Total HWID Resets</div><div class="stat-value" id="totalResets">Unknown</div><div class="stat-sub">All time</div></div>
+          <div class="stat-card"><div class="stat-label">Subscription</div><div class="stat-value" id="subStatus">Unknown</div><div class="stat-sub" id="subDuration">Unknown</div></div>
         </div>
         <div class="empty-section" id="subsSection">
           <div style="font-size:20px;color:#fff;margin-bottom:12px">No subscriptions yet</div>
@@ -1871,17 +1875,32 @@ def serve_customer_dashboard():
             <div class="card-subtitle">View and manage your account details</div>
             <div class="info-item">
               <div class="info-label">License</div>
-              <div class="info-value blur" id="licenseDisplay">Loading...</div>
+              <div class="info-value blur" id="licenseDisplay">Unknown</div>
             </div>
             <div class="info-item">
               <div class="info-label">HWID</div>
-              <div class="info-value blur hwid-value" id="hwidDisplay">Loading...</div>
+              <div class="info-value blur hwid-value" id="hwidDisplay">Unknown</div>
             </div>
           </div>
         </div>
       </div>
     </div>
   </main>
+
+  <!-- Login Modal -->
+  <div id="loginModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-title">Welcome to Axion Dashboard</div>
+      <div class="modal-question">Do you have a License?</div>
+      <div class="input-group">
+        <input type="text" id="loginKeyInput" class="input-label" placeholder="Enter your license key" style="width:100%;margin-bottom:0">
+      </div>
+      <div class="modal-buttons">
+        <button class="modal-btn" id="noLicenseBtn">No</button>
+        <button class="modal-btn" id="yesLicenseBtn">Yes</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Redeem Modal -->
   <div id="redeemModal" class="modal">
@@ -1897,32 +1916,85 @@ def serve_customer_dashboard():
 
   <script>
     let licenseKey = localStorage.getItem('axion_license');
-    
-    // If no license, prompt login
-    if (!licenseKey) {
-      licenseKey = prompt('Please enter your license key to access the dashboard:');
-      if (licenseKey) {
-        localStorage.setItem('axion_license', licenseKey);
-      } else {
-        window.location.href = '/';
-      }
+    let hasLicense = localStorage.getItem('axion_has_license') === 'true';
+
+    // Show login modal on first visit
+    if (!localStorage.getItem('axion_dashboard_visited')) {
+      document.getElementById('loginModal').classList.add('show');
+    } else if (hasLicense && licenseKey) {
+      loadDashboard();
     }
 
-    // Load dashboard data - FIXED TO USE CORRECT ENDPOINTS
-    async function loadDashboard() {
+    // No license button - browse without license
+    document.getElementById('noLicenseBtn').onclick = () => {
+      localStorage.setItem('axion_dashboard_visited', 'true');
+      localStorage.setItem('axion_has_license', 'false');
+      hasLicense = false;
+      licenseKey = null;
+      document.getElementById('loginModal').classList.remove('show');
+      setUnknownState();
+    };
+
+    // Yes license button - validate and login
+    document.getElementById('yesLicenseBtn').onclick = async () => {
+      const key = document.getElementById('loginKeyInput').value.trim();
+      
+      if (!key) {
+        alert('Please enter your license key');
+        return;
+      }
+
       try {
-        // CHANGED: Use /api/dashboard instead of /api/customer/dashboard
+        const res = await fetch(`/api/dashboard/${key}`);
+        if (!res.ok) {
+          alert('Invalid license key');
+          return;
+        }
+
+        const data = await res.json();
+        licenseKey = key;
+        hasLicense = true;
+        localStorage.setItem('axion_license', key);
+        localStorage.setItem('axion_has_license', 'true');
+        localStorage.setItem('axion_dashboard_visited', 'true');
+        
+        document.getElementById('loginModal').classList.remove('show');
+        loadDashboard();
+      } catch (e) {
+        alert('Error validating license: ' + e.message);
+      }
+    };
+
+    // Set everything to "Unknown" for no license mode
+    function setUnknownState() {
+      document.getElementById('activeSubs').textContent = 'Unknown';
+      document.getElementById('totalResets').textContent = 'Unknown';
+      document.getElementById('subStatus').textContent = 'Unknown';
+      document.getElementById('subDuration').textContent = 'Unknown';
+      document.getElementById('licenseDisplay').textContent = 'Unknown';
+      document.getElementById('hwidDisplay').textContent = 'Unknown';
+    }
+
+    // Load dashboard data with license
+    async function loadDashboard() {
+      if (!hasLicense || !licenseKey) {
+        setUnknownState();
+        return;
+      }
+
+      try {
         const res = await fetch(`/api/dashboard/${licenseKey}`);
         if (!res.ok) {
           alert('Invalid license key');
           localStorage.removeItem('axion_license');
-          window.location.href = '/';
+          localStorage.setItem('axion_has_license', 'false');
+          setUnknownState();
           return;
         }
         
         const data = await res.json();
         
-        // Update stats - FIXED: Check if active is truthy
+        // Update stats
         document.getElementById('activeSubs').textContent = data.active ? '1' : '0';
         document.getElementById('totalResets').textContent = data.hwid_resets || 0;
         document.getElementById('subStatus').textContent = data.active ? 'Active' : 'Inactive';
@@ -1942,7 +2014,7 @@ def serve_customer_dashboard():
         
       } catch (e) {
         console.error('Error loading dashboard:', e);
-        alert('Failed to load dashboard data');
+        setUnknownState();
       }
     }
 
@@ -1968,12 +2040,16 @@ def serve_customer_dashboard():
       document.querySelector('a[href="#manage"]').click();
     };
 
-    // HWID reset - FIXED TO USE CORRECT ENDPOINT
+    // HWID reset
     document.getElementById('hwidDisplay').onclick = async () => {
+      if (!hasLicense || !licenseKey) {
+        alert('Please login with a license key to reset HWID');
+        return;
+      }
+
       if (!confirm("Are you sure you want to reset your HWID? This action cannot be undone.")) return;
       
       try {
-        // CHANGED: Use /api/reset-hwid instead of /api/customer/reset-hwid
         const res = await fetch(`/api/reset-hwid/${licenseKey}`, { method: 'POST' });
         if (res.ok) {
           const data = await res.json();
@@ -1991,8 +2067,8 @@ def serve_customer_dashboard():
       }
     };
 
-    // Modal handling
-    const modal = document.getElementById('redeemModal');
+    // Modal handling for redeem
+    const redeemModal = document.getElementById('redeemModal');
     const redeemBtn = document.getElementById('redeemBtn');
     const continueBtn = document.getElementById('continueBtn');
     const discordInput = document.getElementById('discordIdInput');
@@ -2004,8 +2080,8 @@ def serve_customer_dashboard():
         alert('Please enter a key');
         return;
       }
-      modal.style.display = 'flex';
-      setTimeout(() => modal.classList.add('show'), 10);
+      redeemModal.style.display = 'flex';
+      setTimeout(() => redeemModal.classList.add('show'), 10);
       discordInput.value = '';
     };
 
@@ -2019,7 +2095,6 @@ def serve_customer_dashboard():
       }
       
       try {
-        // USING EXISTING /api/redeem ENDPOINT
         const res = await fetch('/api/redeem', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2029,9 +2104,11 @@ def serve_customer_dashboard():
         if (res.ok) {
           alert('Key redeemed successfully!');
           localStorage.setItem('axion_license', key);
+          localStorage.setItem('axion_has_license', 'true');
           licenseKey = key;
-          modal.classList.remove('show');
-          setTimeout(() => modal.style.display = 'none', 300);
+          hasLicense = true;
+          redeemModal.classList.remove('show');
+          setTimeout(() => redeemModal.style.display = 'none', 300);
           redeemKeyInput.value = '';
           loadDashboard();
         } else {
@@ -2043,15 +2120,12 @@ def serve_customer_dashboard():
       }
     };
 
-    modal.onclick = e => {
-      if (e.target === modal) {
-        modal.classList.remove('show');
-        setTimeout(() => modal.style.display = 'none', 300);
+    redeemModal.onclick = e => {
+      if (e.target === redeemModal) {
+        redeemModal.classList.remove('show');
+        setTimeout(() => redeemModal.style.display = 'none', 300);
       }
     };
-
-    // Load dashboard on page load
-    loadDashboard();
   </script>
 </body>
 </html>"""
@@ -2069,7 +2143,7 @@ def serve_dashboard(license_key: str):
     db.close()
    
     if not result:
-        return "<html><body style="margin:0;background:rgb(12,12,12);background-image:radial-gradient(circle at 2px 2px,rgb(20,20,20) 1px,transparent 0);background-size:6px 6px;color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh"><div style="font-size:20px;letter-spacing:1px">Invalid License</div></body></html>"
+        return "<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>License key not found</p></div></body></html>"
    
     return f"""<!DOCTYPE html>
 <html lang="en">
