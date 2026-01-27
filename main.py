@@ -1,5 +1,5 @@
 # main.py - Complete FastAPI Backend
-from fastapi import FastAPI, HTTPException, Cookie, Response, Request
+from fastapi import FastAPI, HTTPException, Cookie, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -10,16 +10,8 @@ import os
 import json
 import secrets
 from datetime import datetime, timedelta
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-import hashlib
-import secrets as sec
 
 app = FastAPI()
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS
 app.add_middleware(
@@ -29,18 +21,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["Content-Security-Policy"] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' https:; img-src 'self' https: data:;"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    return response
 
 # Default configuration
 DEFAULT_CONFIG = {
@@ -281,7 +261,6 @@ class SavedConfigRequest(BaseModel):
 # === VALIDATION ===
 
 @app.post("/api/validate")
-@limiter.limit("10/minute")
 def validate_user(data: KeyValidate):
     """Validate license key"""
     db = get_db()
@@ -356,7 +335,6 @@ def get_config(key: str):
         return DEFAULT_CONFIG
 
 @app.post("/api/config/{key}")
-@limiter.limit("4/minute")
 def set_config(key: str, data: dict):
     """Save config for a license key"""
     db = get_db()
@@ -493,7 +471,6 @@ def get_public_configs():
         return {"configs": []}
 
 @app.post("/api/public-configs/create")
-@limiter.limit("2/hour")
 def create_public_config(data: PublicConfig):
     """Create a public config"""
     db = get_db()
@@ -600,7 +577,6 @@ def get_dashboard_data(license_key: str):
     }
 
 @app.post("/api/redeem")
-@limiter.limit("1/minute")
 def redeem_key(data: RedeemRequest):
     """Redeem a key"""
     db = get_db()
@@ -636,7 +612,6 @@ def redeem_key(data: RedeemRequest):
     return {"success": True, "duration": duration, "expires_at": expires_at, "message": "Key redeemed successfully"}
 
 @app.post("/api/reset-hwid/{license_key}")
-@limiter.limit("2/hour")
 def reset_hwid(license_key: str):
     """Reset HWID"""
     db = get_db()
@@ -1766,169 +1741,6 @@ _INDEX_HTML = """<!DOCTYPE html>
       <button class="login-btn" onclick="showLoginModal()">Login</button>
     `;
   </script>
-  <!-- ============================================================================
-     ANTI-DEVTOOLS PROTECTION
-     Add this <script> tag to ALL your HTML routes (homepage, dashboard, menu)
-     Place it at the END of the <body>, just before the closing </body> tag
-     ============================================================================ -->
-
-<script>
-// ===== ANTI-DEVTOOLS PROTECTION =====
-(function() {
-  "use strict";
-
-  // Disable right-click
-  document.addEventListener('contextmenu', e => e.preventDefault());
-
-  // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+S
-  document.addEventListener('keydown', e => {
-    // F12
-    if (e.key === 'F12') {
-      e.preventDefault();
-      return false;
-    }
-    // Ctrl+Shift+I (Inspect)
-    if (e.ctrlKey && e.shiftKey && e.key === 'I') {
-      e.preventDefault();
-      return false;
-    }
-    // Ctrl+Shift+J (Console)
-    if (e.ctrlKey && e.shiftKey && e.key === 'J') {
-      e.preventDefault();
-      return false;
-    }
-    // Ctrl+Shift+C (Inspect element)
-    if (e.ctrlKey && e.shiftKey && e.key === 'C') {
-      e.preventDefault();
-      return false;
-    }
-    // Ctrl+U (View source)
-    if (e.ctrlKey && e.key === 'u') {
-      e.preventDefault();
-      return false;
-    }
-    // Ctrl+S (Save page)
-    if (e.ctrlKey && e.key === 's') {
-      e.preventDefault();
-      return false;
-    }
-  });
-
-  // Detect DevTools by size change
-  let devtoolsOpen = false;
-  const threshold = 160;
-
-  const checkDevTools = () => {
-    const widthThreshold = window.outerWidth - window.innerWidth > threshold;
-    const heightThreshold = window.outerHeight - window.innerHeight > threshold;
-    
-    if (widthThreshold || heightThreshold) {
-      if (!devtoolsOpen) {
-        devtoolsOpen = true;
-        handleDevToolsOpen();
-      }
-    } else {
-      devtoolsOpen = false;
-    }
-  };
-
-  // Check every 500ms
-  setInterval(checkDevTools, 500);
-
-  // Detect console
-  const element = new Image();
-  Object.defineProperty(element, 'id', {
-    get: function() {
-      devtoolsOpen = true;
-      handleDevToolsOpen();
-    }
-  });
-
-  // Log element to trigger getter
-  setInterval(() => {
-    console.log(element);
-    console.clear();
-  }, 1000);
-
-  // Handle DevTools detection
-  function handleDevToolsOpen() {
-    // Trigger debugger (freezes debugger when DevTools open)
-    debugger;
-    
-    // Redirect or warn
-    document.body.innerHTML = `
-      <div style="
-        position:fixed;
-        inset:0;
-        background:#000;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        color:#fff;
-        font-family:system-ui;
-        font-size:24px;
-        text-align:center;
-        z-index:99999;
-      ">
-        <div>
-          <h1 style="margin-bottom:20px">⚠️ Access Denied</h1>
-          <p style="font-size:18px;color:#888">Developer tools are not allowed.</p>
-          <p style="font-size:14px;color:#666;margin-top:10px">Please close DevTools and refresh the page.</p>
-        </div>
-      </div>
-    `;
-    
-    // Spam debugger
-    setInterval(() => { debugger; }, 100);
-  }
-
-  // Detect if running in iframe (clickjacking protection)
-  if (window.top !== window.self) {
-    window.top.location = window.self.location;
-  }
-
-  // Clear console periodically
-  setInterval(() => {
-    console.clear();
-  }, 2000);
-
-  // Prevent console access
-  const noop = () => {};
-  ['log', 'debug', 'info', 'warn', 'error', 'table', 'trace', 'dir', 'group', 'groupCollapsed', 'groupEnd', 'clear'].forEach(method => {
-    console[method] = noop;
-  });
-
-  // Detect toString() on functions (common debugging technique)
-  Function.prototype.toString = function() {
-    if (this === checkDevTools || this === handleDevToolsOpen) {
-      handleDevToolsOpen();
-    }
-    return '';
-  };
-
-  // Prevent selection of text (makes copying harder)
-  document.addEventListener('selectstart', e => {
-    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-      e.preventDefault();
-    }
-  });
-
-  // Prevent drag and drop
-  document.addEventListener('dragstart', e => e.preventDefault());
-
-  // Anti-debugging timing
-  let checkTime = Date.now();
-  setInterval(() => {
-    const now = Date.now();
-    if (now - checkTime > 200) {
-      handleDevToolsOpen();
-    }
-    checkTime = now;
-  }, 100);
-
-})();
-// ===== END ANTI-DEVTOOLS PROTECTION =====
-</script>
 </body>
 </html>
 """
@@ -1941,70 +1753,74 @@ def serve_home():
 
 # ============================================================================
 # UPDATED CUSTOMER DASHBOARD WITH LOGIN MODAL
+# Replace your @app.get("/dashboard") route with this
 # ============================================================================
 
-_DASHBOARD_HTML = """<!DOCTYPE html>
+@app.get("/dashboard", response_class=HTMLResponse)
+def serve_customer_dashboard():
+    """Customer Account Dashboard with Modal Login"""
+    return """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Account - Axion</title>
   <style>
-    *{{margin:0;padding:0;box-sizing:border-box}}
-    body{{background:rgb(12,12,12);background-image:radial-gradient(circle at 3px 3px,rgb(15,15,15) 1px,transparent 0);background-size:6px 6px;color:#ccc;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex}}
-    .sidebar{{width:180px;background:rgb(13,13,13);border-right:1px solid rgb(35,35,35);padding:32px 16px;position:fixed;top:0;bottom:0;overflow-y:auto;text-align:center}}
-    .logo{{font-size:24px;font-weight:700;color:#fff;margin-bottom:40px;cursor:pointer}}
-    nav ul{{list-style:none}}
-    nav li{{margin:12px 0}}
-    nav a{{display:block;color:#888;text-decoration:none;padding:10px 14px;border-radius:6px;transition:color .2s;cursor:pointer}}
-    nav a:hover,nav a.active{{color:#fff}}
-    .main-content{{margin-left:180px;flex:1;padding:32px 24px 40px 200px}}
-    .container{{max-width:1300px;margin:0 auto}}
-    h1{{font-size:28px;font-weight:600;color:#fff;margin-bottom:8px}}
-    .subtitle{{font-size:15px;color:#888;margin-bottom:28px}}
-    .divider{{height:1px;background:rgb(35,35,35);margin:0 0 36px}}
-    .tab-content{{display:none}}
-    .tab-content.active{{display:block}}
-    .stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:48px}}
-    .stat-card{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:10px;padding:24px 20px;text-align:center}}
-    .stat-label{{font-size:14px;color:#777;margin-bottom:12px}}
-    .stat-value{{font-size:32px;font-weight:700;color:#fff}}
-    .stat-sub{{font-size:13px;color:#666;margin-top:6px}}
-    .manage-grid,.security-grid{{display:grid;grid-template-columns:1fr;gap:28px}}
-    .card{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:28px;overflow:hidden}}
-    .card-title{{font-size:20px;font-weight:600;color:#fff;margin-bottom:8px}}
-    .card-subtitle{{font-size:14px;color:#888;margin-bottom:28px}}
-    .input-group{{margin-bottom:20px}}
-    .input-label{{font-size:14px;color:#aaa;margin-bottom:8px;display:block}}
-    input[type=text]{{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px}}
-    input::placeholder{{color:#666;opacity:1}}
-    .redeem-btn{{width:100%;padding:14px;background:#fff;border:none;border-radius:8px;color:#000;font-size:15px;font-weight:600;cursor:pointer;transition:all .25s ease;transform:scale(1)}}
-    .redeem-btn:hover{{transform:scale(1.03);background:rgb(240,240,240);box-shadow:0 4px 12px rgba(0,0,0,.4)}}
-    .info-item{{margin-bottom:24px}}
-    .info-label{{font-size:14px;color:#aaa;margin-bottom:8px;display:block}}
-    .info-value{{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px;transition:filter .3s ease;user-select:none;cursor:pointer;position:relative}}
-    .info-value.blur{{filter:blur(6px)}}
-    .info-value:hover{{filter:blur(0)}}
-    .info-value.resetting::after{{content:"Reset successful!";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.8);color:#4caf50;padding:8px 16px;border-radius:6px;font-size:14px;white-space:nowrap;pointer-events:none;opacity:0;animation:fadeOut 2s forwards}}
-    @keyframes fadeOut{{0%{{opacity:1}}100%{{opacity:0}}}}
-    .empty-section{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:80px 32px;text-align:center}}
-    #redeem-from-subs{{background:transparent;border:1px solid rgb(35,35,35);color:#ddd;padding:12px 40px;border-radius:6px;font-size:15px;font-weight:500;cursor:pointer;transition:all .2s}}
-    #redeem-from-subs:hover{{border-color:#777;color:#fff}}
-    .modal{{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);justify-content:center;align-items:center;z-index:1000;opacity:0;transition:opacity .3s ease}}
-    .modal.show{{display:flex;opacity:1}}
-    .modal-content{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:32px;max-width:420px;width:90%;text-align:center;transform:scale(.95);transition:transform .3s ease}}
-    .modal.show .modal-content{{transform:scale(1)}}
-    .modal-title{{font-size:20px;color:#fff;margin-bottom:24px}}
-    .modal-question{{font-size:15px;color:#fff;margin-bottom:16px;text-align:left}}
-    .modal-buttons{{display:flex;gap:12px;margin-top:20px}}
-    .modal-btn{{flex:1;padding:12px;background:transparent;border:1px solid rgb(35,35,35);border-radius:8px;color:#fff;font-size:14px;font-weight:500;cursor:pointer;transition:all .2s}}
-    .modal-btn:hover{{background:rgba(255,255,255,0.05);border-color:rgb(55,55,55)}}
-    @media (max-width:900px){{.sidebar{{width:100%;height:auto;position:relative;border-right:none;border-bottom:1px solid rgb(35,35,35);padding:20px;display:flex;flex-direction:column;align-items:center;text-align:center;background:rgb(13,13,13)}}
-      .logo{{margin-bottom:20px}}
-      nav ul{{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}}
-      .main-content{{margin-left:0;padding:24px 16px}}
-      .stats{{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}}}
-    @media (max-width:500px){{.card,.modal-content{{padding:20px}}}}
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:rgb(12,12,12);background-image:radial-gradient(circle at 3px 3px,rgb(15,15,15) 1px,transparent 0);background-size:6px 6px;color:#ccc;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex}
+    .sidebar{width:180px;background:rgb(13,13,13);border-right:1px solid rgb(35,35,35);padding:32px 16px;position:fixed;top:0;bottom:0;overflow-y:auto;text-align:center}
+    .logo{font-size:24px;font-weight:700;color:#fff;margin-bottom:40px;cursor:pointer}
+    nav ul{list-style:none}
+    nav li{margin:12px 0}
+    nav a{display:block;color:#888;text-decoration:none;padding:10px 14px;border-radius:6px;transition:color .2s;cursor:pointer}
+    nav a:hover,nav a.active{color:#fff}
+    .main-content{margin-left:180px;flex:1;padding:32px 24px 40px 200px}
+    .container{max-width:1300px;margin:0 auto}
+    h1{font-size:28px;font-weight:600;color:#fff;margin-bottom:8px}
+    .subtitle{font-size:15px;color:#888;margin-bottom:28px}
+    .divider{height:1px;background:rgb(35,35,35);margin:0 0 36px}
+    .tab-content{display:none}
+    .tab-content.active{display:block}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:48px}
+    .stat-card{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:10px;padding:24px 20px;text-align:center}
+    .stat-label{font-size:14px;color:#777;margin-bottom:12px}
+    .stat-value{font-size:32px;font-weight:700;color:#fff}
+    .stat-sub{font-size:13px;color:#666;margin-top:6px}
+    .manage-grid,.security-grid{display:grid;grid-template-columns:1fr;gap:28px}
+    .card{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:28px;overflow:hidden}
+    .card-title{font-size:20px;font-weight:600;color:#fff;margin-bottom:8px}
+    .card-subtitle{font-size:14px;color:#888;margin-bottom:28px}
+    .input-group{margin-bottom:20px}
+    .input-label{font-size:14px;color:#aaa;margin-bottom:8px;display:block}
+    input[type=text]{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px}
+    input::placeholder{color:#666;opacity:1}
+    .redeem-btn{width:100%;padding:14px;background:#fff;border:none;border-radius:8px;color:#000;font-size:15px;font-weight:600;cursor:pointer;transition:all .25s ease;transform:scale(1)}
+    .redeem-btn:hover{transform:scale(1.03);background:rgb(240,240,240);box-shadow:0 4px 12px rgba(0,0,0,.4)}
+    .info-item{margin-bottom:24px}
+    .info-label{font-size:14px;color:#aaa;margin-bottom:8px;display:block}
+    .info-value{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px;transition:filter .3s ease;user-select:none;cursor:pointer;position:relative}
+    .info-value.blur{filter:blur(6px)}
+    .info-value:hover{filter:blur(0)}
+    .info-value.resetting::after{content:"Reset successful!";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.8);color:#4caf50;padding:8px 16px;border-radius:6px;font-size:14px;white-space:nowrap;pointer-events:none;opacity:0;animation:fadeOut 2s forwards}
+    @keyframes fadeOut{0%{opacity:1}100%{opacity:0}}
+    .empty-section{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:80px 32px;text-align:center}
+    #redeem-from-subs{background:transparent;border:1px solid rgb(35,35,35);color:#ddd;padding:12px 40px;border-radius:6px;font-size:15px;font-weight:500;cursor:pointer;transition:all .2s}
+    #redeem-from-subs:hover{border-color:#777;color:#fff}
+    .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);justify-content:center;align-items:center;z-index:1000;opacity:0;transition:opacity .3s ease}
+    .modal.show{display:flex;opacity:1}
+    .modal-content{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:32px;max-width:420px;width:90%;text-align:center;transform:scale(.95);transition:transform .3s ease}
+    .modal.show .modal-content{transform:scale(1)}
+    .modal-title{font-size:20px;color:#fff;margin-bottom:24px}
+    .modal-question{font-size:15px;color:#fff;margin-bottom:16px;text-align:left}
+    .modal-buttons{display:flex;gap:12px;margin-top:20px}
+    .modal-btn{flex:1;padding:12px;background:transparent;border:1px solid rgb(35,35,35);border-radius:8px;color:#fff;font-size:14px;font-weight:500;cursor:pointer;transition:all .2s}
+    .modal-btn:hover{background:rgba(255,255,255,0.05);border-color:rgb(55,55,55)}
+    @media (max-width:900px){.sidebar{width:100%;height:auto;position:relative;border-right:none;border-bottom:1px solid rgb(35,35,35);padding:20px;display:flex;flex-direction:column;align-items:center;text-align:center;background:rgb(13,13,13)}
+      .logo{margin-bottom:20px}
+      nav ul{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+      .main-content{margin-left:0;padding:24px 16px}
+      .stats{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}}
+    @media (max-width:500px){.card,.modal-content{padding:20px}}
   </style>
 </head>
 <body>
@@ -2273,8 +2089,7 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
       const id = discordInput.value.trim();
       const key = redeemKeyInput.value.trim();
       
-      // FIXED: Use proper escape sequence for regex
-      if (!/^\\d{17,19}$/.test(id)) {
+      if (!/^\d{17,19}$/.test(id)) {
         alert('Invalid Discord ID');
         return;
       }
@@ -2312,175 +2127,8 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
       }
     };
   </script>
-  <!-- ============================================================================
-     ANTI-DEVTOOLS PROTECTION
-     ============================================================================ -->
-
-<script>
-// ===== ANTI-DEVTOOLS PROTECTION =====
-(function() {
-  "use strict";
-
-  // Disable right-click
-  document.addEventListener('contextmenu', e => e.preventDefault());
-
-  // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+S
-  document.addEventListener('keydown', e => {
-    // F12
-    if (e.key === 'F12') {
-      e.preventDefault();
-      return false;
-    }
-    // Ctrl+Shift+I (Inspect)
-    if (e.ctrlKey && e.shiftKey && e.key === 'I') {
-      e.preventDefault();
-      return false;
-    }
-    // Ctrl+Shift+J (Console)
-    if (e.ctrlKey && e.shiftKey && e.key === 'J') {
-      e.preventDefault();
-      return false;
-    }
-    // Ctrl+Shift+C (Inspect element)
-    if (e.ctrlKey && e.shiftKey && e.key === 'C') {
-      e.preventDefault();
-      return false;
-    }
-    // Ctrl+U (View source)
-    if (e.ctrlKey && e.key === 'u') {
-      e.preventDefault();
-      return false;
-    }
-    // Ctrl+S (Save page)
-    if (e.ctrlKey && e.key === 's') {
-      e.preventDefault();
-      return false;
-    }
-  });
-
-  // Detect DevTools by size change
-  let devtoolsOpen = false;
-  const threshold = 160;
-
-  const checkDevTools = () => {
-    const widthThreshold = window.outerWidth - window.innerWidth > threshold;
-    const heightThreshold = window.outerHeight - window.innerHeight > threshold;
-    
-    if (widthThreshold || heightThreshold) {
-      if (!devtoolsOpen) {
-        devtoolsOpen = true;
-        handleDevToolsOpen();
-      }
-    } else {
-      devtoolsOpen = false;
-    }
-  };
-
-  // Check every 500ms
-  setInterval(checkDevTools, 500);
-
-  // Detect console
-  const element = new Image();
-  Object.defineProperty(element, 'id', {
-    get: function() {
-      devtoolsOpen = true;
-      handleDevToolsOpen();
-    }
-  });
-
-  // Log element to trigger getter
-  setInterval(() => {
-    console.log(element);
-    console.clear();
-  }, 1000);
-
-  // Handle DevTools detection
-  function handleDevToolsOpen() {
-    // Trigger debugger (freezes debugger when DevTools open)
-    debugger;
-    
-    // Redirect or warn
-    document.body.innerHTML = `
-      <div style="
-        position:fixed;
-        inset:0;
-        background:#000;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        color:#fff;
-        font-family:system-ui;
-        font-size:24px;
-        text-align:center;
-        z-index:99999;
-      ">
-        <div>
-          <h1 style="margin-bottom:20px">⚠️ Access Denied</h1>
-          <p style="font-size:18px;color:#888">Developer tools are not allowed.</p>
-          <p style="font-size:14px;color:#666;margin-top:10px">Please close DevTools and refresh the page.</p>
-        </div>
-      </div>
-    `;
-    
-    // Spam debugger
-    setInterval(() => { debugger; }, 100);
-  }
-
-  // Detect if running in iframe (clickjacking protection)
-  if (window.top !== window.self) {
-    window.top.location = window.self.location;
-  }
-
-  // Clear console periodically
-  setInterval(() => {
-    console.clear();
-  }, 2000);
-
-  // Prevent console access
-  const noop = () => {};
-  ['log', 'debug', 'info', 'warn', 'error', 'table', 'trace', 'dir', 'group', 'groupCollapsed', 'groupEnd', 'clear'].forEach(method => {
-    console[method] = noop;
-  });
-
-  // Detect toString() on functions (common debugging technique)
-  Function.prototype.toString = function() {
-    if (this === checkDevTools || this === handleDevToolsOpen) {
-      handleDevToolsOpen();
-    }
-    return '';
-  };
-
-  // Prevent selection of text (makes copying harder)
-  document.addEventListener('selectstart', e => {
-    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-      e.preventDefault();
-    }
-  });
-
-  // Prevent drag and drop
-  document.addEventListener('dragstart', e => e.preventDefault());
-
-  // Anti-debugging timing
-  let checkTime = Date.now();
-  setInterval(() => {
-    const now = Date.now();
-    if (now - checkTime > 200) {
-      handleDevToolsOpen();
-    }
-    checkTime = now;
-  }, 100);
-
-})();
-// ===== END ANTI-DEVTOOLS PROTECTION =====
-</script>
 </body>
 </html>"""
-
-@app.get("/dashboard", response_class=HTMLResponse)
-def serve_customer_dashboard():
-    """Customer Account Dashboard with Modal Login"""
-    return HTMLResponse(content=_DASHBOARD_HTML)
-
 @app.get("/{license_key}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
     """Personal dashboard"""
@@ -2495,10 +2143,9 @@ def serve_dashboard(license_key: str):
     db.close()
    
     if not result:
-        return HTMLResponse(content="<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>License key not found</p></div></body></html>")
+        return "<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>License key not found</p></div></body></html>"
    
-    # FIXED: Removed the problematic JavaScript template literal
-    html_content = f"""<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -3226,8 +2873,6 @@ setInterval(loadConfig, 1000);
 </script>
 </body>
 </html>"""
-   
-    return HTMLResponse(content=html_content)
 
 if __name__ == "__main__":
     init_db()
