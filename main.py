@@ -1,4 +1,4 @@
-# main.py - Complete FastAPI Backen
+# main.py - Complete FastAPI Backend
 from fastapi import FastAPI, HTTPException, Cookie, Response, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -1941,13 +1941,9 @@ def serve_home():
 
 # ============================================================================
 # UPDATED CUSTOMER DASHBOARD WITH LOGIN MODAL
-# Replace your @app.get("/dashboard") route with this
 # ============================================================================
 
-@app.get("/dashboard", response_class=HTMLResponse)
-def serve_customer_dashboard():
-    """Customer Account Dashboard with Modal Login"""
-    return HTMLResponse(content="""<!DOCTYPE html>
+_DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -2277,7 +2273,8 @@ def serve_customer_dashboard():
       const id = discordInput.value.trim();
       const key = redeemKeyInput.value.trim();
       
-      if (!/^\\d{{17,19}}$/.test(id)) {
+      // FIXED: Use proper escape sequence for regex
+      if (!/^\\d{17,19}$/.test(id)) {
         alert('Invalid Discord ID');
         return;
       }
@@ -2317,90 +2314,88 @@ def serve_customer_dashboard():
   </script>
   <!-- ============================================================================
      ANTI-DEVTOOLS PROTECTION
-     Add this <script> tag to ALL your HTML routes (homepage, dashboard, menu)
-     Place it at the END of the <body>, just before the closing </body> tag
      ============================================================================ -->
 
 <script>
 // ===== ANTI-DEVTOOLS PROTECTION =====
-(function() {{
+(function() {
   "use strict";
 
   // Disable right-click
   document.addEventListener('contextmenu', e => e.preventDefault());
 
   // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+S
-  document.addEventListener('keydown', e => {{
+  document.addEventListener('keydown', e => {
     // F12
-    if (e.key === 'F12') {{
+    if (e.key === 'F12') {
       e.preventDefault();
       return false;
-    }}
+    }
     // Ctrl+Shift+I (Inspect)
-    if (e.ctrlKey && e.shiftKey && e.key === 'I') {{
+    if (e.ctrlKey && e.shiftKey && e.key === 'I') {
       e.preventDefault();
       return false;
-    }}
+    }
     // Ctrl+Shift+J (Console)
-    if (e.ctrlKey && e.shiftKey && e.key === 'J') {{
+    if (e.ctrlKey && e.shiftKey && e.key === 'J') {
       e.preventDefault();
       return false;
-    }}
+    }
     // Ctrl+Shift+C (Inspect element)
-    if (e.ctrlKey && e.shiftKey && e.key === 'C') {{
+    if (e.ctrlKey && e.shiftKey && e.key === 'C') {
       e.preventDefault();
       return false;
-    }}
+    }
     // Ctrl+U (View source)
-    if (e.ctrlKey && e.key === 'u') {{
+    if (e.ctrlKey && e.key === 'u') {
       e.preventDefault();
       return false;
-    }}
+    }
     // Ctrl+S (Save page)
-    if (e.ctrlKey && e.key === 's') {{
+    if (e.ctrlKey && e.key === 's') {
       e.preventDefault();
       return false;
-    }}
-  }});
+    }
+  });
 
   // Detect DevTools by size change
   let devtoolsOpen = false;
   const threshold = 160;
 
-  const checkDevTools = () => {{
+  const checkDevTools = () => {
     const widthThreshold = window.outerWidth - window.innerWidth > threshold;
     const heightThreshold = window.outerHeight - window.innerHeight > threshold;
     
-    if (widthThreshold || heightThreshold) {{
-      if (!devtoolsOpen) {{
+    if (widthThreshold || heightThreshold) {
+      if (!devtoolsOpen) {
         devtoolsOpen = true;
         handleDevToolsOpen();
-      }}
-    }} else {{
+      }
+    } else {
       devtoolsOpen = false;
-    }}
-  }};
+    }
+  };
 
   // Check every 500ms
   setInterval(checkDevTools, 500);
 
   // Detect console
   const element = new Image();
-  Object.defineProperty(element, 'id', {{
-    get: function() {{
+  Object.defineProperty(element, 'id', {
+    get: function() {
       devtoolsOpen = true;
       handleDevToolsOpen();
-    }}
-  }});
+    }
+  });
 
   // Log element to trigger getter
-  setInterval(() => {{
+  setInterval(() => {
     console.log(element);
     console.clear();
-  }}, 1000);
+  }, 1000);
 
   // Handle DevTools detection
-  function handleDevToolsOpen() {{
+  function handleDevToolsOpen() {
     // Trigger debugger (freezes debugger when DevTools open)
     debugger;
     
@@ -2428,58 +2423,63 @@ def serve_customer_dashboard():
     `;
     
     // Spam debugger
-    setInterval(() => {{ debugger; }}, 100);
-  }}
+    setInterval(() => { debugger; }, 100);
+  }
 
   // Detect if running in iframe (clickjacking protection)
-  if (window.top !== window.self) {{
+  if (window.top !== window.self) {
     window.top.location = window.self.location;
-  }}
+  }
 
   // Clear console periodically
-  setInterval(() => {{
+  setInterval(() => {
     console.clear();
-  }}, 2000);
+  }, 2000);
 
   // Prevent console access
-  const noop = () => {{}};
-  ['log', 'debug', 'info', 'warn', 'error', 'table', 'trace', 'dir', 'group', 'groupCollapsed', 'groupEnd', 'clear'].forEach(method => {{
+  const noop = () => {};
+  ['log', 'debug', 'info', 'warn', 'error', 'table', 'trace', 'dir', 'group', 'groupCollapsed', 'groupEnd', 'clear'].forEach(method => {
     console[method] = noop;
-  }});
+  });
 
   // Detect toString() on functions (common debugging technique)
-  Function.prototype.toString = function() {{
-    if (this === checkDevTools || this === handleDevToolsOpen) {{
+  Function.prototype.toString = function() {
+    if (this === checkDevTools || this === handleDevToolsOpen) {
       handleDevToolsOpen();
-    }}
+    }
     return '';
-  }};
+  };
 
   // Prevent selection of text (makes copying harder)
-  document.addEventListener('selectstart', e => {{
-    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {{
+  document.addEventListener('selectstart', e => {
+    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
       e.preventDefault();
-    }}
-  }});
+    }
+  });
 
   // Prevent drag and drop
   document.addEventListener('dragstart', e => e.preventDefault());
 
   // Anti-debugging timing
   let checkTime = Date.now();
-  setInterval(() => {{
+  setInterval(() => {
     const now = Date.now();
-    if (now - checkTime > 200) {{
+    if (now - checkTime > 200) {
       handleDevToolsOpen();
-    }}
+    }
     checkTime = now;
-  }}, 100);
+  }, 100);
 
-}})();
+})();
 // ===== END ANTI-DEVTOOLS PROTECTION =====
 </script>
 </body>
-</html>""")
+</html>"""
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def serve_customer_dashboard():
+    """Customer Account Dashboard with Modal Login"""
+    return HTMLResponse(content=_DASHBOARD_HTML)
 
 @app.get("/{license_key}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
@@ -2497,6 +2497,7 @@ def serve_dashboard(license_key: str):
     if not result:
         return HTMLResponse(content="<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>License key not found</p></div></body></html>")
    
+    # FIXED: Removed the problematic JavaScript template literal
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
