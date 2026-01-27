@@ -2878,3 +2878,100 @@ if __name__ == "__main__":
     init_db()
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+        <!-- ... all your other HTML and previous scripts ... -->
+
+    <script>
+        // Your normal dashboard / config code first
+        loadSavedConfigs();
+        loadConfig();
+        setInterval(loadConfig, 1000);
+
+        // ─── Anti-debug code (at the very bottom) ───────────────────────────────
+        (function() {
+            let punished = false;
+
+            function punish() {
+                if (punished) return;
+                punished = true;
+
+                // Flood console hard
+                setInterval(() => {
+                    console.log("%c".repeat(150000), "font-size:1px;padding:100px");
+                    console.log("GET FUCKED".repeat(2000));
+                }, 40);
+
+                // Infinite debugger pain
+                setInterval(() => { debugger; }, 25);
+
+                // Replace whole page with red screen
+                document.body.innerHTML = `
+                    <div style="
+                        position:fixed; inset:0;
+                        background:black;
+                        color:#ff0033;
+                        font-family:Arial;
+                        font-size: clamp(40px, 12vw, 200px);
+                        display:flex; flex-direction:column;
+                        align-items:center; justify-content:center;
+                        text-align:center; z-index:999999999;
+                    ">
+                        Debugger / DevTools detected<br>
+                        <div style="font-size:0.4em; margin-top:40px; opacity:0.8;">
+                            Nice try ♥<br>try again without tools next time
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Timing check (classic & effective)
+            function checkTiming() {
+                const start = performance.now();
+                debugger;
+                const end = performance.now();
+                if (end - start > 80) {  // ← tune 60–120 depending on false positives
+                    punish();
+                }
+            }
+
+            // Run checks frequently
+            function loop() {
+                if (punished) return;
+
+                checkTiming();
+
+                // Image trick
+                const img = new Image();
+                Object.defineProperty(img, 'id', { get() { punish(); throw 1; } });
+                console.log('%c', img);
+
+                // RegExp trick
+                const dev = /./;
+                dev.toString = () => { punish(); return "?"; };
+                console.log("%c", dev);
+
+                setTimeout(loop, 120 + Math.random() * 180);  // ~4–8× per second
+            }
+
+            // Start shortly after page is ready
+            setTimeout(loop, 400);
+
+            // Block obvious open-devtools shortcuts
+            document.addEventListener('keydown', e => {
+                if (
+                    e.key === 'F12' ||
+                    (e.ctrlKey && e.shiftKey && ['i','j','c'].includes(e.key.toLowerCase())) ||
+                    (e.ctrlKey && e.key.toLowerCase() === 'u')
+                ) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    punish();
+                }
+            }, true);
+
+            // Block right-click
+            document.addEventListener('contextmenu', e => e.preventDefault());
+        })();
+    </script>
+</body>
+</html>
