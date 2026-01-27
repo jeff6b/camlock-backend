@@ -2277,7 +2277,7 @@ def serve_customer_dashboard():
       const id = discordInput.value.trim();
       const key = redeemKeyInput.value.trim();
       
-      if (!/^\\d{17,19}$/.test(id)) {
+      // if (!/^\\d{17,19}$/.test(id)) {
         alert('Invalid Discord ID');
         return;
       }
