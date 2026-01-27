@@ -10,8 +10,16 @@ import os
 import json
 import secrets
 from datetime import datetime, timedelta
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+import hashlib
+import secrets as sec
 
 app = FastAPI()
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS
 app.add_middleware(
@@ -261,6 +269,7 @@ class SavedConfigRequest(BaseModel):
 # === VALIDATION ===
 
 @app.post("/api/validate")
+@limiter.limit("10/minute")
 def validate_user(data: KeyValidate):
     """Validate license key"""
     db = get_db()
@@ -335,6 +344,7 @@ def get_config(key: str):
         return DEFAULT_CONFIG
 
 @app.post("/api/config/{key}")
+@limiter.limit("4/minute")
 def set_config(key: str, data: dict):
     """Save config for a license key"""
     db = get_db()
@@ -577,6 +587,7 @@ def get_dashboard_data(license_key: str):
     }
 
 @app.post("/api/redeem")
+@limiter.limit("1/minute")
 def redeem_key(data: RedeemRequest):
     """Redeem a key"""
     db = get_db()
@@ -612,6 +623,7 @@ def redeem_key(data: RedeemRequest):
     return {"success": True, "duration": duration, "expires_at": expires_at, "message": "Key redeemed successfully"}
 
 @app.post("/api/reset-hwid/{license_key}")
+@limiter.limit("2/hour")
 def reset_hwid(license_key: str):
     """Reset HWID"""
     db = get_db()
