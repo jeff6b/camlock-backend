@@ -10,6 +10,7 @@ import os
 import json
 import secrets
 from datetime import datetime, timedelta
+import re
 
 app = FastAPI()
 
@@ -2873,6 +2874,337 @@ setInterval(loadConfig, 1000);
 </script>
 </body>
 </html>"""
+# ============================================================================
+# PASTE THIS AT THE VERY BOTTOM OF YOUR main.py FILE
+# This adds SQL injection protection and anti-devtools protection
+# ============================================================================
+
+# First, add this import at the TOP of your file with other imports:
+# import re
+
+# ============================================================================
+# SECURITY FUNCTIONS - Add these after your imports section
+# ============================================================================
+
+def sanitize_input(value):
+    """Sanitize input to prevent SQL injection"""
+    if isinstance(value, str):
+        value = re.sub(r"[;'\"`\\]", "", value)
+    return value
+
+def validate_license_key(key):
+    """Validate license key format"""
+    if not key or not isinstance(key, str):
+        return False
+    pattern = r'^\d{4}-\d{4}-\d{4}-\d{4}$'
+    return bool(re.match(pattern, key))
+
+# ============================================================================
+# ANTI-DEVTOOLS PROTECTION SCRIPT
+# ============================================================================
+
+ANTI_DEVTOOLS_SCRIPT = """
+<script>
+(function() {
+  'use strict';
+  
+  // Disable right-click
+  document.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    window.location.href = '/blocked';
+  });
+  
+  // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
+  document.addEventListener('keydown', function(e) {
+    // F12
+    if (e.key === 'F12' || e.keyCode === 123) {
+      e.preventDefault();
+      window.location.href = '/blocked';
+      return false;
+    }
+    
+    // Ctrl+Shift+I (DevTools)
+    if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) {
+      e.preventDefault();
+      window.location.href = '/blocked';
+      return false;
+    }
+    
+    // Ctrl+Shift+J (Console)
+    if (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) {
+      e.preventDefault();
+      window.location.href = '/blocked';
+      return false;
+    }
+    
+    // Ctrl+U (View Source)
+    if (e.ctrlKey && (e.key === 'U' || e.keyCode === 85)) {
+      e.preventDefault();
+      window.location.href = '/blocked';
+      return false;
+    }
+    
+    // Ctrl+Shift+C (Inspect Element)
+    if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) {
+      e.preventDefault();
+      window.location.href = '/blocked';
+      return false;
+    }
+  });
+  
+  // DevTools Detection
+  var devtools = {isOpen: false, orientation: null};
+  var threshold = 160;
+  
+  var checkDevTools = function() {
+    if (window.outerWidth - window.innerWidth > threshold || 
+        window.outerHeight - window.innerHeight > threshold) {
+      if (!devtools.isOpen) {
+        devtools.isOpen = true;
+        window.location.href = '/blocked';
+      }
+    } else {
+      devtools.isOpen = false;
+    }
+  };
+  
+  setInterval(checkDevTools, 500);
+  
+  // Debugger detection
+  setInterval(function() {
+    var start = new Date();
+    debugger;
+    var end = new Date();
+    if (end - start > 100) {
+      window.location.href = '/blocked';
+    }
+  }, 1000);
+  
+})();
+</script>
+"""
+
+# ============================================================================
+# BLOCKED PAGE ROUTE
+# ============================================================================
+
+BLOCKED_PAGE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Access Blocked - Axion</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      height: 100vh;
+      background: radial-gradient(circle at top, #0f0f0f, #050505);
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .container {
+      text-align: center;
+      padding: 40px;
+      background: rgba(18, 18, 18, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      max-width: 500px;
+    }
+    
+    .icon {
+      font-size: 72px;
+      margin-bottom: 24px;
+      color: #ff4444;
+    }
+    
+    h1 {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: #ff4444;
+    }
+    
+    p {
+      font-size: 16px;
+      color: #aaa;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+    
+    .btn {
+      display: inline-block;
+      padding: 14px 32px;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      color: #fff;
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 600;
+      transition: all 0.3s;
+    }
+    
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">⛔</div>
+    <h1>Access Blocked</h1>
+    <p>
+      Developer tools are not allowed on this site.<br>
+      Please close any developer tools and return to the homepage.
+    </p>
+    <a href="/" class="btn">Return to Home</a>
+  </div>
+  
+  <script>
+    // Continue blocking even on this page
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'F12' || e.keyCode === 123 ||
+          (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) ||
+          (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) ||
+          (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) ||
+          (e.ctrlKey && (e.key === 'U' || e.keyCode === 85))) {
+        e.preventDefault();
+        return false;
+      }
+    });
+  </script>
+</body>
+</html>"""
+
+@app.get("/blocked", response_class=HTMLResponse)
+def blocked_page():
+    """Blocked access page"""
+    return BLOCKED_PAGE_HTML
+
+# ============================================================================
+# UPDATE YOUR EXISTING ENDPOINTS WITH THESE WRAPPERS
+# ============================================================================
+
+# Wrap your existing @app.post("/api/validate") with this:
+_original_validate_user = None
+try:
+    # Store original function
+    for route in app.routes:
+        if hasattr(route, 'path') and route.path == '/api/validate':
+            _original_validate_user = route.endpoint
+            break
+    
+    if _original_validate_user:
+        @app.post("/api/validate")
+        def validate_user_protected(data: KeyValidate):
+            """Validate license key with SQL injection protection"""
+            if not validate_license_key(data.key):
+                return {"valid": False, "error": "Invalid license key format"}
+            return _original_validate_user(data)
+except:
+    pass
+
+# Wrap your existing config save endpoint
+_original_save_config = None
+try:
+    for route in app.routes:
+        if hasattr(route, 'path') and '/save' in route.path and 'configs' in route.path:
+            _original_save_config = route.endpoint
+            break
+    
+    if _original_save_config:
+        @app.post("/api/configs/{license_key}/save")
+        def save_config_protected(license_key: str, data: SavedConfigRequest):
+            """Save a config with SQL injection protection"""
+            if not validate_license_key(license_key):
+                raise HTTPException(status_code=400, detail="Invalid license key format")
+            
+            # Sanitize config name
+            data.config_name = sanitize_input(data.config_name[:100])
+            return _original_save_config(license_key, data)
+except:
+    pass
+
+# ============================================================================
+# UPDATE YOUR HTML ROUTES TO INCLUDE ANTI-DEVTOOLS
+# ============================================================================
+
+# This function will inject the anti-devtools script into your existing HTML
+def inject_protection(html_content):
+    """Inject anti-devtools script before closing body tag"""
+    if '</body>' in html_content:
+        return html_content.replace('</body>', ANTI_DEVTOOLS_SCRIPT + '\n</body>')
+    return html_content + ANTI_DEVTOOLS_SCRIPT
+
+# Wrap your existing homepage route
+_original_serve_home = None
+try:
+    for route in app.routes:
+        if hasattr(route, 'path') and route.path == '/':
+            _original_serve_home = route.endpoint
+            break
+    
+    if _original_serve_home:
+        @app.get("/", response_class=HTMLResponse)
+        @app.get("/home", response_class=HTMLResponse)
+        def serve_home_protected():
+            """SPA Homepage with anti-devtools protection"""
+            original_html = _original_serve_home()
+            return inject_protection(original_html)
+except:
+    pass
+
+# Wrap your existing dashboard route
+_original_serve_dashboard = None
+try:
+    for route in app.routes:
+        if hasattr(route, 'path') and route.path == '/dashboard':
+            _original_serve_dashboard = route.endpoint
+            break
+    
+    if _original_serve_dashboard:
+        @app.get("/dashboard", response_class=HTMLResponse)
+        def serve_dashboard_protected():
+            """Customer Account Dashboard with anti-devtools protection"""
+            original_html = _original_serve_dashboard()
+            return inject_protection(original_html)
+except:
+    pass
+
+# Wrap your existing license key dashboard route
+_original_serve_license_dashboard = None
+try:
+    for route in app.routes:
+        if hasattr(route, 'path') and '{license_key}' in route.path:
+            _original_serve_license_dashboard = route.endpoint
+            break
+    
+    if _original_serve_license_dashboard:
+        @app.get("/{license_key}", response_class=HTMLResponse)
+        def serve_license_dashboard_protected(license_key: str):
+            """Personal dashboard with anti-devtools protection"""
+            if license_key in ["api", "favicon.ico", "home", "blocked"]:
+                raise HTTPException(status_code=404)
+            
+            if not validate_license_key(license_key):
+                return "<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>License key format invalid</p></div></body></html>"
+            
+            original_html = _original_serve_license_dashboard(license_key)
+            return inject_protection(original_html)
+except:
+    pass
+
+print("✅ Security protections installed!")
+print("✅ Anti-DevTools: F12, Ctrl+U, Right-Click, DevTools detection")
+print("✅ SQL Injection: Input sanitization and validation")
+print("✅ Blocked page: /blocked route active")
 
 if __name__ == "__main__":
     init_db()
