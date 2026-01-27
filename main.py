@@ -1742,7 +1742,302 @@ def serve_home():
     """SPA Homepage with all tabs"""
     return _INDEX_HTML
 
+@app.get("/dashboard", response_class=HTMLResponse)
+def serve_customer_dashboard():
+    """Customer Account Dashboard"""
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account - Axion</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:rgb(12,12,12);background-image:radial-gradient(circle at 3px 3px,rgb(15,15,15) 1px,transparent 0);background-size:6px 6px;color:#ccc;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex}
+    .sidebar{width:180px;background:rgb(13,13,13);border-right:1px solid rgb(35,35,35);padding:32px 16px;position:fixed;top:0;bottom:0;overflow-y:auto;text-align:center}
+    .logo{font-size:24px;font-weight:700;color:#fff;margin-bottom:40px;cursor:pointer}
+    nav ul{list-style:none}
+    nav li{margin:12px 0}
+    nav a{display:block;color:#888;text-decoration:none;padding:10px 14px;border-radius:6px;transition:color .2s;cursor:pointer}
+    nav a:hover,nav a.active{color:#fff}
+    .main-content{margin-left:180px;flex:1;padding:32px 24px 40px 200px}
+    .container{max-width:1300px;margin:0 auto}
+    h1{font-size:28px;font-weight:600;color:#fff;margin-bottom:8px}
+    .subtitle{font-size:15px;color:#888;margin-bottom:28px}
+    .divider{height:1px;background:rgb(35,35,35);margin:0 0 36px}
+    .tab-content{display:none}
+    .tab-content.active{display:block}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:48px}
+    .stat-card{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:10px;padding:24px 20px;text-align:center}
+    .stat-label{font-size:14px;color:#777;margin-bottom:12px}
+    .stat-value{font-size:32px;font-weight:700;color:#fff}
+    .stat-sub{font-size:13px;color:#666;margin-top:6px}
+    .manage-grid,.security-grid{display:grid;grid-template-columns:1fr;gap:28px}
+    .card{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:28px;overflow:hidden}
+    .card-title{font-size:20px;font-weight:600;color:#fff;margin-bottom:8px}
+    .card-subtitle{font-size:14px;color:#888;margin-bottom:28px}
+    .input-group{margin-bottom:20px}
+    .input-label{font-size:14px;color:#aaa;margin-bottom:8px;display:block}
+    input[type=text]{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px}
+    input::placeholder{color:#666;opacity:1}
+    .redeem-btn{width:100%;padding:14px;background:#fff;border:none;border-radius:8px;color:#000;font-size:15px;font-weight:600;cursor:pointer;transition:all .25s ease;transform:scale(1)}
+    .redeem-btn:hover{transform:scale(1.03);background:rgb(240,240,240);box-shadow:0 4px 12px rgba(0,0,0,.4)}
+    .info-item{margin-bottom:24px}
+    .info-label{font-size:14px;color:#aaa;margin-bottom:8px;display:block}
+    .info-value{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px;transition:filter .3s ease;user-select:none;cursor:pointer;position:relative}
+    .info-value.blur{filter:blur(6px)}
+    .info-value:hover{filter:blur(0)}
+    .info-value.resetting::after{content:"Reset successful!";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.8);color:#4caf50;padding:8px 16px;border-radius:6px;font-size:14px;white-space:nowrap;pointer-events:none;opacity:0;animation:fadeOut 2s forwards}
+    @keyframes fadeOut{0%{opacity:1}100%{opacity:0}}
+    .empty-section{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:80px 32px;text-align:center}
+    #redeem-from-subs{background:transparent;border:1px solid rgb(35,35,35);color:#ddd;padding:12px 40px;border-radius:6px;font-size:15px;font-weight:500;cursor:pointer;transition:all .2s}
+    #redeem-from-subs:hover{border-color:#777;color:#fff}
+    .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);justify-content:center;align-items:center;z-index:1000;opacity:0;transition:opacity .3s ease}
+    .modal.show{opacity:1}
+    .modal-content{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:32px;max-width:420px;width:90%;text-align:center;transform:scale(.95);transition:transform .3s ease}
+    .modal.show .modal-content{transform:scale(1)}
+    .modal-title{font-size:20px;color:#fff;margin-bottom:24px}
+    @media (max-width:900px){.sidebar{width:100%;height:auto;position:relative;border-right:none;border-bottom:1px solid rgb(35,35,35);padding:20px;display:flex;flex-direction:column;align-items:center;text-align:center;background:rgb(13,13,13)}
+      .logo{margin-bottom:20px}
+      nav ul{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+      .main-content{margin-left:0;padding:24px 16px}
+      .stats{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}}
+    @media (max-width:500px){.card,.modal-content{padding:20px}}
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="logo" onclick="window.location.href='/'">Axion</div>
+    <nav>
+      <ul>
+        <li><a href="#subscriptions" class="active">Subscriptions</a></li>
+        <li><a href="#manage">Manage</a></li>
+        <li><a href="#security">Security</a></li>
+      </ul>
+    </nav>
+  </aside>
 
+  <main class="main-content">
+    <div class="container">
+      <h1 id="page-title">Subscriptions</h1>
+      <div class="subtitle">Manage and view your active subscriptions</div>
+      <div class="divider"></div>
+
+      <div id="subscriptions" class="tab-content active">
+        <div class="stats">
+          <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value" id="activeSubs">0</div><div class="stat-sub">subscriptions</div></div>
+          <div class="stat-card"><div class="stat-label">Total HWID Resets</div><div class="stat-value" id="totalResets">0</div><div class="stat-sub">All time</div></div>
+          <div class="stat-card"><div class="stat-label">Subscription</div><div class="stat-value" id="subStatus">Active</div><div class="stat-sub" id="subDuration">Loading...</div></div>
+        </div>
+        <div class="empty-section" id="subsSection">
+          <div style="font-size:20px;color:#fff;margin-bottom:12px">No subscriptions yet</div>
+          <div style="font-size:15px;color:#888;margin-bottom:32px">Redeem a key to get started</div>
+          <button id="redeem-from-subs">Redeem Key</button>
+        </div>
+      </div>
+
+      <div id="manage" class="tab-content">
+        <div class="manage-grid">
+          <div class="card">
+            <div class="card-title">Redeem Key</div>
+            <div class="card-subtitle">Activate a new subscription</div>
+            <div class="input-group">
+              <div class="input-label">Subscription Key</div>
+              <input type="text" id="redeemKeyInput" placeholder="XXXXX-XXXXX-XXXXX-XXXXX">
+            </div>
+            <button class="redeem-btn" id="redeemBtn">Redeem Key</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="security" class="tab-content">
+        <div class="security-grid">
+          <div class="card">
+            <div class="card-title">Account Information</div>
+            <div class="card-subtitle">View and manage your account details</div>
+            <div class="info-item">
+              <div class="info-label">License</div>
+              <div class="info-value blur" id="licenseDisplay">Loading...</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">HWID</div>
+              <div class="info-value blur hwid-value" id="hwidDisplay">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Redeem Modal -->
+  <div id="redeemModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-title">Redeem Axion Key</div>
+      <div class="input-group">
+        <div class="input-label">Discord User ID</div>
+        <input type="text" id="discordIdInput" placeholder="123456789012345678">
+      </div>
+      <button class="redeem-btn" id="continueBtn">Continue</button>
+    </div>
+  </div>
+
+  <script>
+    let licenseKey = localStorage.getItem('axion_license');
+    
+    // If no license, prompt login
+    if (!licenseKey) {
+      licenseKey = prompt('Please enter your license key to access the dashboard:');
+      if (licenseKey) {
+        localStorage.setItem('axion_license', licenseKey);
+      } else {
+        window.location.href = '/';
+      }
+    }
+
+    // Load dashboard data
+    async function loadDashboard() {
+      try {
+        const res = await fetch(`/api/customer/dashboard/${licenseKey}`);
+        if (!res.ok) {
+          alert('Invalid license key');
+          localStorage.removeItem('axion_license');
+          window.location.href = '/';
+          return;
+        }
+        
+        const data = await res.json();
+        
+        // Update stats
+        document.getElementById('activeSubs').textContent = data.active ? '1' : '0';
+        document.getElementById('totalResets').textContent = data.hwid_resets;
+        document.getElementById('subStatus').textContent = data.active ? 'Active' : 'Inactive';
+        
+        // Update duration display
+        const durationMap = {
+          'weekly': 'Weekly',
+          'monthly': 'Monthly',
+          '3monthly': 'Quarterly',
+          'lifetime': 'Lifetime'
+        };
+        document.getElementById('subDuration').textContent = durationMap[data.duration] || data.duration;
+        
+        // Update security info
+        document.getElementById('licenseDisplay').textContent = data.license_key;
+        document.getElementById('hwidDisplay').textContent = data.hwid || 'Not bound';
+        
+      } catch (e) {
+        console.error('Error loading dashboard:', e);
+        alert('Failed to load dashboard data');
+      }
+    }
+
+    // Tab navigation
+    document.querySelectorAll('nav a').forEach(link => {
+      link.addEventListener('click', e => {
+        e.preventDefault();
+        const targetId = link.getAttribute('href').slice(1);
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.getElementById(targetId).classList.add('active');
+        document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+        link.classList.add('active');
+        document.getElementById('page-title').textContent = link.textContent;
+        const sub = document.querySelector('.subtitle');
+        sub.textContent = targetId === 'subscriptions' ? 'Manage and view your active subscriptions' :
+                          targetId === 'manage' ? 'Redeem keys and manage security information' :
+                          'Manage account security and HWID';
+      });
+    });
+
+    // Redeem from subscriptions button
+    document.getElementById('redeem-from-subs').onclick = () => {
+      document.querySelector('a[href="#manage"]').click();
+    };
+
+    // HWID reset
+    document.getElementById('hwidDisplay').onclick = async () => {
+      if (!confirm("Are you sure you want to reset your HWID? This action cannot be undone.")) return;
+      
+      try {
+        const res = await fetch(`/api/customer/reset-hwid/${licenseKey}`, { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('hwidDisplay').textContent = 'Not bound';
+          document.getElementById('totalResets').textContent = data.hwid_resets;
+          
+          const hwid = document.getElementById('hwidDisplay');
+          hwid.classList.add('resetting');
+          setTimeout(() => hwid.classList.remove('resetting'), 2200);
+        } else {
+          alert('Failed to reset HWID');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    };
+
+    // Modal handling
+    const modal = document.getElementById('redeemModal');
+    const redeemBtn = document.getElementById('redeemBtn');
+    const continueBtn = document.getElementById('continueBtn');
+    const discordInput = document.getElementById('discordIdInput');
+    const redeemKeyInput = document.getElementById('redeemKeyInput');
+
+    redeemBtn.onclick = () => {
+      const key = redeemKeyInput.value.trim();
+      if (!key) {
+        alert('Please enter a key');
+        return;
+      }
+      modal.style.display = 'flex';
+      setTimeout(() => modal.classList.add('show'), 10);
+      discordInput.value = '';
+    };
+
+    continueBtn.onclick = async () => {
+      const id = discordInput.value.trim();
+      const key = redeemKeyInput.value.trim();
+      
+      if (!/^\d{17,19}$/.test(id)) {
+        alert('Invalid Discord ID');
+        return;
+      }
+      
+      try {
+        const res = await fetch('/api/customer/redeem', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: key, discord_id: id })
+        });
+        
+        if (res.ok) {
+          alert('Key redeemed successfully!');
+          localStorage.setItem('axion_license', key);
+          licenseKey = key;
+          modal.classList.remove('show');
+          setTimeout(() => modal.style.display = 'none', 300);
+          redeemKeyInput.value = '';
+          loadDashboard();
+        } else {
+          const error = await res.json();
+          alert('Error: ' + error.detail);
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    };
+
+    modal.onclick = e => {
+      if (e.target === modal) {
+        modal.classList.remove('show');
+        setTimeout(() => modal.style.display = 'none', 300);
+      }
+    };
+
+    // Load dashboard on page load
+    loadDashboard();
+  </script>
+</body>
+</html>"""
 @app.get("/{license_key}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
     """Personal dashboard"""
