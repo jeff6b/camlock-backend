@@ -728,6 +728,15 @@ _INDEX_HTML = """<!DOCTYPE html>
       overflow-x: hidden;
     }
 
+    function showDashboard() {
+  if (!currentUser) {
+    showLoginModal();
+    return;
+  }
+  localStorage.setItem('axion_license', currentUser.license_key);
+  window.location.href = '/dashboard';
+}
+
     .image-container {
       width: 100%;
       height: 100vh;
@@ -1280,7 +1289,7 @@ _INDEX_HTML = """<!DOCTYPE html>
       <a onclick="showPage('configs')">Configs</a>
     </div>
     <div class="nav-right">
-      <a href="https://dashboard.getaxion.lol">Menu</a>
+      <a onclick="showDashboard()" style="cursor:pointer">Dashboard</a>
       <div id="userArea"></div>
     </div>
   </nav>
@@ -1742,6 +1751,11 @@ def serve_home():
     """SPA Homepage with all tabs"""
     return _INDEX_HTML
 
+# ============================================================================
+# FIXED CUSTOMER DASHBOARD ROUTE
+# Replace the @app.get("/dashboard") route with this corrected version
+# ============================================================================
+
 @app.get("/dashboard", response_class=HTMLResponse)
 def serve_customer_dashboard():
     """Customer Account Dashboard"""
@@ -1894,10 +1908,11 @@ def serve_customer_dashboard():
       }
     }
 
-    // Load dashboard data
+    // Load dashboard data - FIXED TO USE CORRECT ENDPOINTS
     async function loadDashboard() {
       try {
-        const res = await fetch(`/api/customer/dashboard/${licenseKey}`);
+        // CHANGED: Use /api/dashboard instead of /api/customer/dashboard
+        const res = await fetch(`/api/dashboard/${licenseKey}`);
         if (!res.ok) {
           alert('Invalid license key');
           localStorage.removeItem('axion_license');
@@ -1907,9 +1922,9 @@ def serve_customer_dashboard():
         
         const data = await res.json();
         
-        // Update stats
+        // Update stats - FIXED: Check if active is truthy
         document.getElementById('activeSubs').textContent = data.active ? '1' : '0';
-        document.getElementById('totalResets').textContent = data.hwid_resets;
+        document.getElementById('totalResets').textContent = data.hwid_resets || 0;
         document.getElementById('subStatus').textContent = data.active ? 'Active' : 'Inactive';
         
         // Update duration display
@@ -1919,7 +1934,7 @@ def serve_customer_dashboard():
           '3monthly': 'Quarterly',
           'lifetime': 'Lifetime'
         };
-        document.getElementById('subDuration').textContent = durationMap[data.duration] || data.duration;
+        document.getElementById('subDuration').textContent = durationMap[data.duration] || data.duration.toUpperCase();
         
         // Update security info
         document.getElementById('licenseDisplay').textContent = data.license_key;
@@ -1953,12 +1968,13 @@ def serve_customer_dashboard():
       document.querySelector('a[href="#manage"]').click();
     };
 
-    // HWID reset
+    // HWID reset - FIXED TO USE CORRECT ENDPOINT
     document.getElementById('hwidDisplay').onclick = async () => {
       if (!confirm("Are you sure you want to reset your HWID? This action cannot be undone.")) return;
       
       try {
-        const res = await fetch(`/api/customer/reset-hwid/${licenseKey}`, { method: 'POST' });
+        // CHANGED: Use /api/reset-hwid instead of /api/customer/reset-hwid
+        const res = await fetch(`/api/reset-hwid/${licenseKey}`, { method: 'POST' });
         if (res.ok) {
           const data = await res.json();
           document.getElementById('hwidDisplay').textContent = 'Not bound';
@@ -2003,7 +2019,8 @@ def serve_customer_dashboard():
       }
       
       try {
-        const res = await fetch('/api/customer/redeem', {
+        // USING EXISTING /api/redeem ENDPOINT
+        const res = await fetch('/api/redeem', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: key, discord_id: id })
