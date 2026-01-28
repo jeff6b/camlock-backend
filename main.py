@@ -2150,8 +2150,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
     `;
   </script>
   
-  {ANTI_DEVTOOLS_JS}
-</body>
+  {ENHANCED_ANTI_DEVTOOLS_JS>
 </html>
 """
 
@@ -2534,7 +2533,7 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
     }};
   </script>
   
-  {ANTI_DEVTOOLS_JS}
+  {ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
 </html>"""
 
@@ -2576,7 +2575,7 @@ button:hover{{background:#444}}
 <p>License key not found or has expired</p>
 <button onclick="window.location.href='/'">Return to Home</button>
 </div>
-{ANTI_DEVTOOLS_JS}
+{ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
 </html>"""
    
@@ -3307,7 +3306,7 @@ loadConfig();
 setInterval(loadConfig, 1000);
 </script>
 
-{ANTI_DEVTOOLS_JS}
+{ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
 </html>"""
 
