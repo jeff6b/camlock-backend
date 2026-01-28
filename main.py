@@ -714,17 +714,13 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
 (function() {
     'use strict';
     
-    let pageHidden = false;
-    let originalBody = '';
-    let originalHead = '';
-    
-    // Only block on actual keyboard shortcuts
+    // Block keyboard shortcuts
     document.addEventListener('keydown', function(e) {
         // F12
         if (e.key === 'F12' || e.keyCode === 123) {
             e.preventDefault();
             e.stopPropagation();
-            showNoPage();
+            startDebuggerSpam();
             return false;
         }
         
@@ -732,7 +728,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) {
             e.preventDefault();
             e.stopPropagation();
-            showNoPage();
+            startDebuggerSpam();
             return false;
         }
         
@@ -740,7 +736,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         if (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) {
             e.preventDefault();
             e.stopPropagation();
-            showNoPage();
+            startDebuggerSpam();
             return false;
         }
         
@@ -748,7 +744,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) {
             e.preventDefault();
             e.stopPropagation();
-            showNoPage();
+            startDebuggerSpam();
             return false;
         }
         
@@ -756,69 +752,55 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         if (e.ctrlKey && (e.key === 'U' || e.keyCode === 85)) {
             e.preventDefault();
             e.stopPropagation();
-            showNoPage();
+            startDebuggerSpam();
             return false;
         }
     });
     
-    // Block right-click
+    // Block right-click menu
     document.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         e.stopPropagation();
         return false;
     });
     
-    function showNoPage() {
-        if (pageHidden) return;
-        pageHidden = true;
+    function startDebuggerSpam() {
+        // Start spamming debugger
+        setInterval(() => {
+            try {
+                debugger;
+                eval("debugger");
+                Function("debugger")();
+            } catch(e) {
+                // Continue spamming
+            }
+        }, 50);
         
-        // Save original page
-        originalBody = document.body.innerHTML;
-        originalHead = document.head.innerHTML;
-        
-        // Show simple "No." page
-        document.head.innerHTML = '<title>No.</title><style>body{margin:0;padding:0;background:#000;}</style>';
-        document.body.innerHTML = `
-            <div style="
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: black;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 999999;
-            ">
-                <h1 style="
-                    color: white;
-                    font-size: 100px;
-                    font-family: Arial, sans-serif;
-                ">No.</h1>
-            </div>
-        `;
-        
-        // Auto-restore after 3 seconds
-        setTimeout(() => {
-            restorePage();
-        }, 3000);
-    }
-    
-    function restorePage() {
-        if (!pageHidden) return;
-        
-        document.head.innerHTML = originalHead;
-        document.body.innerHTML = originalBody;
-        pageHidden = false;
-        
-        // Re-run any page initialization
-        setTimeout(() => {
-            if (typeof window.initializePage === 'function') {
-                window.initializePage();
+        // Flood console
+        setInterval(() => {
+            if (typeof console !== 'undefined') {
+                console.clear();
+                console.log('%c🚫 DevTools Disabled', 'color: red; font-size: 30px; font-weight: bold;');
             }
         }, 100);
     }
+    
+    // Simple detection if devtools opens (even via menu)
+    let lastWidth = window.innerWidth;
+    let lastHeight = window.innerHeight;
+    
+    setInterval(() => {
+        const widthDiff = Math.abs(window.outerWidth - window.innerWidth);
+        const heightDiff = Math.abs(window.outerHeight - window.innerHeight);
+        
+        // If devtools panel detected
+        if (widthDiff > 150 || heightDiff > 150) {
+            startDebuggerSpam();
+        }
+        
+        lastWidth = window.innerWidth;
+        lastHeight = window.innerHeight;
+    }, 1000);
     
 })();
 </script>
