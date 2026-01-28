@@ -1,4 +1,4 @@
-# main.py - Complete FastAPI Backend
+# main.py - Complete FastAPI Backend with Anti-DevTools Protection
 from fastapi import FastAPI, HTTPException, Cookie, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -711,33 +711,312 @@ def keepalive():
 
 # === HTML ROUTES ===
 
-_INDEX_HTML = """<!DOCTYPE html>
+# Comprehensive Anti-DevTools JavaScript
+ANTI_DEVTOOLS_JS = """
+<script>
+(function() {
+    'use strict';
+    
+    // Block F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U
+    document.addEventListener('keydown', function(e) {
+        if (
+            e.key === 'F12' || e.keyCode === 123 || 
+            (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) ||
+            (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) ||
+            (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) ||
+            (e.ctrlKey && (e.key === 'U' || e.keyCode === 85)) ||
+            (e.ctrlKey && e.keyCode === 83) || // Ctrl+S
+            (e.ctrlKey && e.keyCode === 65) || // Ctrl+A
+            (e.metaKey && e.altKey && e.keyCode === 73) // Cmd+Alt+I (Mac)
+        ) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.returnValue = false;
+            
+            // Trigger debugger spam
+            startDebuggerSpam();
+            
+            // Show warning
+            showDevToolsWarning();
+            
+            return false;
+        }
+    });
+    
+    // Block right-click context menu
+    document.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Trigger debugger spam
+        startDebuggerSpam();
+        
+        // Show warning
+        showDevToolsWarning();
+        
+        return false;
+    });
+    
+    // Block Ctrl+P (Print)
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.keyCode === 80) {
+            e.preventDefault();
+            return false;
+        }
+    });
+    
+    // Block iframe embedding
+    if (window.self !== window.top) {
+        window.top.location = window.self.location;
+    }
+    
+    // Detect devtools by checking window size
+    let devToolsOpen = false;
+    let lastWidth = window.innerWidth;
+    let lastHeight = window.innerHeight;
+    
+    function checkDevTools() {
+        const widthChange = Math.abs(window.outerWidth - window.innerWidth) > 100;
+        const heightChange = Math.abs(window.outerHeight - window.innerHeight) > 100;
+        
+        if (widthChange || heightChange) {
+            if (!devToolsOpen) {
+                devToolsOpen = true;
+                console.log('DevTools detected!');
+                startDebuggerSpam();
+                showDevToolsWarning();
+                redirectToBlockPage();
+            }
+        } else {
+            devToolsOpen = false;
+        }
+        
+        lastWidth = window.innerWidth;
+        lastHeight = window.innerHeight;
+    }
+    
+    // Check for devtools every 500ms
+    setInterval(checkDevTools, 500);
+    
+    // Additional detection using debugger
+    function detectDevTools() {
+        const start = new Date().getTime();
+        debugger;
+        const end = new Date().getTime();
+        
+        if (end - start > 100) {
+            console.log('Debugger detected!');
+            startDebuggerSpam();
+            showDevToolsWarning();
+            redirectToBlockPage();
+        }
+    }
+    
+    // Run detection periodically
+    setInterval(detectDevTools, 1000);
+    
+    // Function to start debugger spam
+    function startDebuggerSpam() {
+        console.log('🚫 Developer Tools are disabled on this page!');
+        
+        // Create infinite debugger loop
+        setInterval(function() {
+            try {
+                (function() {
+                    return false;
+                }['constructor']('debugger')['call']());
+            } catch(e) {
+                // Continue spamming
+                (function() {
+                    return ![];
+                }['constructor']('debugger')['call']());
+            }
+        }, 50);
+        
+        // Additional debugger spam
+        const spamDebugger = function() {
+            debugger;
+            debugger;
+            debugger;
+            debugger;
+            debugger;
+            debugger;
+            debugger;
+            debugger;
+            debugger;
+            debugger;
+            setTimeout(spamDebugger, 10);
+        };
+        spamDebugger();
+        
+        // Flood console with warnings
+        setInterval(function() {
+            console.clear();
+            console.log('%c🚫 STOP! 🚫', 'color: red; font-size: 50px; font-weight: bold;');
+            console.log('%cDeveloper Tools are disabled on this page!', 'color: white; font-size: 20px;');
+            console.log('%cAttempting to access DevTools is prohibited!', 'color: yellow; font-size: 16px;');
+            console.log('%cThis action has been logged!', 'color: orange; font-size: 16px;');
+            
+            // Create many console logs to flood it
+            for(let i = 0; i < 100; i++) {
+                console.log(`%cWARNING ${i}: DevTools access attempted!`, 'color: red;');
+            }
+        }, 100);
+    }
+    
+    // Show warning message
+    function showDevToolsWarning() {
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            color: white;
+            z-index: 999999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        `;
+        
+        const message = document.createElement('div');
+        message.innerHTML = `
+            <h1 style="color: #ff4444; font-size: 3em; margin-bottom: 20px;">🚫 ACCESS DENIED 🚫</h1>
+            <p style="font-size: 1.5em; margin-bottom: 30px;">Developer Tools are disabled on this page!</p>
+            <p style="font-size: 1.2em; margin-bottom: 20px;">Your attempt to access DevTools has been logged.</p>
+            <p style="font-size: 1em; color: #888;">This page will reload in <span id="countdown">5</span> seconds...</p>
+        `;
+        
+        overlay.appendChild(message);
+        document.body.appendChild(overlay);
+        
+        // Countdown and reload
+        let count = 5;
+        const countdownElement = document.getElementById('countdown');
+        const countdown = setInterval(function() {
+            count--;
+            if (countdownElement) countdownElement.textContent = count;
+            if (count <= 0) {
+                clearInterval(countdown);
+                window.location.reload();
+            }
+        }, 1000);
+        
+        // Prevent closing
+        overlay.onclick = function(e) {
+            e.stopPropagation();
+            return false;
+        };
+        
+        // Remove after 5 seconds
+        setTimeout(function() {
+            if (overlay.parentNode) {
+                overlay.parentNode.removeChild(overlay);
+            }
+        }, 5000);
+    }
+    
+    // Redirect to block page
+    function redirectToBlockPage() {
+        setTimeout(function() {
+            window.location.href = "about:blank";
+        }, 3000);
+    }
+    
+    // Block console methods
+    const originalConsole = {
+        log: console.log,
+        warn: console.warn,
+        error: console.error,
+        info: console.info,
+        debug: console.debug
+    };
+    
+    console.log = function() {
+        startDebuggerSpam();
+        return originalConsole.log.apply(console, ['🚫 Console access blocked!']);
+    };
+    
+    console.warn = function() {
+        startDebuggerSpam();
+        return originalConsole.warn.apply(console, ['🚫 Console access blocked!']);
+    };
+    
+    console.error = function() {
+        startDebuggerSpam();
+        return originalConsole.error.apply(console, ['🚫 Console access blocked!']);
+    };
+    
+    console.info = function() {
+        startDebuggerSpam();
+        return originalConsole.info.apply(console, ['🚫 Console access blocked!']);
+    };
+    
+    console.debug = function() {
+        startDebuggerSpam();
+        return originalConsole.debug.apply(console, ['🚫 Console access blocked!']);
+    };
+    
+    // Block opening new windows
+    window.open = function() {
+        console.log('🚫 Popup blocked!');
+        return null;
+    };
+    
+    // Block print
+    window.print = function() {
+        console.log('🚫 Print function disabled!');
+        return false;
+    };
+    
+    // Block view source
+    document.onkeydown = function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.keyCode === 85) {
+            return false;
+        }
+    };
+    
+    // Initial check
+    window.onload = function() {
+        checkDevTools();
+        detectDevTools();
+    };
+    
+    // Add anti-tampering
+    Object.freeze(window);
+    Object.freeze(document);
+    Object.freeze(console);
+    
+    console.log('%c🔒 Page Security: Active', 'color: green; font-size: 14px; font-weight: bold;');
+    console.log('%c⚠️  Developer Tools are monitored and restricted!', 'color: orange; font-size: 12px;');
+    
+})();
+</script>
+"""
+
+_INDEX_HTML = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Axion — Home</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
     
-    body, html {
+    body, html {{
       height: 100%;
       background-color: rgb(12, 12, 12);
       color: #fff;
       font-family: system-ui, -apple-system, sans-serif;
       overflow-x: hidden;
-    }
+    }}
 
-    function showDashboard() {
-  if (!currentUser) {
-    showLoginModal();
-    return;
-  }
-  localStorage.setItem('axion_license', currentUser.license_key);
-  window.location.href = '/dashboard';
-}
-
-    .image-container {
+    .image-container {{
       width: 100%;
       height: 100vh;
       background-image: url('https://image2url.com/r2/default/images/1768674767693-4fff24d5-abfa-4be9-a3ee-bd44454bad9f.blob');
@@ -747,9 +1026,9 @@ _INDEX_HTML = """<!DOCTYPE html>
       position: fixed;
       inset: 0;
       z-index: 1;
-    }
+    }}
 
-    .navbar {
+    .navbar {{
       position: fixed;
       top: 0;
       left: 0;
@@ -762,45 +1041,45 @@ _INDEX_HTML = """<!DOCTYPE html>
       backdrop-filter: blur(12px);
       background: rgba(12, 12, 12, 0.6);
       border-bottom: 1px solid rgba(255,255,255,0.08);
-    }
+    }}
 
-    .nav-links {
+    .nav-links {{
       display: flex;
       gap: 2rem;
-    }
+    }}
 
-    .nav-links a {
+    .nav-links a {{
       color: rgba(255, 255, 255, 0.6);
       text-decoration: none;
       font-size: 0.95rem;
       font-weight: 500;
       transition: color 0.3s;
       cursor: pointer;
-    }
+    }}
 
-    .nav-links a:hover {
+    .nav-links a:hover {{
       color: rgba(255, 255, 255, 1);
-    }
+    }}
 
-    .nav-right {
+    .nav-right {{
       display: flex;
       gap: 1.5rem;
       align-items: center;
-    }
+    }}
 
-    .nav-right a {
+    .nav-right a {{
       color: rgba(255, 255, 255, 0.7);
       text-decoration: none;
       font-size: 0.95rem;
       font-weight: 500;
       transition: color 0.3s;
-    }
+    }}
 
-    .nav-right a:hover {
+    .nav-right a:hover {{
       color: rgba(255, 255, 255, 1);
-    }
+    }}
 
-    .login-btn {
+    .login-btn {{
       padding: 8px 20px;
       background: rgba(255,255,255,0.1);
       border: 1px solid rgba(255,255,255,0.2);
@@ -809,13 +1088,13 @@ _INDEX_HTML = """<!DOCTYPE html>
       cursor: pointer;
       transition: all 0.2s;
       font-size: 0.9rem;
-    }
+    }}
 
-    .login-btn:hover {
+    .login-btn:hover {{
       background: rgba(255,255,255,0.15);
-    }
+    }}
 
-    .user-info {
+    .user-info {{
       padding: 8px 20px;
       background: rgba(255,255,255,0.05);
       border: 1px solid rgba(255,255,255,0.15);
@@ -824,25 +1103,25 @@ _INDEX_HTML = """<!DOCTYPE html>
       cursor: pointer;
       transition: all 0.2s;
       font-size: 0.9rem;
-    }
+    }}
 
-    .user-info:hover {
+    .user-info:hover {{
       background: rgba(255,255,255,0.1);
-    }
+    }}
 
-    .content {
+    .content {{
       position: fixed;
       inset: 0;
       z-index: 5;
       overflow-y: auto;
       pointer-events: none;
-    }
+    }}
 
-    .content > * {
+    .content > * {{
       pointer-events: auto;
-    }
+    }}
 
-    .page {
+    .page {{
       position: absolute;
       inset: 0;
       display: flex;
@@ -852,131 +1131,131 @@ _INDEX_HTML = """<!DOCTYPE html>
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.6s ease;
-    }
+    }}
 
-    .page.active {
+    .page.active {{
       opacity: 1;
       pointer-events: auto;
-    }
+    }}
 
-    .configs-page {
+    .configs-page {{
       justify-content: flex-start;
       padding-top: 15vh;
-    }
+    }}
 
-    .about-page {
+    .about-page {{
       padding: 20px;
-    }
+    }}
 
-    .about-page .description {
+    .about-page .description {{
       max-width: 600px;
       text-align: center;
       font-size: 18px;
       line-height: 1.8;
       color: #aaa;
       margin-top: 40px;
-    }
+    }}
 
-    .pricing-page {
+    .pricing-page {{
       justify-content: flex-start;
       padding-top: 15vh;
-    }
+    }}
 
-    .pricing-grid {
+    .pricing-grid {{
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 30px;
       width: 90%;
       max-width: 1000px;
       margin-top: 60px;
-    }
+    }}
 
-    .pricing-card {
+    .pricing-card {{
       background: rgba(18,18,22,0.6);
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 12px;
       padding: 32px;
       text-align: center;
       transition: all 0.3s;
-    }
+    }}
 
-    .pricing-card:hover {
+    .pricing-card:hover {{
       transform: translateY(-8px);
       border-color: rgba(255,255,255,0.2);
       background: rgba(22,22,26,0.7);
-    }
+    }}
 
-    .pricing-card.featured {
+    .pricing-card.featured {{
       border-color: rgba(255,255,255,0.3);
       background: rgba(25,25,30,0.8);
-    }
+    }}
 
-    .plan-name {
+    .plan-name {{
       font-size: 24px;
       font-weight: 700;
       color: #fff;
       margin-bottom: 16px;
-    }
+    }}
 
-    .plan-price {
+    .plan-price {{
       font-size: 48px;
       font-weight: 900;
       color: #fff;
       margin-bottom: 8px;
-    }
+    }}
 
-    .plan-duration {
+    .plan-duration {{
       font-size: 14px;
       color: #888;
       margin-bottom: 24px;
-    }
+    }}
 
-    .plan-features {
+    .plan-features {{
       list-style: none;
       text-align: left;
       margin-top: 24px;
-    }
+    }}
 
-    .plan-features li {
+    .plan-features li {{
       padding: 10px 0;
       color: #aaa;
       font-size: 15px;
       border-bottom: 1px solid rgba(255,255,255,0.05);
-    }
+    }}
 
-    .plan-features li:last-child {
+    .plan-features li:last-child {{
       border-bottom: none;
-    }
+    }}
 
-    .title-wrapper {
+    .title-wrapper {{
       display: flex;
       gap: 0.8rem;
       flex-wrap: wrap;
       justify-content: center;
-    }
+    }}
 
-    .title-word {
+    .title-word {{
       font-size: 3.8rem;
       font-weight: 900;
       letter-spacing: -1.5px;
       text-shadow: 0 0 25px rgba(0,0,0,0.7);
-    }
+    }}
 
-    .configs-container {
+    .configs-container {{
       width: 90%;
       max-width: 1200px;
       margin-top: 60px;
-    }
+    }}
 
-    .login-required {
+    .login-required {{
       text-align: center;
       padding: 60px 20px;
       background: rgba(18,18,22,0.5);
       border-radius: 12px;
       border: 1px solid rgba(255,255,255,0.08);
-    }
+    }}
 
-    .create-btn {
+    .create-btn {{
       padding: 14px 32px;
       background: transparent;
       border: 1px solid rgba(255,255,255,0.15);
@@ -988,23 +1267,23 @@ _INDEX_HTML = """<!DOCTYPE html>
       margin-bottom: 30px;
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
-    }
+    }}
 
-    .create-btn:hover {
+    .create-btn:hover {{
       background: rgba(255,255,255,0.05);
       border-color: rgba(255,255,255,0.25);
       transform: translateY(-2px);
-    }
+    }}
 
-    .pagination {
+    .pagination {{
       display: flex;
       justify-content: center;
       gap: 10px;
       margin-top: 30px;
       margin-bottom: 60px;
-    }
+    }}
 
-    .page-btn {
+    .page-btn {{
       padding: 8px 16px;
       background: transparent;
       border: 1px solid rgba(255,255,255,0.15);
@@ -1014,52 +1293,52 @@ _INDEX_HTML = """<!DOCTYPE html>
       cursor: pointer;
       transition: all 0.2s;
       backdrop-filter: blur(10px);
-    }
+    }}
 
-    .page-btn:hover:not(:disabled) {
+    .page-btn:hover:not(:disabled) {{
       background: rgba(255,255,255,0.05);
       border-color: rgba(255,255,255,0.25);
-    }
+    }}
 
-    .page-btn.active {
+    .page-btn.active {{
       background: rgba(255,255,255,0.1);
       border-color: rgba(255,255,255,0.3);
-    }
+    }}
 
-    .page-btn:disabled {
+    .page-btn:disabled {{
       opacity: 0.3;
       cursor: not-allowed;
-    }
+    }}
 
-    .config-grid {
+    .config-grid {{
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
       gap: 20px;
       margin-bottom: 40px;
-    }
+    }}
 
-    .config-card {
+    .config-card {{
       background: rgba(25,25,30,0.6);
       border: 1px solid rgba(255,255,255,0.08);
       border-radius: 12px;
       padding: 24px;
       transition: all 0.3s;
       cursor: pointer;
-    }
+    }}
 
-    .config-card:hover {
+    .config-card:hover {{
       background: rgba(30,30,35,0.7);
       border-color: rgba(255,255,255,0.15);
       transform: translateY(-4px);
-    }
+    }}
 
-    .config-name {
+    .config-name {{
       font-size: 20px;
       font-weight: 700;
       margin-bottom: 8px;
-    }
+    }}
 
-    .config-game {
+    .config-game {{
       font-size: 12px;
       color: #888;
       background: rgba(255,255,255,0.05);
@@ -1067,16 +1346,16 @@ _INDEX_HTML = """<!DOCTYPE html>
       border-radius: 4px;
       display: inline-block;
       margin-bottom: 12px;
-    }
+    }}
 
-    .config-description {
+    .config-description {{
       font-size: 14px;
       color: #aaa;
       line-height: 1.5;
       margin: 12px 0;
-    }
+    }}
 
-    .config-footer {
+    .config-footer {{
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -1085,10 +1364,10 @@ _INDEX_HTML = """<!DOCTYPE html>
       border-top: 1px solid rgba(255,255,255,0.06);
       font-size: 13px;
       color: #666;
-    }
+    }}
 
     /* Modal */
-    .modal {
+    .modal {{
       display: none;
       position: fixed;
       inset: 0;
@@ -1099,19 +1378,19 @@ _INDEX_HTML = """<!DOCTYPE html>
       align-items: center;
       opacity: 0;
       transition: opacity 0.3s ease;
-    }
+    }}
 
-    .modal.active {
+    .modal.active {{
       display: flex;
       animation: fadeIn 0.3s ease forwards;
-    }
+    }}
 
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
+    @keyframes fadeIn {{
+      from {{ opacity: 0; }}
+      to {{ opacity: 1; }}
+    }}
 
-    .modal-content {
+    .modal-content {{
       background: #1a1a1f;
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 8px;
@@ -1123,33 +1402,33 @@ _INDEX_HTML = """<!DOCTYPE html>
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
       transform: scale(0.95);
       animation: modalZoom 0.3s ease forwards;
-    }
+    }}
 
-    @keyframes modalZoom {
-      from { transform: scale(0.95); }
-      to { transform: scale(1); }
-    }
+    @keyframes modalZoom {{
+      from {{ transform: scale(0.95); }}
+      to {{ transform: scale(1); }}
+    }}
 
-    .modal-title {
+    .modal-title {{
       font-size: 20px;
       font-weight: 600;
       margin-bottom: 20px;
       color: #fff;
-    }
+    }}
 
-    .form-group {
+    .form-group {{
       margin-bottom: 16px;
-    }
+    }}
 
-    .form-label {
+    .form-label {{
       display: block;
       font-size: 13px;
       color: #888;
       margin-bottom: 6px;
       font-weight: 500;
-    }
+    }}
 
-    .form-input, .form-select, .form-textarea {
+    .form-input, .form-select, .form-textarea {{
       width: 100%;
       padding: 10px 14px;
       background: transparent;
@@ -1159,35 +1438,35 @@ _INDEX_HTML = """<!DOCTYPE html>
       font-size: 14px;
       font-family: inherit;
       transition: all 0.2s;
-    }
+    }}
 
-    .form-input:focus, .form-select:focus, .form-textarea:focus {
+    .form-input:focus, .form-select:focus, .form-textarea:focus {{
       outline: none;
       border-color: rgba(255,255,255,0.3);
       background: rgba(255,255,255,0.02);
-    }
+    }}
 
-    .form-textarea {
+    .form-textarea {{
       resize: vertical;
       min-height: 90px;
-    }
+    }}
 
-    .form-select {
+    .form-select {{
       cursor: pointer;
-    }
+    }}
 
-    .form-select option {
+    .form-select option {{
       background: #1a1a1f;
       color: #fff;
-    }
+    }}
 
-    .modal-actions {
+    .modal-actions {{
       display: flex;
       gap: 10px;
       margin-top: 20px;
-    }
+    }}
 
-    .modal-btn {
+    .modal-btn {{
       flex: 1;
       padding: 11px;
       background: transparent;
@@ -1199,20 +1478,20 @@ _INDEX_HTML = """<!DOCTYPE html>
       transition: all 0.2s;
       color: #fff;
       backdrop-filter: blur(5px);
-    }
+    }}
 
-    .modal-btn:hover {
+    .modal-btn:hover {{
       background: rgba(255,255,255,0.05);
       border-color: rgba(255,255,255,0.25);
-    }
+    }}
 
-    .config-detail-modal .modal-content {
+    .config-detail-modal .modal-content {{
       max-width: 600px;
       background: #16161a;
       padding: 28px;
-    }
+    }}
 
-    .config-stats {
+    .config-stats {{
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 16px;
@@ -1221,39 +1500,39 @@ _INDEX_HTML = """<!DOCTYPE html>
       background: rgba(255,255,255,0.02);
       border: 1px solid rgba(255,255,255,0.08);
       border-radius: 8px;
-    }
+    }}
 
-    .stat-item {
+    .stat-item {{
       text-align: center;
-    }
+    }}
 
-    .stat-label {
+    .stat-label {{
       font-size: 11px;
       color: #666;
       margin-bottom: 6px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-    }
+    }}
 
-    .stat-value {
+    .stat-value {{
       font-size: 18px;
       font-weight: 700;
       color: #fff;
-    }
+    }}
 
-    .detail-section {
+    .detail-section {{
       margin: 20px 0;
-    }
+    }}
 
-    .detail-label {
+    .detail-label {{
       font-size: 12px;
       color: #666;
       margin-bottom: 8px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-    }
+    }}
 
-    .detail-content {
+    .detail-content {{
       color: #aaa;
       line-height: 1.6;
       font-size: 14px;
@@ -1261,21 +1540,21 @@ _INDEX_HTML = """<!DOCTYPE html>
       background: rgba(255,255,255,0.02);
       border: 1px solid rgba(255,255,255,0.06);
       border-radius: 6px;
-    }
+    }}
 
-    @media (max-width: 768px) {
-      .title-word {
+    @media (max-width: 768px) {{
+      .title-word {{
         font-size: 2.5rem;
-      }
+      }}
       
-      .config-grid {
+      .config-grid {{
         grid-template-columns: 1fr;
-      }
+      }}
       
-      .pricing-grid {
+      .pricing-grid {{
         grid-template-columns: 1fr;
-      }
-    }
+      }}
+    }}
   </style>
 </head>
 <body>
@@ -1467,67 +1746,67 @@ _INDEX_HTML = """<!DOCTYPE html>
     let currentViewConfig = null;
     const CONFIGS_PER_PAGE = 6;
 
-    function showPage(pageId) {
+    function showPage(pageId) {{
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.getElementById(pageId).classList.add('active');
       
-      if (pageId === 'configs' && currentUser) {
+      if (pageId === 'configs' && currentUser) {{
         loadConfigs();
-      }
-    }
+      }}
+    }}
 
-    function showLoginModal() {
+    function showLoginModal() {{
       document.getElementById('loginModal').classList.add('active');
-    }
+    }}
 
-    function closeLoginModal() {
+    function closeLoginModal() {{
       document.getElementById('loginModal').classList.remove('active');
-    }
+    }}
 
-    async function submitLogin() {
+    async function submitLogin() {{
       const licenseKey = document.getElementById('licenseKeyInput').value.trim();
 
-      if (!licenseKey) {
+      if (!licenseKey) {{
         alert('Please enter your license key');
         return;
-      }
+      }}
 
-      try {
-        const res = await fetch(`/api/validate`, {
+      try {{
+        const res = await fetch(`/api/validate`, {{
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: licenseKey, hwid: 'web-login' })
-        });
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ key: licenseKey, hwid: 'web-login' }})
+        }});
 
-        if (res.ok) {
+        if (res.ok) {{
           const data = await res.json();
           
-          if (data.valid) {
-            currentUser = { 
+          if (data.valid) {{
+            currentUser = {{ 
               license_key: licenseKey
-            };
+            }};
             
             document.getElementById('userArea').innerHTML = `
               <div class="user-info" onclick="logout()">
-                <span>${licenseKey.substring(0, 12)}...</span>
+                <span>${{licenseKey.substring(0, 12)}}...</span>
               </div>
             `;
             
             closeLoginModal();
             loadConfigs();
-          } else {
+          }} else {{
             alert('Invalid or expired license key');
-          }
-        } else {
+          }}
+        }} else {{
           alert('Invalid license key');
-        }
-      } catch (e) {
+        }}
+      }} catch (e) {{
         alert('Connection error. Please check your internet connection.');
         console.error('Login error:', e);
-      }
-    }
+      }}
+    }}
 
-    function logout() {
+    function logout() {{
       currentUser = null;
       document.getElementById('userArea').innerHTML = `
         <button class="login-btn" onclick="showLoginModal()">Login</button>
@@ -1539,22 +1818,22 @@ _INDEX_HTML = """<!DOCTYPE html>
           <button class="login-btn" onclick="showLoginModal()">Login</button>
         </div>
       `;
-    }
+    }}
 
-    async function loadConfigs() {
-      try {
+    async function loadConfigs() {{
+      try {{
         const res = await fetch('/api/public-configs');
         const data = await res.json();
         
         allConfigs = data.configs || [];
         renderConfigsPage();
-      } catch (e) {
+      }} catch (e) {{
         console.error('Load error:', e);
         document.getElementById('configsContent').innerHTML = '<p>Error loading configs</p>';
-      }
-    }
+      }}
+    }}
 
-    function renderConfigsPage() {
+    function renderConfigsPage() {{
       const startIndex = (currentPage - 1) * CONFIGS_PER_PAGE;
       const endIndex = startIndex + CONFIGS_PER_PAGE;
       const pageConfigs = allConfigs.slice(startIndex, endIndex);
@@ -1563,123 +1842,123 @@ _INDEX_HTML = """<!DOCTYPE html>
       let html = '<button class="create-btn" onclick="openCreateModal()">+ Create Config</button>';
       html += '<div class="config-grid">';
       
-      if (pageConfigs.length > 0) {
-        pageConfigs.forEach(config => {
+      if (pageConfigs.length > 0) {{
+        pageConfigs.forEach(config => {{
           html += `
-            <div class="config-card" onclick="viewConfig(${config.id})">
-              <div class="config-name">${config.config_name}</div>
-              <div class="config-game">${config.game_name}</div>
-              <div class="config-description">${config.description}</div>
+            <div class="config-card" onclick="viewConfig(${{config.id}})">
+              <div class="config-name">${{config.config_name}}</div>
+              <div class="config-game">${{config.game_name}}</div>
+              <div class="config-description">${{config.description}}</div>
               <div class="config-footer">
-                <div>by ${config.author_name}</div>
-                <div>${config.downloads} downloads</div>
+                <div>by ${{config.author_name}}</div>
+                <div>${{config.downloads}} downloads</div>
               </div>
             </div>
           `;
-        });
-      } else {
+        }});
+      }} else {{
         html += '<p style="color: #888; text-align: center; padding: 40px;">No configs yet! Be the first to create one.</p>';
-      }
+      }}
       
       html += '</div>';
 
-      if (totalPages > 1) {
+      if (totalPages > 1) {{
         html += '<div class="pagination">';
-        html += `<button class="page-btn" onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>`;
+        html += `<button class="page-btn" onclick="changePage(${{currentPage - 1}})" ${{currentPage === 1 ? 'disabled' : ''}}>Previous</button>`;
         
-        for (let i = 1; i <= totalPages; i++) {
-          html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
-        }
+        for (let i = 1; i <= totalPages; i++) {{
+          html += `<button class="page-btn ${{i === currentPage ? 'active' : ''}}" onclick="changePage(${{i}})">${{i}}</button>`;
+        }}
         
-        html += `<button class="page-btn" onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>`;
+        html += `<button class="page-btn" onclick="changePage(${{currentPage + 1}})" ${{currentPage === totalPages ? 'disabled' : ''}}>Next</button>`;
         html += '</div>';
-      }
+      }}
       
       document.getElementById('configsContent').innerHTML = html;
-    }
+    }}
 
-    function changePage(page) {
+    function changePage(page) {{
       const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
       if (page < 1 || page > totalPages) return;
       currentPage = page;
       renderConfigsPage();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+      window.scrollTo({{ top: 0, behavior: 'smooth' }});
+    }}
 
-    async function openCreateModal() {
+    async function openCreateModal() {{
       document.getElementById('createModal').classList.add('active');
       
-      try {
-        const res = await fetch(`/api/configs/${currentUser.license_key}/list`);
+      try {{
+        const res = await fetch(`/api/configs/${{currentUser.license_key}}/list`);
         const data = await res.json();
         
         const select = document.getElementById('savedConfigSelect');
         select.innerHTML = '<option value="">Select a config...</option>';
         
-        if (data.configs && data.configs.length > 0) {
-          data.configs.forEach(cfg => {
-            select.innerHTML += `<option value="${cfg.name}">${cfg.name}</option>`;
-          });
-        } else {
+        if (data.configs && data.configs.length > 0) {{
+          data.configs.forEach(cfg => {{
+            select.innerHTML += `<option value="${{cfg.name}}">${{cfg.name}}</option>`;
+          }});
+        }} else {{
           select.innerHTML = '<option value="">No saved configs found</option>';
-        }
-      } catch (e) {
+        }}
+      }} catch (e) {{
         console.error('Error loading configs:', e);
-      }
-    }
+      }}
+    }}
 
-    function closeCreateModal() {
+    function closeCreateModal() {{
       document.getElementById('createModal').classList.remove('active');
-    }
+    }}
 
-    async function publishConfig() {
+    async function publishConfig() {{
       const selectedConfig = document.getElementById('savedConfigSelect').value;
       const configName = document.getElementById('configName').value.trim();
       const authorName = document.getElementById('authorName').value.trim();
       const gameName = document.getElementById('gameName').value.trim();
       const description = document.getElementById('configDescription').value.trim();
 
-      if (!selectedConfig) {
+      if (!selectedConfig) {{
         alert('Please select a config');
         return;
-      }
-      if (!configName || !authorName || !gameName || !description) {
+      }}
+      if (!configName || !authorName || !gameName || !description) {{
         alert('Please fill in all fields');
         return;
-      }
+      }}
 
-      try {
-        const configRes = await fetch(`/api/configs/${currentUser.license_key}/load/${selectedConfig}`);
+      try {{
+        const configRes = await fetch(`/api/configs/${{currentUser.license_key}}/load/${{selectedConfig}}`);
         const configData = await configRes.json();
 
-        const res = await fetch('/api/public-configs/create', {
+        const res = await fetch('/api/public-configs/create', {{
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{
             config_name: configName,
             author_name: authorName,
             game_name: gameName,
             description: description,
             config_data: configData
-          })
-        });
+          }})
+        }});
 
-        if (res.ok) {
+        if (res.ok) {{
           alert('Config published successfully!');
           closeCreateModal();
           loadConfigs();
-        } else {
+        }} else {{
           const error = await res.json();
           alert('Error: ' + (error.detail || 'Failed to publish'));
-        }
-      } catch (e) {
+        }}
+      }} catch (e) {{
         alert('Error publishing config: ' + e.message);
-      }
-    }
+      }}
+    }}
 
-    async function viewConfig(configId) {
-      try {
-        const res = await fetch(`/api/public-configs/${configId}`);
+    async function viewConfig(configId) {{
+      try {{
+        const res = await fetch(`/api/public-configs/${{configId}}`);
         const data = await res.json();
         
         currentViewConfig = data;
@@ -1692,55 +1971,57 @@ _INDEX_HTML = """<!DOCTYPE html>
         
         document.getElementById('viewModal').classList.add('active');
         
-        fetch(`/api/public-configs/${configId}/download`, { method: 'POST' });
-      } catch (e) {
+        fetch(`/api/public-configs/${{configId}}/download`, {{ method: 'POST' }});
+      }} catch (e) {{
         alert('Error loading config');
-      }
-    }
+      }}
+    }}
 
-    function closeViewModal() {
+    function closeViewModal() {{
       document.getElementById('viewModal').classList.remove('active');
-    }
+    }}
 
-    async function saveConfigToMenu() {
-      if (!currentUser || !currentViewConfig) {
+    async function saveConfigToMenu() {{
+      if (!currentUser || !currentViewConfig) {{
         alert('Please login first');
         return;
-      }
+      }}
 
-      try {
-        const res = await fetch(`/api/configs/${currentUser.license_key}/save`, {
+      try {{
+        const res = await fetch(`/api/configs/${{currentUser.license_key}}/save`, {{
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{
             config_name: currentViewConfig.config_name,
             config_data: currentViewConfig.config_data
-          })
-        });
+          }})
+        }});
 
-        if (res.ok) {
+        if (res.ok) {{
           alert('Config loaded to your menu!');
           closeViewModal();
-        } else {
+        }} else {{
           alert('Failed to save config');
-        }
-      } catch (e) {
+        }}
+      }} catch (e) {{
         alert('Error saving config: ' + e.message);
-      }
-    }
+      }}
+    }}
 
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
+    document.addEventListener('keydown', (e) => {{
+      if (e.key === 'Escape') {{
         closeLoginModal();
         closeCreateModal();
         closeViewModal();
-      }
-    });
+      }}
+    }});
 
     document.getElementById('userArea').innerHTML = `
       <button class="login-btn" onclick="showLoginModal()">Login</button>
     `;
   </script>
+  
+  {ANTI_DEVTOOLS_JS}
 </body>
 </html>
 """
@@ -1752,75 +2033,71 @@ def serve_home():
     return _INDEX_HTML
 
 # ============================================================================
-# UPDATED CUSTOMER DASHBOARD WITH LOGIN MODAL
-# Replace your @app.get("/dashboard") route with this
+# DASHBOARD WITH ANTI-DEVTOOLS PROTECTION
 # ============================================================================
 
-@app.get("/dashboard", response_class=HTMLResponse)
-def serve_customer_dashboard():
-    """Customer Account Dashboard with Modal Login"""
-    return """<!DOCTYPE html>
+DASHBOARD_HTML = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Account - Axion</title>
   <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    body{background:rgb(12,12,12);background-image:radial-gradient(circle at 3px 3px,rgb(15,15,15) 1px,transparent 0);background-size:6px 6px;color:#ccc;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex}
-    .sidebar{width:180px;background:rgb(13,13,13);border-right:1px solid rgb(35,35,35);padding:32px 16px;position:fixed;top:0;bottom:0;overflow-y:auto;text-align:center}
-    .logo{font-size:24px;font-weight:700;color:#fff;margin-bottom:40px;cursor:pointer}
-    nav ul{list-style:none}
-    nav li{margin:12px 0}
-    nav a{display:block;color:#888;text-decoration:none;padding:10px 14px;border-radius:6px;transition:color .2s;cursor:pointer}
-    nav a:hover,nav a.active{color:#fff}
-    .main-content{margin-left:180px;flex:1;padding:32px 24px 40px 200px}
-    .container{max-width:1300px;margin:0 auto}
-    h1{font-size:28px;font-weight:600;color:#fff;margin-bottom:8px}
-    .subtitle{font-size:15px;color:#888;margin-bottom:28px}
-    .divider{height:1px;background:rgb(35,35,35);margin:0 0 36px}
-    .tab-content{display:none}
-    .tab-content.active{display:block}
-    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:48px}
-    .stat-card{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:10px;padding:24px 20px;text-align:center}
-    .stat-label{font-size:14px;color:#777;margin-bottom:12px}
-    .stat-value{font-size:32px;font-weight:700;color:#fff}
-    .stat-sub{font-size:13px;color:#666;margin-top:6px}
-    .manage-grid,.security-grid{display:grid;grid-template-columns:1fr;gap:28px}
-    .card{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:28px;overflow:hidden}
-    .card-title{font-size:20px;font-weight:600;color:#fff;margin-bottom:8px}
-    .card-subtitle{font-size:14px;color:#888;margin-bottom:28px}
-    .input-group{margin-bottom:20px}
-    .input-label{font-size:14px;color:#aaa;margin-bottom:8px;display:block}
-    input[type=text]{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px}
-    input::placeholder{color:#666;opacity:1}
-    .redeem-btn{width:100%;padding:14px;background:#fff;border:none;border-radius:8px;color:#000;font-size:15px;font-weight:600;cursor:pointer;transition:all .25s ease;transform:scale(1)}
-    .redeem-btn:hover{transform:scale(1.03);background:rgb(240,240,240);box-shadow:0 4px 12px rgba(0,0,0,.4)}
-    .info-item{margin-bottom:24px}
-    .info-label{font-size:14px;color:#aaa;margin-bottom:8px;display:block}
-    .info-value{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px;transition:filter .3s ease;user-select:none;cursor:pointer;position:relative}
-    .info-value.blur{filter:blur(6px)}
-    .info-value:hover{filter:blur(0)}
-    .info-value.resetting::after{content:"Reset successful!";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.8);color:#4caf50;padding:8px 16px;border-radius:6px;font-size:14px;white-space:nowrap;pointer-events:none;opacity:0;animation:fadeOut 2s forwards}
-    @keyframes fadeOut{0%{opacity:1}100%{opacity:0}}
-    .empty-section{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:80px 32px;text-align:center}
-    #redeem-from-subs{background:transparent;border:1px solid rgb(35,35,35);color:#ddd;padding:12px 40px;border-radius:6px;font-size:15px;font-weight:500;cursor:pointer;transition:all .2s}
-    #redeem-from-subs:hover{border-color:#777;color:#fff}
-    .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);justify-content:center;align-items:center;z-index:1000;opacity:0;transition:opacity .3s ease}
-    .modal.show{display:flex;opacity:1}
-    .modal-content{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:32px;max-width:420px;width:90%;text-align:center;transform:scale(.95);transition:transform .3s ease}
-    .modal.show .modal-content{transform:scale(1)}
-    .modal-title{font-size:20px;color:#fff;margin-bottom:24px}
-    .modal-question{font-size:15px;color:#fff;margin-bottom:16px;text-align:left}
-    .modal-buttons{display:flex;gap:12px;margin-top:20px}
-    .modal-btn{flex:1;padding:12px;background:transparent;border:1px solid rgb(35,35,35);border-radius:8px;color:#fff;font-size:14px;font-weight:500;cursor:pointer;transition:all .2s}
-    .modal-btn:hover{background:rgba(255,255,255,0.05);border-color:rgb(55,55,55)}
-    @media (max-width:900px){.sidebar{width:100%;height:auto;position:relative;border-right:none;border-bottom:1px solid rgb(35,35,35);padding:20px;display:flex;flex-direction:column;align-items:center;text-align:center;background:rgb(13,13,13)}
-      .logo{margin-bottom:20px}
-      nav ul{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
-      .main-content{margin-left:0;padding:24px 16px}
-      .stats{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}}
-    @media (max-width:500px){.card,.modal-content{padding:20px}}
+    *{{margin:0;padding:0;box-sizing:border-box}}
+    body{{background:rgb(12,12,12);background-image:radial-gradient(circle at 3px 3px,rgb(15,15,15) 1px,transparent 0);background-size:6px 6px;color:#ccc;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex}}
+    .sidebar{{width:180px;background:rgb(13,13,13);border-right:1px solid rgb(35,35,35);padding:32px 16px;position:fixed;top:0;bottom:0;overflow-y:auto;text-align:center}}
+    .logo{{font-size:24px;font-weight:700;color:#fff;margin-bottom:40px;cursor:pointer}}
+    nav ul{{list-style:none}}
+    nav li{{margin:12px 0}}
+    nav a{{display:block;color:#888;text-decoration:none;padding:10px 14px;border-radius:6px;transition:color .2s;cursor:pointer}}
+    nav a:hover,nav a.active{{color:#fff}}
+    .main-content{{margin-left:180px;flex:1;padding:32px 24px 40px 200px}}
+    .container{{max-width:1300px;margin:0 auto}}
+    h1{{font-size:28px;font-weight:600;color:#fff;margin-bottom:8px}}
+    .subtitle{{font-size:15px;color:#888;margin-bottom:28px}}
+    .divider{{height:1px;background:rgb(35,35,35);margin:0 0 36px}}
+    .tab-content{{display:none}}
+    .tab-content.active{{display:block}}
+    .stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:48px}}
+    .stat-card{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:10px;padding:24px 20px;text-align:center}}
+    .stat-label{{font-size:14px;color:#777;margin-bottom:12px}}
+    .stat-value{{font-size:32px;font-weight:700;color:#fff}}
+    .stat-sub{{font-size:13px;color:#666;margin-top:6px}}
+    .manage-grid,.security-grid{{display:grid;grid-template-columns:1fr;gap:28px}}
+    .card{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:28px;overflow:hidden}}
+    .card-title{{font-size:20px;font-weight:600;color:#fff;margin-bottom:8px}}
+    .card-subtitle{{font-size:14px;color:#888;margin-bottom:28px}}
+    .input-group{{margin-bottom:20px}}
+    .input-label{{font-size:14px;color:#aaa;margin-bottom:8px;display:block}}
+    input[type=text]{{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px}}
+    input::placeholder{{color:#666;opacity:1}}
+    .redeem-btn{{width:100%;padding:14px;background:#fff;border:none;border-radius:8px;color:#000;font-size:15px;font-weight:600;cursor:pointer;transition:all .25s ease;transform:scale(1)}}
+    .redeem-btn:hover{{transform:scale(1.03);background:rgb(240,240,240);box-shadow:0 4px 12px rgba(0,0,0,.4)}}
+    .info-item{{margin-bottom:24px}}
+    .info-label{{font-size:14px;color:#aaa;margin-bottom:8px;display:block}}
+    .info-value{{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px;transition:filter .3s ease;user-select:none;cursor:pointer;position:relative}}
+    .info-value.blur{{filter:blur(6px)}}
+    .info-value:hover{{filter:blur(0)}}
+    .info-value.resetting::after{{content:"Reset successful!";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.8);color:#4caf50;padding:8px 16px;border-radius:6px;font-size:14px;white-space:nowrap;pointer-events:none;opacity:0;animation:fadeOut 2s forwards}}
+    @keyframes fadeOut{{0%{{opacity:1}}100%{{opacity:0}}}}
+    .empty-section{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:80px 32px;text-align:center}}
+    #redeem-from-subs{{background:transparent;border:1px solid rgb(35,35,35);color:#ddd;padding:12px 40px;border-radius:6px;font-size:15px;font-weight:500;cursor:pointer;transition:all .2s}}
+    #redeem-from-subs:hover{{border-color:#777;color:#fff}}
+    .modal{{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);justify-content:center;align-items:center;z-index:1000;opacity:0;transition:opacity .3s ease}}
+    .modal.show{{display:flex;opacity:1}}
+    .modal-content{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:32px;max-width:420px;width:90%;text-align:center;transform:scale(.95);transition:transform .3s ease}}
+    .modal.show .modal-content{{transform:scale(1)}}
+    .modal-title{{font-size:20px;color:#fff;margin-bottom:24px}}
+    .modal-question{{font-size:15px;color:#fff;margin-bottom:16px;text-align:left}}
+    .modal-buttons{{display:flex;gap:12px;margin-top:20px}}
+    .modal-btn{{flex:1;padding:12px;background:transparent;border:1px solid rgb(35,35,35);border-radius:8px;color:#fff;font-size:14px;font-weight:500;cursor:pointer;transition:all .2s}}
+    .modal-btn:hover{{background:rgba(255,255,255,0.05);border-color:rgb(55,55,55)}}
+    @media (max-width:900px){{.sidebar{{width:100%;height:auto;position:relative;border-right:none;border-bottom:1px solid rgb(35,35,35);padding:20px;display:flex;flex-direction:column;align-items:center;text-align:center;background:rgb(13,13,13)}}
+      .logo{{margin-bottom:20px}}
+      nav ul{{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}}
+      .main-content{{margin-left:0;padding:24px 16px}}
+      .stats{{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}}}}
+    @media (max-width:500px){{.card,.modal-content{{padding:20px}}}}
   </style>
 </head>
 <body>
@@ -1919,37 +2196,37 @@ def serve_customer_dashboard():
     let hasLicense = localStorage.getItem('axion_has_license') === 'true';
 
     // Show login modal on first visit
-    if (!localStorage.getItem('axion_dashboard_visited')) {
+    if (!localStorage.getItem('axion_dashboard_visited')) {{
       document.getElementById('loginModal').classList.add('show');
-    } else if (hasLicense && licenseKey) {
+    }} else if (hasLicense && licenseKey) {{
       loadDashboard();
-    }
+    }}
 
     // No license button - browse without license
-    document.getElementById('noLicenseBtn').onclick = () => {
+    document.getElementById('noLicenseBtn').onclick = () => {{
       localStorage.setItem('axion_dashboard_visited', 'true');
       localStorage.setItem('axion_has_license', 'false');
       hasLicense = false;
       licenseKey = null;
       document.getElementById('loginModal').classList.remove('show');
       setUnknownState();
-    };
+    }};
 
     // Yes license button - validate and login
-    document.getElementById('yesLicenseBtn').onclick = async () => {
+    document.getElementById('yesLicenseBtn').onclick = async () => {{
       const key = document.getElementById('loginKeyInput').value.trim();
       
-      if (!key) {
+      if (!key) {{
         alert('Please enter your license key');
         return;
-      }
+      }}
 
-      try {
-        const res = await fetch(`/api/dashboard/${key}`);
-        if (!res.ok) {
+      try {{
+        const res = await fetch(`/api/dashboard/${{key}}`);
+        if (!res.ok) {{
           alert('Invalid license key');
           return;
-        }
+        }}
 
         const data = await res.json();
         licenseKey = key;
@@ -1960,37 +2237,37 @@ def serve_customer_dashboard():
         
         document.getElementById('loginModal').classList.remove('show');
         loadDashboard();
-      } catch (e) {
+      }} catch (e) {{
         alert('Error validating license: ' + e.message);
-      }
-    };
+      }}
+    }};
 
     // Set everything to "Unknown" for no license mode
-    function setUnknownState() {
+    function setUnknownState() {{
       document.getElementById('activeSubs').textContent = 'Unknown';
       document.getElementById('totalResets').textContent = 'Unknown';
       document.getElementById('subStatus').textContent = 'Unknown';
       document.getElementById('subDuration').textContent = 'Unknown';
       document.getElementById('licenseDisplay').textContent = 'Unknown';
       document.getElementById('hwidDisplay').textContent = 'Unknown';
-    }
+    }}
 
     // Load dashboard data with license
-    async function loadDashboard() {
-      if (!hasLicense || !licenseKey) {
+    async function loadDashboard() {{
+      if (!hasLicense || !licenseKey) {{
         setUnknownState();
         return;
-      }
+      }}
 
-      try {
-        const res = await fetch(`/api/dashboard/${licenseKey}`);
-        if (!res.ok) {
+      try {{
+        const res = await fetch(`/api/dashboard/${{licenseKey}}`);
+        if (!res.ok) {{
           alert('Invalid license key');
           localStorage.removeItem('axion_license');
           localStorage.setItem('axion_has_license', 'false');
           setUnknownState();
           return;
-        }
+        }}
         
         const data = await res.json();
         
@@ -2000,27 +2277,27 @@ def serve_customer_dashboard():
         document.getElementById('subStatus').textContent = data.active ? 'Active' : 'Inactive';
         
         // Update duration display
-        const durationMap = {
+        const durationMap = {{
           'weekly': 'Weekly',
           'monthly': 'Monthly',
           '3monthly': 'Quarterly',
           'lifetime': 'Lifetime'
-        };
+        }};
         document.getElementById('subDuration').textContent = durationMap[data.duration] || data.duration.toUpperCase();
         
         // Update security info
         document.getElementById('licenseDisplay').textContent = data.license_key;
         document.getElementById('hwidDisplay').textContent = data.hwid || 'Not bound';
         
-      } catch (e) {
+      }} catch (e) {{
         console.error('Error loading dashboard:', e);
         setUnknownState();
-      }
-    }
+      }}
+    }}
 
     // Tab navigation
-    document.querySelectorAll('nav a').forEach(link => {
-      link.addEventListener('click', e => {
+    document.querySelectorAll('nav a').forEach(link => {{
+      link.addEventListener('click', e => {{
         e.preventDefault();
         const targetId = link.getAttribute('href').slice(1);
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -2032,26 +2309,26 @@ def serve_customer_dashboard():
         sub.textContent = targetId === 'subscriptions' ? 'Manage and view your active subscriptions' :
                           targetId === 'manage' ? 'Redeem keys and manage security information' :
                           'Manage account security and HWID';
-      });
-    });
+      }});
+    }});
 
     // Redeem from subscriptions button
-    document.getElementById('redeem-from-subs').onclick = () => {
+    document.getElementById('redeem-from-subs').onclick = () => {{
       document.querySelector('a[href="#manage"]').click();
-    };
+    }};
 
     // HWID reset
-    document.getElementById('hwidDisplay').onclick = async () => {
-      if (!hasLicense || !licenseKey) {
+    document.getElementById('hwidDisplay').onclick = async () => {{
+      if (!hasLicense || !licenseKey) {{
         alert('Please login with a license key to reset HWID');
         return;
-      }
+      }}
 
       if (!confirm("Are you sure you want to reset your HWID? This action cannot be undone.")) return;
       
-      try {
-        const res = await fetch(`/api/reset-hwid/${licenseKey}`, { method: 'POST' });
-        if (res.ok) {
+      try {{
+        const res = await fetch(`/api/reset-hwid/${{licenseKey}}`, {{ method: 'POST' }});
+        if (res.ok) {{
           const data = await res.json();
           document.getElementById('hwidDisplay').textContent = 'Not bound';
           document.getElementById('totalResets').textContent = data.hwid_resets;
@@ -2059,13 +2336,13 @@ def serve_customer_dashboard():
           const hwid = document.getElementById('hwidDisplay');
           hwid.classList.add('resetting');
           setTimeout(() => hwid.classList.remove('resetting'), 2200);
-        } else {
+        }} else {{
           alert('Failed to reset HWID');
-        }
-      } catch (e) {
+        }}
+      }} catch (e) {{
         alert('Error: ' + e.message);
-      }
-    };
+      }}
+    }};
 
     // Modal handling for redeem
     const redeemModal = document.getElementById('redeemModal');
@@ -2074,34 +2351,34 @@ def serve_customer_dashboard():
     const discordInput = document.getElementById('discordIdInput');
     const redeemKeyInput = document.getElementById('redeemKeyInput');
 
-    redeemBtn.onclick = () => {
+    redeemBtn.onclick = () => {{
       const key = redeemKeyInput.value.trim();
-      if (!key) {
+      if (!key) {{
         alert('Please enter a key');
         return;
-      }
+      }}
       redeemModal.style.display = 'flex';
       setTimeout(() => redeemModal.classList.add('show'), 10);
       discordInput.value = '';
-    };
+    }};
 
-    continueBtn.onclick = async () => {
+    continueBtn.onclick = async () => {{
       const id = discordInput.value.trim();
       const key = redeemKeyInput.value.trim();
       
-      if (!/^\\d{17,19}$/.test(id)) {
+      if (!/^\\d{{17,19}}$/.test(id)) {{
         alert('Invalid Discord ID');
         return;
-      }
+      }}
       
-      try {
-        const res = await fetch('/api/redeem', {
+      try {{
+        const res = await fetch('/api/redeem', {{
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: key, discord_id: id })
-        });
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ key: key, discord_id: id }})
+        }});
         
-        if (res.ok) {
+        if (res.ok) {{
           alert('Key redeemed successfully!');
           localStorage.setItem('axion_license', key);
           localStorage.setItem('axion_has_license', 'true');
@@ -2111,24 +2388,32 @@ def serve_customer_dashboard():
           setTimeout(() => redeemModal.style.display = 'none', 300);
           redeemKeyInput.value = '';
           loadDashboard();
-        } else {
+        }} else {{
           const error = await res.json();
           alert('Error: ' + error.detail);
-        }
-      } catch (e) {
+        }}
+      }} catch (e) {{
         alert('Error: ' + e.message);
-      }
-    };
+      }}
+    }};
 
-    redeemModal.onclick = e => {
-      if (e.target === redeemModal) {
+    redeemModal.onclick = e => {{
+      if (e.target === redeemModal) {{
         redeemModal.classList.remove('show');
         setTimeout(() => redeemModal.style.display = 'none', 300);
-      }
-    };
+      }}
+    }};
   </script>
+  
+  {ANTI_DEVTOOLS_JS}
 </body>
 </html>"""
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def serve_customer_dashboard():
+    """Customer Account Dashboard with Modal Login"""
+    return DASHBOARD_HTML
+
 @app.get("/{license_key}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
     """Personal dashboard"""
@@ -2143,7 +2428,28 @@ def serve_dashboard(license_key: str):
     db.close()
    
     if not result:
-        return "<html><body style='background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh'><div style='text-align:center'><h1 style='color:rgb(255,68,68)'>Invalid License</h1><p>License key not found</p></div></body></html>"
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Invalid License - Axion</title>
+<style>
+body{{background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
+.container{{text-align:center;padding:40px;background:rgba(0,0,0,0.5);border-radius:10px;border:1px solid rgba(255,255,255,0.1)}}
+h1{{color:rgb(255,68,68);margin-bottom:20px}}
+button{{margin-top:20px;padding:12px 30px;background:#333;color:white;border:none;border-radius:5px;cursor:pointer;font-size:16px}}
+button:hover{{background:#444}}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Invalid License</h1>
+<p>License key not found or has expired</p>
+<button onclick="window.location.href='/'">Return to Home</button>
+</div>
+{ANTI_DEVTOOLS_JS}
+</body>
+</html>"""
    
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -2871,6 +3177,8 @@ loadSavedConfigs();
 loadConfig();
 setInterval(loadConfig, 1000);
 </script>
+
+{ANTI_DEVTOOLS_JS}
 </body>
 </html>"""
 
