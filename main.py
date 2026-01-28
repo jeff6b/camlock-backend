@@ -2150,7 +2150,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
     `;
   </script>
   
-  {ENHANCED_ANTI_DEVTOOLS_JS>
+  {ENHANCED_ANTI_DEVTOOLS_JS}
 </html>
 """
 
