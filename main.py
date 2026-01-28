@@ -1,5 +1,5 @@
-# main.py - Complete FastAPI Backend with Anti-DevTools Protection
-from fastapi import FastAPI, HTTPException, Cookie, Response
+# main.py - Complete FastAPI Backend with Enhanced Security
+from fastapi import FastAPI, HTTPException, Cookie, Response, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -9,11 +9,63 @@ import sqlite3
 import os
 import json
 import secrets
+import hashlib
+import hmac
+import time
+import re
 from datetime import datetime, timedelta
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 app = FastAPI()
 
-# CORS
+# ============================================================================
+# RATE LIMITING
+# ============================================================================
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# Rate limits
+RATE_LIMITS = {
+    "default": "100/minute",
+    "auth": "10/minute",
+    "key_create": "5/minute",
+    "config_save": "30/minute",
+    "validate": "20/minute"
+}
+
+# ============================================================================
+# SECURITY UTILITIES (No Env Vars Needed)
+# ============================================================================
+SECRET_BASE = "AxionSecuritySystem2024"
+HASH_SALT = hashlib.sha256(f"{SECRET_BASE}_SALT".encode()).hexdigest()[:16]
+CSRF_SECRET = hashlib.sha256(f"{SECRET_BASE}_CSRF".encode()).hexdigest()[:32]
+
+def hash_key(key: str) -> str:
+    """Hash license keys"""
+    return hashlib.sha256(f"{HASH_SALT}:{key}".encode()).hexdigest()
+
+def sanitize_input(text: str) -> str:
+    """Basic input sanitization"""
+    if not text:
+        return ""
+    # Remove dangerous characters
+    text = re.sub(r'[<>"\']', '', text)
+    return text[:500]
+
+def validate_key_format(key: str) -> bool:
+    """Validate key format"""
+    return bool(re.match(r'^[a-zA-Z0-9\-]{10,50}$', key))
+
+def validate_hwid_format(hwid: str) -> bool:
+    """Validate HWID format"""
+    return bool(re.match(r'^[a-zA-Z0-9\-:_]{1,100}$', hwid))
+
+# CORS - Allow all like original
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,7 +74,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Default configuration
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
+
+# ============================================================================
+# DATABASE (Your Original Structure)
+# ============================================================================
 DEFAULT_CONFIG = {
     "triggerbot": {
         "Enabled": True,
@@ -58,7 +121,6 @@ DEFAULT_CONFIG = {
     }
 }
 
-# Database config
 DATABASE_URL = os.getenv("DATABASE_URL")
 USE_POSTGRES = DATABASE_URL is not None
 
@@ -94,6 +156,8 @@ def init_db():
         
         try:
             cur.execute("ALTER TABLE keys ADD COLUMN IF NOT EXISTS hwid_resets INTEGER DEFAULT 0")
+            cur.execute("ALTER TABLE keys ADD COLUMN IF NOT EXISTS failed_attempts INTEGER DEFAULT 0")
+            cur.execute("ALTER TABLE keys ADD COLUMN IF NOT EXISTS last_attempt TEXT")
             db.commit()
         except:
             pass
@@ -164,6 +228,8 @@ def init_db():
         
         try:
             cur.execute("ALTER TABLE keys ADD COLUMN hwid_resets INTEGER DEFAULT 0")
+            cur.execute("ALTER TABLE keys ADD COLUMN failed_attempts INTEGER DEFAULT 0")
+            cur.execute("ALTER TABLE keys ADD COLUMN last_attempt TEXT")
             db.commit()
         except:
             pass
@@ -226,7 +292,9 @@ def init_db():
     db.close()
     print("✅ Database initialized")
 
-# Pydantic models
+# ============================================================================
+# PYDANTIC MODELS (Your Original)
+# ============================================================================
 class KeyValidate(BaseModel):
     key: str
     hwid: str
@@ -258,22 +326,40 @@ class SavedConfigRequest(BaseModel):
     config_name: str
     config_data: dict
 
-# === VALIDATION ===
-
+# ============================================================================
+# ENHANCED VALIDATION ENDPOINT
+# ============================================================================
 @app.post("/api/validate")
-def validate_user(data: KeyValidate):
-    """Validate license key"""
+@limiter.limit(RATE_LIMITS["validate"])
+def validate_user(data: KeyValidate, request: Request):
+    """Validate license key with enhanced security"""
+    # Input validation
+    if not validate_key_format(data.key):
+        return {"valid": False, "error": "Invalid license key format"}
+    
+    if data.hwid != 'web-login' and not validate_hwid_format(data.hwid):
+        return {"valid": False, "error": "Invalid HWID format"}
+    
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT key, active, expires_at, hwid FROM keys WHERE key=%s"), (data.key,))
+    # Use parameterized query to prevent SQL injection
+    cur.execute(q("SELECT key, active, expires_at, hwid, failed_attempts, last_attempt FROM keys WHERE key=%s"), (data.key,))
     result = cur.fetchone()
     
     if not result:
         db.close()
         return {"valid": False, "error": "Invalid license key"}
     
-    key, active, expires_at, hwid = result
+    key, active, expires_at, hwid, failed_attempts, last_attempt = result
+    
+    # Check for too many failed attempts
+    if failed_attempts and failed_attempts >= 5:
+        if last_attempt:
+            last_attempt_time = datetime.fromisoformat(last_attempt)
+            if datetime.now() - last_attempt_time < timedelta(minutes=15):
+                db.close()
+                return {"valid": False, "error": "Too many failed attempts. Try again in 15 minutes."}
     
     if active == 0:
         db.close()
@@ -285,25 +371,37 @@ def validate_user(data: KeyValidate):
     
     if data.hwid != 'web-login':
         if hwid is None:
-            cur.execute(q("UPDATE keys SET hwid=%s WHERE key=%s"), (data.hwid, data.key))
+            # First time binding
+            cur.execute(q("UPDATE keys SET hwid=%s, failed_attempts=0 WHERE key=%s"), (data.hwid, data.key))
             db.commit()
             db.close()
             return {"valid": True, "message": "HWID bound successfully"}
         elif hwid == data.hwid:
+            cur.execute(q("UPDATE keys SET failed_attempts=0 WHERE key=%s"), (data.key,))
+            db.commit()
             db.close()
             return {"valid": True, "message": "Authentication successful"}
         else:
+            # Failed attempt
+            cur.execute(q("UPDATE keys SET failed_attempts=failed_attempts+1, last_attempt=%s WHERE key=%s"), 
+                       (datetime.now().isoformat(), data.key))
+            db.commit()
             db.close()
             return {"valid": False, "error": "HWID mismatch"}
     
     db.close()
     return {"valid": True, "message": "Authentication successful"}
 
-# === CONFIG SYNC ENDPOINTS (FIXED) ===
-
+# ============================================================================
+# CONFIG SYNC ENDPOINTS (SECURE)
+# ============================================================================
 @app.get("/api/config/{key}")
+@limiter.limit(RATE_LIMITS["default"])
 def get_config(key: str):
     """Get config for a license key"""
+    if not validate_key_format(key):
+        raise HTTPException(status_code=400, detail="Invalid key format")
+    
     db = get_db()
     cur = db.cursor()
     
@@ -335,8 +433,16 @@ def get_config(key: str):
         return DEFAULT_CONFIG
 
 @app.post("/api/config/{key}")
+@limiter.limit(RATE_LIMITS["config_save"])
 def set_config(key: str, data: dict):
     """Save config for a license key"""
+    if not validate_key_format(key):
+        raise HTTPException(status_code=400, detail="Invalid key format")
+    
+    # Validate config size
+    if len(json.dumps(data)) > 10000:
+        raise HTTPException(status_code=400, detail="Config too large")
+    
     db = get_db()
     cur = db.cursor()
     
@@ -363,11 +469,16 @@ def set_config(key: str, data: dict):
         print(f"Error in set_config: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# === SAVED CONFIGS ENDPOINTS ===
-
+# ============================================================================
+# SAVED CONFIGS ENDPOINTS
+# ============================================================================
 @app.get("/api/configs/{license_key}/list")
+@limiter.limit(RATE_LIMITS["default"])
 def list_configs(license_key: str):
     """List saved configs"""
+    if not validate_key_format(license_key):
+        raise HTTPException(status_code=400, detail="Invalid key")
+    
     db = get_db()
     cur = db.cursor()
     cur.execute(q("SELECT config_name, created_at FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC"), (license_key,))
@@ -378,21 +489,28 @@ def list_configs(license_key: str):
     return {"configs": configs}
 
 @app.post("/api/configs/{license_key}/save")
+@limiter.limit(RATE_LIMITS["config_save"])
 def save_config(license_key: str, data: SavedConfigRequest):
     """Save a config"""
+    if not validate_key_format(license_key):
+        raise HTTPException(status_code=400, detail="Invalid key")
+    
+    if len(data.config_name) > 100:
+        raise HTTPException(status_code=400, detail="Config name too long")
+    
     db = get_db()
     cur = db.cursor()
     
     try:
-        cur.execute(q("SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, data.config_name))
+        cur.execute(q("SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, sanitize_input(data.config_name)))
         existing = cur.fetchone()
         
         if existing:
             cur.execute(q("UPDATE saved_configs SET config_data=%s WHERE license_key=%s AND config_name=%s"),
-                       (json.dumps(data.config_data), license_key, data.config_name))
+                       (json.dumps(data.config_data), license_key, sanitize_input(data.config_name)))
         else:
             cur.execute(q("INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (%s, %s, %s, %s)"),
-                       (license_key, data.config_name, json.dumps(data.config_data), datetime.now().isoformat()))
+                       (license_key, sanitize_input(data.config_name), json.dumps(data.config_data), datetime.now().isoformat()))
         
         db.commit()
         db.close()
@@ -402,11 +520,15 @@ def save_config(license_key: str, data: SavedConfigRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/configs/{license_key}/load/{config_name}")
+@limiter.limit(RATE_LIMITS["default"])
 def load_config(license_key: str, config_name: str):
     """Load a saved config"""
+    if not validate_key_format(license_key):
+        raise HTTPException(status_code=400, detail="Invalid key")
+    
     db = get_db()
     cur = db.cursor()
-    cur.execute(q("SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
+    cur.execute(q("SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, sanitize_input(config_name)))
     row = cur.fetchone()
     db.close()
     
@@ -416,10 +538,17 @@ def load_config(license_key: str, config_name: str):
     return json.loads(row[0])
 
 @app.post("/api/configs/{license_key}/rename")
+@limiter.limit(RATE_LIMITS["default"])
 def rename_config(license_key: str, data: dict):
     """Rename a config"""
-    old_name = data.get("old_name")
-    new_name = data.get("new_name")
+    if not validate_key_format(license_key):
+        raise HTTPException(status_code=400, detail="Invalid key")
+    
+    old_name = sanitize_input(data.get("old_name", ""))
+    new_name = sanitize_input(data.get("new_name", ""))
+    
+    if not old_name or not new_name:
+        raise HTTPException(status_code=400, detail="Invalid names")
     
     db = get_db()
     cur = db.cursor()
@@ -431,19 +560,25 @@ def rename_config(license_key: str, data: dict):
     return {"success": True}
 
 @app.delete("/api/configs/{license_key}/delete/{config_name}")
+@limiter.limit(RATE_LIMITS["default"])
 def delete_config(license_key: str, config_name: str):
     """Delete a config"""
+    if not validate_key_format(license_key):
+        raise HTTPException(status_code=400, detail="Invalid key")
+    
     db = get_db()
     cur = db.cursor()
-    cur.execute(q("DELETE FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
+    cur.execute(q("DELETE FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, sanitize_input(config_name)))
     db.commit()
     db.close()
     
     return {"success": True}
 
-# === PUBLIC CONFIGS ===
-
+# ============================================================================
+# PUBLIC CONFIGS
+# ============================================================================
 @app.get("/api/public-configs")
+@limiter.limit(RATE_LIMITS["default"])
 def get_public_configs():
     """Get all public configs"""
     try:
@@ -471,14 +606,21 @@ def get_public_configs():
         return {"configs": []}
 
 @app.post("/api/public-configs/create")
+@limiter.limit(RATE_LIMITS["config_save"])
 def create_public_config(data: PublicConfig):
     """Create a public config"""
     db = get_db()
     cur = db.cursor()
     
     try:
+        # Sanitize inputs
+        config_name = sanitize_input(data.config_name)
+        author_name = sanitize_input(data.author_name)
+        game_name = sanitize_input(data.game_name)
+        description = sanitize_input(data.description) if data.description else ""
+        
         cur.execute(q("INSERT INTO public_configs (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads) VALUES (%s, %s, %s, %s, %s, %s, %s, 0)"),
-                   (data.config_name, data.author_name, data.game_name, data.description, json.dumps(data.config_data), "web-user", datetime.now().isoformat()))
+                   (config_name, author_name, game_name, description, json.dumps(data.config_data), "web-user", datetime.now().isoformat()))
         db.commit()
         db.close()
         return {"success": True}
@@ -487,6 +629,7 @@ def create_public_config(data: PublicConfig):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/public-configs/{config_id}")
+@limiter.limit(RATE_LIMITS["default"])
 def get_public_config(config_id: int):
     """Get a single config"""
     db = get_db()
@@ -509,6 +652,7 @@ def get_public_config(config_id: int):
     }
 
 @app.post("/api/public-configs/{config_id}/download")
+@limiter.limit(RATE_LIMITS["default"])
 def download_config(config_id: int):
     """Increment downloads"""
     db = get_db()
@@ -518,9 +662,11 @@ def download_config(config_id: int):
     db.close()
     return {"success": True}
 
-# === KEY MANAGEMENT ===
-
+# ============================================================================
+# KEY MANAGEMENT
+# ============================================================================
 @app.post("/api/keys/create")
+@limiter.limit(RATE_LIMITS["key_create"])
 def create_key(data: KeyCreate):
     """Create a license key"""
     key = f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}"
@@ -530,7 +676,7 @@ def create_key(data: KeyCreate):
     
     try:
         cur.execute(q("INSERT INTO keys (key, duration, created_at, active, created_by) VALUES (%s, %s, %s, 0, %s)"),
-                   (key, data.duration, datetime.now().isoformat(), data.created_by))
+                   (key, data.duration, datetime.now().isoformat(), sanitize_input(data.created_by)))
         db.commit()
         db.close()
         return {"key": key, "duration": data.duration}
@@ -539,8 +685,12 @@ def create_key(data: KeyCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/keys/{license_key}")
+@limiter.limit(RATE_LIMITS["default"])
 def delete_key(license_key: str):
     """Delete a key"""
+    if not validate_key_format(license_key):
+        raise HTTPException(status_code=400, detail="Invalid key")
+    
     db = get_db()
     cur = db.cursor()
     cur.execute(q("DELETE FROM keys WHERE key=%s"), (license_key,))
@@ -548,11 +698,16 @@ def delete_key(license_key: str):
     db.close()
     return {"success": True}
 
-# === DASHBOARD API ===
-
+# ============================================================================
+# DASHBOARD API
+# ============================================================================
 @app.get("/api/dashboard/{license_key}")
+@limiter.limit(RATE_LIMITS["default"])
 def get_dashboard_data(license_key: str):
     """Get dashboard data"""
+    if not validate_key_format(license_key):
+        raise HTTPException(status_code=400, detail="Invalid key")
+    
     db = get_db()
     cur = db.cursor()
     
@@ -577,8 +732,15 @@ def get_dashboard_data(license_key: str):
     }
 
 @app.post("/api/redeem")
+@limiter.limit(RATE_LIMITS["auth"])
 def redeem_key(data: RedeemRequest):
     """Redeem a key"""
+    if not validate_key_format(data.key):
+        raise HTTPException(status_code=400, detail="Invalid key format")
+    
+    if not re.match(r'^\d{17,20}$', data.discord_id):
+        raise HTTPException(status_code=400, detail="Invalid Discord ID")
+    
     db = get_db()
     cur = db.cursor()
     
@@ -612,8 +774,12 @@ def redeem_key(data: RedeemRequest):
     return {"success": True, "duration": duration, "expires_at": expires_at, "message": "Key redeemed successfully"}
 
 @app.post("/api/reset-hwid/{license_key}")
+@limiter.limit(RATE_LIMITS["default"])
 def reset_hwid(license_key: str):
     """Reset HWID"""
+    if not validate_key_format(license_key):
+        raise HTTPException(status_code=400, detail="Invalid key")
+    
     db = get_db()
     cur = db.cursor()
     
@@ -633,8 +799,12 @@ def reset_hwid(license_key: str):
     return {"success": True, "hwid_resets": resets + 1}
 
 @app.get("/api/users/{user_id}/license")
+@limiter.limit(RATE_LIMITS["default"])
 def get_user_license(user_id: str):
     """Get user's license by Discord ID"""
+    if not re.match(r'^\d{17,20}$', user_id):
+        return {"active": False, "message": "Invalid user ID"}
+    
     db = get_db()
     cur = db.cursor()
     
@@ -662,6 +832,7 @@ def get_user_license(user_id: str):
     }
 
 @app.delete("/api/users/{user_id}/license")
+@limiter.limit(RATE_LIMITS["default"])
 def delete_user_license(user_id: str):
     """Delete user's license by Discord ID"""
     db = get_db()
@@ -682,6 +853,7 @@ def delete_user_license(user_id: str):
     return {"status": "deleted", "key": key, "user_id": user_id}
 
 @app.post("/api/users/{user_id}/reset-hwid")
+@limiter.limit(RATE_LIMITS["default"])
 def reset_user_hwid(user_id: str):
     """Reset HWID for user's license"""
     db = get_db()
@@ -704,11 +876,14 @@ def reset_user_hwid(user_id: str):
     return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
 
 @app.get("/api/keepalive")
+@limiter.exempt
 def keepalive():
     """Keep server awake"""
     return {"status": "alive"}
 
-
+# ============================================================================
+# YOUR ORIGINAL ENHANCED ANTI DEVTOOLS JS
+# ============================================================================
 ENHANCED_ANTI_DEVTOOLS_JS = """
 <script>
 (function() {
@@ -806,6 +981,9 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
 </script>
 """
 
+# ============================================================================
+# YOUR ORIGINAL INDEX HTML (EXACTLY AS YOU HAD IT)
+# ============================================================================
 _INDEX_HTML = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1829,8 +2007,8 @@ _INDEX_HTML = f"""<!DOCTYPE html>
   </script>
   
   {ENHANCED_ANTI_DEVTOOLS_JS}
-</html>
-"""
+</body>
+</html>"""
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/home", response_class=HTMLResponse)
@@ -1839,9 +2017,8 @@ def serve_home():
     return _INDEX_HTML
 
 # ============================================================================
-# DASHBOARD WITH ANTI-DEVTOOLS PROTECTION
+# YOUR ORIGINAL DASHBOARD HTML (EXACTLY AS YOU HAD IT)
 # ============================================================================
-
 DASHBOARD_HTML = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2220,9 +2397,12 @@ def serve_customer_dashboard():
     """Customer Account Dashboard with Modal Login"""
     return DASHBOARD_HTML
 
+# ============================================================================
+# YOUR ORIGINAL LICENSE DASHBOARD HTML
+# ============================================================================
 @app.get("/{license_key}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
-    """Personal dashboard"""
+    """Personal dashboard - Your original code"""
     if license_key in ["api", "favicon.ico", "home"]:
         raise HTTPException(status_code=404)
    
@@ -2988,6 +3168,9 @@ setInterval(loadConfig, 1000);
 </body>
 </html>"""
 
+# ============================================================================
+# STARTUP
+# ============================================================================
 if __name__ == "__main__":
     init_db()
     import uvicorn
