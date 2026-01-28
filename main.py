@@ -712,288 +712,417 @@ def keepalive():
 # === HTML ROUTES ===
 
 # Comprehensive Anti-DevTools JavaScript
-ANTI_DEVTOOLS_JS = """
+# Add this at the top of your main.py
+ENHANCED_ANTI_DEVTOOLS_JS = """
 <script>
 (function() {
     'use strict';
     
-    // Block F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U
+    // ========== PHASE 1: PREVENTION ==========
+    // Block ALL keyboard shortcuts
+    const blockedKeys = new Set([
+        123,    // F12
+        73,     // I (with Ctrl+Shift)
+        74,     // J (with Ctrl+Shift)
+        67,     // C (with Ctrl+Shift)
+        85,     // U (with Ctrl)
+        83,     // S (with Ctrl)
+        65,     // A (with Ctrl)
+        80,     // P (with Ctrl)
+        27      // Escape (can close devtools)
+    ]);
+    
     document.addEventListener('keydown', function(e) {
-        if (
-            e.key === 'F12' || e.keyCode === 123 || 
-            (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) ||
-            (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) ||
-            (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) ||
-            (e.ctrlKey && (e.key === 'U' || e.keyCode === 85)) ||
-            (e.ctrlKey && e.keyCode === 83) || // Ctrl+S
-            (e.ctrlKey && e.keyCode === 65) || // Ctrl+A
-            (e.metaKey && e.altKey && e.keyCode === 73) // Cmd+Alt+I (Mac)
-        ) {
+        // Block F12
+        if (e.keyCode === 123) {
             e.preventDefault();
             e.stopPropagation();
             e.returnValue = false;
-            
-            // Trigger debugger spam
-            startDebuggerSpam();
-            
-            // Show warning
-            showDevToolsWarning();
-            
+            triggerFullProtection();
+            return false;
+        }
+        
+        // Block Ctrl/Shift combinations
+        if ((e.ctrlKey || e.metaKey) && blockedKeys.has(e.keyCode)) {
+            e.preventDefault();
+            e.stopPropagation();
+            triggerFullProtection();
+            return false;
+        }
+        
+        // Block Ctrl+Shift combinations
+        if (e.ctrlKey && e.shiftKey && blockedKeys.has(e.keyCode)) {
+            e.preventDefault();
+            e.stopPropagation();
+            triggerFullProtection();
             return false;
         }
     });
     
-    // Block right-click context menu
+    // Block right-click completely
     document.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        
-        // Trigger debugger spam
-        startDebuggerSpam();
-        
-        // Show warning
-        showDevToolsWarning();
-        
+        triggerFullProtection();
         return false;
     });
     
-    // Block Ctrl+P (Print)
-    document.addEventListener('keydown', function(e) {
-        if ((e.ctrlKey || e.metaKey) && e.keyCode === 80) {
-            e.preventDefault();
-            return false;
-        }
+    // Block drag and drop (prevents dragging elements)
+    document.addEventListener('dragstart', function(e) {
+        e.preventDefault();
+        return false;
     });
     
-    // Block iframe embedding
-    if (window.self !== window.top) {
-        window.top.location = window.self.location;
-    }
+    // Block selection
+    document.addEventListener('selectstart', function(e) {
+        e.preventDefault();
+        return false;
+    });
     
-    // Detect devtools by checking window size
-    let devToolsOpen = false;
-    let lastWidth = window.innerWidth;
-    let lastHeight = window.innerHeight;
+    // ========== PHASE 2: OBFUSCATION ==========
+    // Hide source code by removing it from DOM when devtools opens
+    let originalBodyHTML = '';
+    let originalHeadHTML = '';
+    let protectionActive = false;
     
-    function checkDevTools() {
-        const widthChange = Math.abs(window.outerWidth - window.innerWidth) > 100;
-        const heightChange = Math.abs(window.outerHeight - window.innerHeight) > 100;
+    function hidePageContent() {
+        if (protectionActive) return;
+        protectionActive = true;
         
-        if (widthChange || heightChange) {
-            if (!devToolsOpen) {
-                devToolsOpen = true;
-                console.log('DevTools detected!');
-                startDebuggerSpam();
-                showDevToolsWarning();
-                redirectToBlockPage();
-            }
-        } else {
-            devToolsOpen = false;
-        }
+        // Save original content
+        originalBodyHTML = document.body.innerHTML;
+        originalHeadHTML = document.head.innerHTML;
         
-        lastWidth = window.innerWidth;
-        lastHeight = window.innerHeight;
-    }
-    
-    // Check for devtools every 500ms
-    setInterval(checkDevTools, 500);
-    
-    // Additional detection using debugger
-    function detectDevTools() {
-        const start = new Date().getTime();
-        debugger;
-        const end = new Date().getTime();
-        
-        if (end - start > 100) {
-            console.log('Debugger detected!');
-            startDebuggerSpam();
-            showDevToolsWarning();
-            redirectToBlockPage();
-        }
-    }
-    
-    // Run detection periodically
-    setInterval(detectDevTools, 1000);
-    
-    // Function to start debugger spam
-    function startDebuggerSpam() {
-        console.log('🚫 Developer Tools are disabled on this page!');
-        
-        // Create infinite debugger loop
-        setInterval(function() {
-            try {
-                (function() {
-                    return false;
-                }['constructor']('debugger')['call']());
-            } catch(e) {
-                // Continue spamming
-                (function() {
-                    return ![];
-                }['constructor']('debugger')['call']());
-            }
-        }, 50);
-        
-        // Additional debugger spam
-        const spamDebugger = function() {
-            debugger;
-            debugger;
-            debugger;
-            debugger;
-            debugger;
-            debugger;
-            debugger;
-            debugger;
-            debugger;
-            debugger;
-            setTimeout(spamDebugger, 10);
-        };
-        spamDebugger();
-        
-        // Flood console with warnings
-        setInterval(function() {
-            console.clear();
-            console.log('%c🚫 STOP! 🚫', 'color: red; font-size: 50px; font-weight: bold;');
-            console.log('%cDeveloper Tools are disabled on this page!', 'color: white; font-size: 20px;');
-            console.log('%cAttempting to access DevTools is prohibited!', 'color: yellow; font-size: 16px;');
-            console.log('%cThis action has been logged!', 'color: orange; font-size: 16px;');
-            
-            // Create many console logs to flood it
-            for(let i = 0; i < 100; i++) {
-                console.log(`%cWARNING ${i}: DevTools access attempted!`, 'color: red;');
-            }
-        }, 100);
-    }
-    
-    // Show warning message
-    function showDevToolsWarning() {
-        // Create overlay
+        // Create encryption-like overlay
         const overlay = document.createElement('div');
+        overlay.id = 'axion-protection-overlay';
         overlay.style.cssText = `
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.95);
-            color: white;
+            background: #000;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
             z-index: 999999;
+            padding: 20px;
+            overflow: hidden;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
-            font-family: Arial, sans-serif;
-            text-align: center;
+            justify-content: center;
         `;
         
-        const message = document.createElement('div');
-        message.innerHTML = `
-            <h1 style="color: #ff4444; font-size: 3em; margin-bottom: 20px;">🚫 ACCESS DENIED 🚫</h1>
-            <p style="font-size: 1.5em; margin-bottom: 30px;">Developer Tools are disabled on this page!</p>
-            <p style="font-size: 1.2em; margin-bottom: 20px;">Your attempt to access DevTools has been logged.</p>
-            <p style="font-size: 1em; color: #888;">This page will reload in <span id="countdown">5</span> seconds...</p>
+        // Create matrix-like encryption effect
+        const encryptionText = `
+            <div style="text-align: center;">
+                <h1 style="color: #ff0000; font-size: 2.5em; margin-bottom: 20px;">🔒 SECURITY BREACH DETECTED 🔒</h1>
+                <div style="background: #111; border: 2px solid #00ff00; padding: 20px; border-radius: 10px; max-width: 800px;">
+                    <p style="color: #00ff00; font-size: 1.2em; margin-bottom: 15px;">>> WARNING: Developer tools access prohibited</p>
+                    <p style="color: #ffff00; margin-bottom: 10px;">>> Source code encryption activated...</p>
+                    <p style="color: #00ffff; margin-bottom: 10px;">>> Page content secured...</p>
+                    <p style="color: #ff00ff; margin-bottom: 20px;">>> All sensitive data hidden from view...</p>
+                    
+                    <div id="matrix-code" style="background: #000; padding: 15px; border-radius: 5px; font-size: 14px; text-align: left; height: 200px; overflow-y: auto; margin-bottom: 20px;">
+                        <p style="color: #0f0;">> Initializing security protocol AXION-ALPHA...</p>
+                        <p style="color: #0f0;">> Encrypting DOM elements...</p>
+                        <p style="color: #0f0;">> Obfuscating JavaScript...</p>
+                        <p style="color: #0f0;">> Hiding CSS styles...</p>
+                        <p style="color: #0f0;">> Securing API endpoints...</p>
+                        <p style="color: #0f0;">> Generating encryption keys...</p>
+                        <p style="color: #0f0;">> Deploying anti-tamper measures...</p>
+                        <p style="color: #0f0;">> Security level: MAXIMUM</p>
+                    </div>
+                    
+                    <p style="color: #ff4444; font-size: 1.1em;">
+                        >> This page will restore in <span id="restore-countdown">10</span> seconds...
+                    </p>
+                </div>
+            </div>
         `;
         
-        overlay.appendChild(message);
+        overlay.innerHTML = encryptionText;
+        
+        // Remove original content from DOM
+        document.body.innerHTML = '';
+        document.head.innerHTML = '<title>🔒 SECURED - Axion Protection Active</title>';
+        
+        // Add overlay
         document.body.appendChild(overlay);
         
-        // Countdown and reload
-        let count = 5;
-        const countdownElement = document.getElementById('countdown');
-        const countdown = setInterval(function() {
-            count--;
-            if (countdownElement) countdownElement.textContent = count;
-            if (count <= 0) {
-                clearInterval(countdown);
-                window.location.reload();
+        // Start matrix effect
+        startMatrixEffect();
+        
+        // Countdown timer
+        let countdown = 10;
+        const countdownEl = document.getElementById('restore-countdown');
+        const timer = setInterval(() => {
+            countdown--;
+            if (countdownEl) countdownEl.textContent = countdown;
+            
+            if (countdown <= 0) {
+                clearInterval(timer);
+                restorePageContent();
             }
         }, 1000);
+    }
+    
+    function restorePageContent() {
+        if (!protectionActive) return;
         
-        // Prevent closing
-        overlay.onclick = function(e) {
-            e.stopPropagation();
-            return false;
-        };
+        // Remove overlay
+        const overlay = document.getElementById('axion-protection-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
         
-        // Remove after 5 seconds
-        setTimeout(function() {
-            if (overlay.parentNode) {
-                overlay.parentNode.removeChild(overlay);
+        // Restore original content
+        document.head.innerHTML = originalHeadHTML;
+        document.body.innerHTML = originalBodyHTML;
+        
+        protectionActive = false;
+        
+        // Re-initialize page scripts
+        setTimeout(() => {
+            if (typeof initializePage === 'function') {
+                initializePage();
+            }
+        }, 100);
+    }
+    
+    function startMatrixEffect() {
+        const matrixBox = document.getElementById('matrix-code');
+        if (!matrixBox) return;
+        
+        const characters = '01';
+        const lines = [
+            "> 01001000 01100101 01101100 01101100 01101111",
+            "> 01010111 01101111 01110010 01101100 01100100",
+            "> 01000001 01111000 01101001 01101111 01101110",
+            "> 01010011 01100101 01100011 01110101 01110010 01101001 01110100 01111001",
+            "> 01000101 01101110 01100011 01110010 01111001 01110000 01110100 01100101 01100100",
+            "> 01000100 01001111 01001101 00100000 01010011 01100101 01100011 01110101 01110010 01100101 01100100",
+            "> 01001010 01010011 00100000 01001111 01000010 01000110 01010101 01010011 01000011 01000001 01010100 01000101 01000100",
+            "> 01000001 01000011 01000011 01000101 01010011 01010011 00100000 01000100 01000101 01001110 01001001 01000101 01000100"
+        ];
+        
+        let lineIndex = 0;
+        const matrixInterval = setInterval(() => {
+            if (!matrixBox || !document.getElementById('axion-protection-overlay')) {
+                clearInterval(matrixInterval);
+                return;
+            }
+            
+            if (lineIndex < lines.length) {
+                const p = document.createElement('p');
+                p.style.color = '#0f0';
+                p.style.margin = '2px 0';
+                p.style.fontFamily = "'Courier New', monospace";
+                
+                // Animate typing effect
+                const text = lines[lineIndex];
+                let charIndex = 0;
+                const typeInterval = setInterval(() => {
+                    if (charIndex <= text.length) {
+                        p.textContent = text.substring(0, charIndex);
+                        charIndex++;
+                    } else {
+                        clearInterval(typeInterval);
+                    }
+                }, 50);
+                
+                matrixBox.appendChild(p);
+                matrixBox.scrollTop = matrixBox.scrollHeight;
+                lineIndex++;
+            }
+        }, 500);
+    }
+    
+    // ========== PHASE 3: DETECTION ==========
+    function detectDevTools() {
+        // Method 1: Check window size difference
+        const widthThreshold = 160;
+        const heightThreshold = 160;
+        
+        const widthDiff = Math.abs(window.outerWidth - window.innerWidth);
+        const heightDiff = Math.abs(window.outerHeight - window.innerHeight);
+        
+        if (widthDiff > widthThreshold || heightDiff > heightThreshold) {
+            return true;
+        }
+        
+        // Method 2: Check console object (some browsers expose this differently)
+        try {
+            const consoleObj = window.console;
+            if (consoleObj) {
+                // Check if console methods are native or overridden
+                const testObj = {};
+                consoleObj.dir(testObj);
+                
+                // If we get here without throwing, console is accessible
+                // This might indicate devtools is open in some browsers
+                const startTime = new Date().getTime();
+                debugger;
+                const endTime = new Date().getTime();
+                
+                if (endTime - startTime > 100) {
+                    return true;
+                }
+            }
+        } catch (e) {
+            // Console not accessible
+        }
+        
+        return false;
+    }
+    
+    // ========== PHASE 4: AGGRESSIVE PROTECTION ==========
+    function triggerFullProtection() {
+        // Immediate action
+        hidePageContent();
+        
+        // Nuclear option: redirect after delay
+        setTimeout(() => {
+            if (protectionActive) {
+                // Redirect to a different page or reload
+                window.location.href = '/?security=breach';
             }
         }, 5000);
+        
+        // Spam debugger as secondary measure
+        startNuclearDebuggerSpam();
     }
     
-    // Redirect to block page
-    function redirectToBlockPage() {
-        setTimeout(function() {
-            window.location.href = "about:blank";
-        }, 3000);
+    function startNuclearDebuggerSpam() {
+        // Multiple layers of debugger spam
+        setInterval(() => {
+            try {
+                // Layer 1: Direct debugger
+                debugger;
+                
+                // Layer 2: Eval debugger
+                eval("debugger");
+                
+                // Layer 3: Constructor debugger
+                Function("debugger")();
+                
+                // Layer 4: Indirect debugger
+                (function() {
+                    return !![];
+                }.constructor("debugger").call());
+                
+            } catch (e) {
+                // Continue spamming
+            }
+        }, 1);
+        
+        // Flood console with garbage
+        setInterval(() => {
+            if (typeof console !== 'undefined') {
+                console.clear();
+                for (let i = 0; i < 100; i++) {
+                    console.log('%c \u200b', 'font-size: 1000px; background: url(https://i.imgur.com/random.jpg);');
+                    console.log('%c \u200b', 'padding: 50px; background: #000;');
+                    console.log(`%c SECURITY BREACH ${Date.now()}`, 'color: red; font-size: 50px; font-weight: bold;');
+                }
+            }
+        }, 100);
     }
     
-    // Block console methods
-    const originalConsole = {
-        log: console.log,
-        warn: console.warn,
-        error: console.error,
-        info: console.info,
-        debug: console.debug
-    };
+    // ========== PHASE 5: CONTINUOUS MONITORING ==========
+    let lastCheckTime = Date.now();
     
-    console.log = function() {
-        startDebuggerSpam();
-        return originalConsole.log.apply(console, ['🚫 Console access blocked!']);
-    };
-    
-    console.warn = function() {
-        startDebuggerSpam();
-        return originalConsole.warn.apply(console, ['🚫 Console access blocked!']);
-    };
-    
-    console.error = function() {
-        startDebuggerSpam();
-        return originalConsole.error.apply(console, ['🚫 Console access blocked!']);
-    };
-    
-    console.info = function() {
-        startDebuggerSpam();
-        return originalConsole.info.apply(console, ['🚫 Console access blocked!']);
-    };
-    
-    console.debug = function() {
-        startDebuggerSpam();
-        return originalConsole.debug.apply(console, ['🚫 Console access blocked!']);
-    };
-    
-    // Block opening new windows
-    window.open = function() {
-        console.log('🚫 Popup blocked!');
-        return null;
-    };
-    
-    // Block print
-    window.print = function() {
-        console.log('🚫 Print function disabled!');
-        return false;
-    };
-    
-    // Block view source
-    document.onkeydown = function(e) {
-        if ((e.ctrlKey || e.metaKey) && e.keyCode === 85) {
-            return false;
+    function continuousMonitoring() {
+        const now = Date.now();
+        
+        // Check every 500ms
+        if (now - lastCheckTime > 500) {
+            lastCheckTime = now;
+            
+            if (detectDevTools()) {
+                triggerFullProtection();
+            }
+            
+            // Check for common devtools elements in DOM
+            const devtoolsSelectors = [
+                '#console', '.console', '.devtools', 
+                '[class*="devtools"]', '[id*="devtools"]',
+                '.web-inspector', '.inspector'
+            ];
+            
+            for (const selector of devtoolsSelectors) {
+                if (document.querySelector(selector)) {
+                    triggerFullProtection();
+                    break;
+                }
+            }
         }
-    };
+        
+        // Recursive check
+        requestAnimationFrame(continuousMonitoring);
+    }
     
-    // Initial check
-    window.onload = function() {
-        checkDevTools();
-        detectDevTools();
-    };
+    // ========== PHASE 6: PAGE LOAD PROTECTION ==========
+    window.addEventListener('load', function() {
+        // Start monitoring
+        continuousMonitoring();
+        
+        // Initial check
+        if (detectDevTools()) {
+            triggerFullProtection();
+        }
+        
+        // Protect against common devtools opening methods
+        document.body.setAttribute('oncontextmenu', 'return false');
+        document.body.setAttribute('onselectstart', 'return false');
+        document.body.setAttribute('oncopy', 'return false');
+        document.body.setAttribute('oncut', 'return false');
+        document.body.setAttribute('onpaste', 'return false');
+        document.body.setAttribute('ondragstart', 'return false');
+        
+        // Make body unselectable via CSS
+        document.body.style.userSelect = 'none';
+        document.body.style.webkitUserSelect = 'none';
+        document.body.style.mozUserSelect = 'none';
+        document.body.style.msUserSelect = 'none';
+        
+        // Disable text selection
+        document.body.style.cursor = 'default';
+    });
     
-    // Add anti-tampering
-    Object.freeze(window);
-    Object.freeze(document);
-    Object.freeze(console);
+    // ========== PHASE 7: PREVENT BYPASSES ==========
+    // Override common devtools opening methods
+    if (window.open) {
+        const originalOpen = window.open;
+        window.open = function() {
+            triggerFullProtection();
+            return null;
+        };
+    }
     
-    console.log('%c🔒 Page Security: Active', 'color: green; font-size: 14px; font-weight: bold;');
-    console.log('%c⚠️  Developer Tools are monitored and restricted!', 'color: orange; font-size: 12px;');
+    // Override console methods
+    if (typeof console !== 'undefined') {
+        const consoleMethods = ['log', 'warn', 'error', 'info', 'debug', 'dir', 'table', 'trace'];
+        consoleMethods.forEach(method => {
+            if (console[method]) {
+                const original = console[method];
+                console[method] = function() {
+                    triggerFullProtection();
+                    return original.apply(console, ['🔒 SECURITY: Console access logged']);
+                };
+            }
+        });
+    }
+    
+    // Prevent iframe embedding
+    if (window.top !== window.self) {
+        window.top.location = window.self.location;
+    }
+    
+    // Final initialization
+    console.log('%c🔒 Axion Protection: ACTIVE', 'color: #00ff00; font-size: 16px; font-weight: bold;');
+    console.log('%c⚠️  Developer tools are strictly prohibited!', 'color: #ff0000; font-size: 14px;');
     
 })();
 </script>
