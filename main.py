@@ -714,248 +714,115 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
 (function() {
     'use strict';
     
-    let protectionActive = false;
+    let pageHidden = false;
     let originalBody = '';
     let originalHead = '';
-    let checkInterval = null;
     
-    // ========== PHASE 1: ACCURATE DEVTOOLS DETECTION ==========
-    function isDevToolsOpen() {
-        // Method 1: Check window size (most reliable)
-        const threshold = 160; // Increased threshold to reduce false positives
-        
-        // Only check if window is reasonably sized (not a tiny popup)
-        if (window.innerWidth < 300 || window.innerHeight < 300) {
-            return false; // Don't trigger on small windows
-        }
-        
-        const widthDiff = Math.abs(window.outerWidth - window.innerWidth);
-        const heightDiff = Math.abs(window.outerHeight - window.innerHeight);
-        
-        // Require BOTH dimensions to exceed threshold to avoid false positives
-        if (widthDiff > threshold && heightDiff > threshold) {
-            return true;
-        }
-        
-        // Method 2: Check if devtools was just opened (timing)
-        try {
-            const start = performance.now();
-            debugger;
-            const end = performance.now();
-            
-            // If debugger took more than 100ms, devtools is likely open
-            if (end - start > 100) {
-                return true;
-            }
-        } catch (e) {
-            // Ignore errors
-        }
-        
-        return false;
-    }
-    
-    // ========== PHASE 2: SHOW "NO." PAGE ==========
-    function showNoPage() {
-        if (protectionActive) return;
-        protectionActive = true;
-        
-        console.log('🔒 DevTools detected - Showing No. page');
-        
-        // Save original content
-        originalBody = document.body.innerHTML;
-        originalHead = document.head.innerHTML;
-        
-        // Clear page and show "No."
-        document.head.innerHTML = '<title>No.</title>';
-        document.body.innerHTML = `
-            <div style="
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100vw;
-                height: 100vh;
-                background: #000;
-                color: #fff;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 999999;
-                font-family: Arial, sans-serif;
-            ">
-                <h1 style="font-size: 100px;">No.</h1>
-            </div>
-        `;
-        
-        // Start aggressive protection
-        startAggressiveProtection();
-        
-        // Auto-restore after 5 seconds
-        setTimeout(() => {
-            if (protectionActive) {
-                restorePage();
-            }
-        }, 5000);
-    }
-    
-    // ========== PHASE 3: AGGRESSIVE PROTECTION (When devtools is open) ==========
-    function startAggressiveProtection() {
-        // Spam debugger to make devtools unusable
-        const debuggerSpam = setInterval(() => {
-            if (!protectionActive) {
-                clearInterval(debuggerSpam);
-                return;
-            }
-            
-            try {
-                debugger;
-                eval("debugger");
-                Function("debugger")();
-            } catch(e) {
-                // Continue spamming
-            }
-        }, 50);
-        
-        // Flood console with warnings
-        const consoleSpam = setInterval(() => {
-            if (!protectionActive || typeof console === 'undefined') {
-                clearInterval(consoleSpam);
-                return;
-            }
-            
-            try {
-                console.clear();
-                console.log('%c🚫 DevTools Access Denied', 'color: red; font-size: 30px; font-weight: bold;');
-                console.log('%cThis action has been logged', 'color: yellow; font-size: 16px;');
-            } catch(e) {
-                // Can't access console
-            }
-        }, 100);
-        
-        // Clean up when protection ends
-        setTimeout(() => {
-            clearInterval(debuggerSpam);
-            clearInterval(consoleSpam);
-        }, 5000);
-    }
-    
-    // ========== PHASE 4: RESTORE PAGE ==========
-    function restorePage() {
-        if (!protectionActive) return;
-        
-        console.log('🔓 Restoring page...');
-        
-        // Restore original content
-        document.head.innerHTML = originalHead;
-        document.body.innerHTML = originalBody;
-        protectionActive = false;
-        
-        // Reinitialize page scripts
-        setTimeout(() => {
-            // Call any page initialization functions
-            if (typeof window.initializePage === 'function') {
-                window.initializePage();
-            }
-            
-            // Restart monitoring
-            startMonitoring();
-        }, 100);
-    }
-    
-    // ========== PHASE 5: KEYBOARD SHORTCUT BLOCKING ==========
+    // Only block on actual keyboard shortcuts
     document.addEventListener('keydown', function(e) {
-        // Block F12
+        // F12
         if (e.key === 'F12' || e.keyCode === 123) {
             e.preventDefault();
             e.stopPropagation();
-            if (!protectionActive) showNoPage();
+            showNoPage();
             return false;
         }
         
-        // Block Ctrl+Shift+I
+        // Ctrl+Shift+I
         if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) {
             e.preventDefault();
             e.stopPropagation();
-            if (!protectionActive) showNoPage();
+            showNoPage();
             return false;
         }
         
-        // Block Ctrl+Shift+J
+        // Ctrl+Shift+J
         if (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) {
             e.preventDefault();
             e.stopPropagation();
-            if (!protectionActive) showNoPage();
+            showNoPage();
             return false;
         }
         
-        // Block Ctrl+Shift+C
+        // Ctrl+Shift+C
         if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) {
             e.preventDefault();
             e.stopPropagation();
-            if (!protectionActive) showNoPage();
+            showNoPage();
+            return false;
+        }
+        
+        // Ctrl+U
+        if (e.ctrlKey && (e.key === 'U' || e.keyCode === 85)) {
+            e.preventDefault();
+            e.stopPropagation();
+            showNoPage();
             return false;
         }
     });
     
-    // Block right-click menu (optional)
+    // Block right-click
     document.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         e.stopPropagation();
         return false;
     });
     
-    // ========== PHASE 6: MONITORING ==========
-    let devToolsDetected = false;
-    let consecutiveDetections = 0;
-    
-    function checkDevTools() {
-        if (protectionActive) return;
+    function showNoPage() {
+        if (pageHidden) return;
+        pageHidden = true;
         
-        if (isDevToolsOpen()) {
-            consecutiveDetections++;
-            
-            // Require 2 consecutive detections to avoid false positives
-            if (consecutiveDetections >= 2 && !devToolsDetected) {
-                devToolsDetected = true;
-                showNoPage();
-            }
-        } else {
-            consecutiveDetections = 0;
-            devToolsDetected = false;
-        }
-    }
-    
-    function startMonitoring() {
-        if (checkInterval) {
-            clearInterval(checkInterval);
-        }
+        // Save original page
+        originalBody = document.body.innerHTML;
+        originalHead = document.head.innerHTML;
         
-        // Check every second (less frequent to reduce CPU usage)
-        checkInterval = setInterval(checkDevTools, 1000);
+        // Show simple "No." page
+        document.head.innerHTML = '<title>No.</title><style>body{margin:0;padding:0;background:#000;}</style>';
+        document.body.innerHTML = `
+            <div style="
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: black;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 999999;
+            ">
+                <h1 style="
+                    color: white;
+                    font-size: 100px;
+                    font-family: Arial, sans-serif;
+                ">No.</h1>
+            </div>
+        `;
         
-        // Also check on resize (devtools often changes window size)
-        window.addEventListener('resize', checkDevTools);
-    }
-    
-    // ========== PHASE 7: INITIALIZATION ==========
-    window.addEventListener('load', function() {
-        // Wait a bit before starting monitoring to avoid false positives on page load
+        // Auto-restore after 3 seconds
         setTimeout(() => {
-            startMonitoring();
-            
-            // Initial check after page is fully loaded
-            setTimeout(checkDevTools, 2000);
-        }, 1000);
-    });
+            restorePage();
+        }, 3000);
+    }
     
-    // Clean up on page unload
-    window.addEventListener('beforeunload', function() {
-        if (checkInterval) {
-            clearInterval(checkInterval);
-        }
-    });
+    function restorePage() {
+        if (!pageHidden) return;
+        
+        document.head.innerHTML = originalHead;
+        document.body.innerHTML = originalBody;
+        pageHidden = false;
+        
+        // Re-run any page initialization
+        setTimeout(() => {
+            if (typeof window.initializePage === 'function') {
+                window.initializePage();
+            }
+        }, 100);
+    }
     
 })();
 </script>
+"""
 
 _INDEX_HTML = f"""<!DOCTYPE html>
 <html lang="en">
