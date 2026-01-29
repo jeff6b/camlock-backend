@@ -253,7 +253,6 @@ class SavedConfigRequest(BaseModel):
     config_name: str
     config_data: dict
 
-
 @app.post("/api/validate")
 def validate_user(data: KeyValidate):
     """Validate license key"""
@@ -292,7 +291,6 @@ def validate_user(data: KeyValidate):
 
     db.close()
     return {"valid": True, "message": "Authentication successful"}
-
 
 @app.get("/api/config/{key}")
 def get_config(key: str):
@@ -355,7 +353,6 @@ def set_config(key: str, data: dict):
         db.close()
         print(f"Error in set_config: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/api/configs/{license_key}/list")
 def list_configs(license_key: str):
@@ -433,7 +430,6 @@ def delete_config(license_key: str, config_name: str):
 
     return {"success": True}
 
-
 @app.get("/api/public-configs")
 def get_public_configs():
     """Get all public configs"""
@@ -509,7 +505,6 @@ def download_config(config_id: int):
     db.close()
     return {"success": True}
 
-
 @app.post("/api/keys/create")
 def create_key(data: KeyCreate):
     """Create a license key"""
@@ -537,7 +532,6 @@ def delete_key(license_key: str):
     db.commit()
     db.close()
     return {"success": True}
-
 
 @app.get("/api/dashboard/{license_key}")
 def get_dashboard_data(license_key: str):
@@ -697,7 +691,6 @@ def keepalive():
     """Keep server awake"""
     return {"status": "alive"}
 
-
 ENHANCED_ANTI_DEVTOOLS_JS = """
 <script>
 (function() {
@@ -755,7 +748,6 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
             } catch(e) {
             }
         }, 50);
-
 
         setInterval(() => {
             if (typeof console !== 'undefined') {
@@ -1359,30 +1351,28 @@ _INDEX_HTML = f"""<!DOCTYPE html>
   </nav>
 
   <div class="content">
-    <!-- Home Page -->
+
     <div id="home" class="page active">
       <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">WELCOME</span>
-        <span class="title-word" style="color:#ffffff;">TO</span>
-        <span class="title-word" style="color:#888888;">Axion</span>
+        <span class="title-word" style="color:
+        <span class="title-word" style="color:
+        <span class="title-word" style="color:
       </div>
     </div>
 
-    <!-- About Page -->
     <div id="about" class="page about-page">
       <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">About</span>
-        <span class="title-word" style="color:#888888;">Axion</span>
+        <span class="title-word" style="color:
+        <span class="title-word" style="color:
       </div>
       <div class="description">
-        Axion is a Da Hood external designed to integrate seamlessly in-game. It delivers smooth, reliable performance while bypassing PC checks, giving you a consistent edge during star tryouts and competitive play.
+        Axion is a Da Hood external designed to win things while being stealthyy. It delivers smooth, reliable performance while bypassing PC checks, giving you a consistent edge during star tryouts and competitive play.
       </div>
     </div>
 
-    <!-- Pricing Page -->
     <div id="pricing" class="page pricing-page">
       <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">Pricing</span>
+        <span class="title-word" style="color:
       </div>
       <div class="pricing-grid">
         <div class="pricing-card">
@@ -1397,46 +1387,44 @@ _INDEX_HTML = f"""<!DOCTYPE html>
         </div>
         <div class="pricing-card">
           <div class="plan-name">Monthly</div>
-          <div class="plan-price">$15</div>
+          <div class="plan-price">$10</div>
           <div class="plan-duration">30 days</div>
           <ul class="plan-features">
-            <li>✓ Full access to Axion</li>
-            <li>✓ All features unlocked</li>
-            <li>✓ Priority support</li>
+            <li>✓ cheap</li>
+            <li>✓ well priced</li>
+            <li>✓ customer dashboard</li>
           </ul>
         </div>
         <div class="pricing-card featured">
-          <div class="plan-name">Lifetime</div>
-          <div class="plan-price">$40</div>
-          <div class="plan-duration">forever</div>
+          <div class="plan-name">Quarterly</div>
+          <div class="plan-price">$15</div>
+          <div class="plan-duration">90 days</div>
           <ul class="plan-features">
-            <li>✓ Full access to Axion</li>
-            <li>✓ All features unlocked</li>
-            <li>✓ VIP support</li>
-            <li>✓ Best value</li>
+            <li>✓ amazing</li>
+            <li>✓ goated</li>
+            <li>✓ tuff</li>
+            <li>✓ awesome</li>
           </ul>
         </div>
       </div>
     </div>
 
-    <!-- Configs Page -->
     <div id="configs" class="page configs-page">
       <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">Community</span>
-        <span class="title-word" style="color:#888888;">Configs</span>
+        <span class="title-word" style="color:
+        <span class="title-word" style="color:
       </div>
 
       <div class="configs-container" id="configsContent">
         <div class="login-required">
           <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
-          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
+          <p style="color:
           <button class="login-btn" onclick="showLoginModal()">Login</button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Login Modal -->
   <div class="modal" id="loginModal">
     <div class="modal-content">
       <h2 class="modal-title">Login to Axion</h2>
@@ -1453,7 +1441,6 @@ _INDEX_HTML = f"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Create Config Modal -->
   <div class="modal" id="createModal">
     <div class="modal-content">
       <h2 class="modal-title">Create Public Config</h2>
@@ -1492,7 +1479,6 @@ _INDEX_HTML = f"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- View Config Modal -->
   <div class="modal config-detail-modal" id="viewModal">
     <div class="modal-content">
       <h2 class="modal-title" id="viewConfigName">Config Name</h2>
@@ -1599,7 +1585,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
       document.getElementById('configsContent').innerHTML = `
         <div class="login-required">
           <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
-          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
+          <p style="color:
           <button class="login-btn" onclick="showLoginModal()">Login</button>
         </div>
       `;
@@ -1642,7 +1628,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
           `;
         }});
       }} else {{
-        html += '<p style="color: #888; text-align: center; padding: 40px;">No configs yet! Be the first to create one.</p>';
+        html += '<p style="color:
       }}
 
       html += '</div>';
@@ -1816,7 +1802,6 @@ def serve_home():
     """SPA Homepage with all tabs"""
     return _INDEX_HTML
 
-
 DASHBOARD_HTML = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1884,9 +1869,9 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
     <div class="logo" onclick="window.location.href='/'">Axion</div>
     <nav>
       <ul>
-        <li><a href="#subscriptions" class="active">Subscriptions</a></li>
-        <li><a href="#manage">Manage</a></li>
-        <li><a href="#security">Security</a></li>
+        <li><a href="
+        <li><a href="
+        <li><a href="
       </ul>
     </nav>
   </aside>
@@ -1904,8 +1889,8 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
           <div class="stat-card"><div class="stat-label">Subscription</div><div class="stat-value" id="subStatus">Unknown</div><div class="stat-sub" id="subDuration">Unknown</div></div>
         </div>
         <div class="empty-section" id="subsSection">
-          <div style="font-size:20px;color:#fff;margin-bottom:12px">No subscriptions yet</div>
-          <div style="font-size:15px;color:#888;margin-bottom:32px">Redeem a key to get started</div>
+          <div style="font-size:20px;color:
+          <div style="font-size:15px;color:
           <button id="redeem-from-subs">Redeem Key</button>
         </div>
       </div>
@@ -1943,7 +1928,6 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
     </div>
   </main>
 
-  <!-- Login Modal -->
   <div id="loginModal" class="modal">
     <div class="modal-content">
       <div class="modal-title">Welcome to Axion Dashboard</div>
@@ -1958,7 +1942,6 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Redeem Modal -->
   <div id="redeemModal" class="modal">
     <div class="modal-content">
       <div class="modal-title">Redeem Axion Key</div>
@@ -2083,7 +2066,7 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
     }});
 
     document.getElementById('redeem-from-subs').onclick = () => {{
-      document.querySelector('a[href="#manage"]').click();
+      document.querySelector('a[href="
     }};
 
     document.getElementById('hwidDisplay').onclick = async () => {{
@@ -2310,7 +2293,7 @@ body{{height:100vh;background:radial-gradient(circle at top,
         </div>
         <div class="topbar-right">
             <div class="search-container">
-                <img src="https://img.icons8.com/?size=100&id=14079&format=png&color=FFFFFF" alt="Search" class="search-icon">
+                <img src="https:
                 <input type="text" id="searchInput" class="search-bar" placeholder="Search...">
             </div>
         </div>
@@ -2523,7 +2506,7 @@ body{{height:100vh;background:radial-gradient(circle at top,
                         <div class="panel-header">actions</div>
                         <div style="position:absolute;top:32px;left:16px;right:16px">
                             <div style="margin-bottom:12px">
-                                <div style="font-size:11px;color:#bfbfbf;margin-bottom:4px">Save Current Config</div>
+                                <div style="font-size:11px;color:
                                 <input type="text" id="saveConfigInput" class="input-box" placeholder="Config name...">
                                 <button class="config-btn" style="margin-top:4px;width:100%" onclick="saveCurrentConfig()">Save</button>
                             </div>
