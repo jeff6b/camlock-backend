@@ -1,4 +1,4 @@
-# main.py - Complete FastAPI Backend with Anti-DevTools Protection
+
 from fastapi import FastAPI, HTTPException, Cookie, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 app = FastAPI()
 
-# CORS
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,7 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Default configuration
+
 DEFAULT_CONFIG = {
     "triggerbot": {
         "Enabled": True,
@@ -58,7 +58,7 @@ DEFAULT_CONFIG = {
     }
 }
 
-# Database config
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 USE_POSTGRES = DATABASE_URL is not None
 
@@ -224,9 +224,9 @@ def init_db():
     
     db.commit()
     db.close()
-    print("✅ Database initialized")
+    print("good")
 
-# Pydantic models
+
 class KeyValidate(BaseModel):
     key: str
     hwid: str
@@ -258,7 +258,7 @@ class SavedConfigRequest(BaseModel):
     config_name: str
     config_data: dict
 
-# === VALIDATION ===
+
 
 @app.post("/api/validate")
 def validate_user(data: KeyValidate):
@@ -299,7 +299,7 @@ def validate_user(data: KeyValidate):
     db.close()
     return {"valid": True, "message": "Authentication successful"}
 
-# === CONFIG SYNC ENDPOINTS (FIXED) ===
+
 
 @app.get("/api/config/{key}")
 def get_config(key: str):
@@ -363,7 +363,7 @@ def set_config(key: str, data: dict):
         print(f"Error in set_config: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# === SAVED CONFIGS ENDPOINTS ===
+
 
 @app.get("/api/configs/{license_key}/list")
 def list_configs(license_key: str):
@@ -441,7 +441,7 @@ def delete_config(license_key: str, config_name: str):
     
     return {"success": True}
 
-# === PUBLIC CONFIGS ===
+
 
 @app.get("/api/public-configs")
 def get_public_configs():
@@ -518,7 +518,7 @@ def download_config(config_id: int):
     db.close()
     return {"success": True}
 
-# === KEY MANAGEMENT ===
+
 
 @app.post("/api/keys/create")
 def create_key(data: KeyCreate):
@@ -548,7 +548,7 @@ def delete_key(license_key: str):
     db.close()
     return {"success": True}
 
-# === DASHBOARD API ===
+
 
 @app.get("/api/dashboard/{license_key}")
 def get_dashboard_data(license_key: str):
@@ -714,9 +714,9 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
 (function() {
     'use strict';
     
-    // Block keyboard shortcuts
+    
     document.addEventListener('keydown', function(e) {
-        // F12
+        
         if (e.key === 'F12' || e.keyCode === 123) {
             e.preventDefault();
             e.stopPropagation();
@@ -724,7 +724,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
             return false;
         }
         
-        // Ctrl+Shift+I
+        
         if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) {
             e.preventDefault();
             e.stopPropagation();
@@ -732,7 +732,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
             return false;
         }
         
-        // Ctrl+Shift+J
+        
         if (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) {
             e.preventDefault();
             e.stopPropagation();
@@ -740,7 +740,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
             return false;
         }
         
-        // Ctrl+Shift+C
+        
         if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) {
             e.preventDefault();
             e.stopPropagation();
@@ -748,7 +748,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
             return false;
         }
         
-        // Ctrl+U
+        
         if (e.ctrlKey && (e.key === 'U' || e.keyCode === 85)) {
             e.preventDefault();
             e.stopPropagation();
@@ -757,7 +757,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         }
     });
     
-    // Block right-click menu
+    
     document.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         e.stopPropagation();
@@ -765,27 +765,27 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
     });
     
     function startDebuggerSpam() {
-        // Start spamming debugger
+        
         setInterval(() => {
             try {
                 debugger;
                 eval("debugger");
                 Function("debugger")();
             } catch(e) {
-                // Continue spamming
+                
             }
         }, 50);
         
-        // Flood console
+        
         setInterval(() => {
             if (typeof console !== 'undefined') {
                 console.clear();
-                console.log('%c🚫 DevTools Disabled', 'color: red; font-size: 30px; font-weight: bold;');
+                console.log('%c dm inlination on discord if u manage to harm the website and lmk how u did it so i can improve thanks', 'color: red; font-size: 30px; font-weight: bold;');
             }
         }, 100);
     }
     
-    // Simple detection if devtools opens (even via menu)
+    
     let lastWidth = window.innerWidth;
     let lastHeight = window.innerHeight;
     
@@ -793,7 +793,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         const widthDiff = Math.abs(window.outerWidth - window.innerWidth);
         const heightDiff = Math.abs(window.outerHeight - window.innerHeight);
         
-        // If devtools panel detected
+        
         if (widthDiff > 150 || heightDiff > 150) {
             startDebuggerSpam();
         }
@@ -1381,7 +1381,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
   </nav>
 
   <div class="content">
-    <!-- Home Page -->
+    
     <div id="home" class="page active">
       <div class="title-wrapper">
         <span class="title-word" style="color:#ffffff;">WELCOME</span>
@@ -1390,7 +1390,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- About Page -->
+    
     <div id="about" class="page about-page">
       <div class="title-wrapper">
         <span class="title-word" style="color:#ffffff;">About</span>
@@ -1401,7 +1401,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Pricing Page -->
+    
     <div id="pricing" class="page pricing-page">
       <div class="title-wrapper">
         <span class="title-word" style="color:#ffffff;">Pricing</span>
@@ -1441,7 +1441,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Configs Page -->
+    
     <div id="configs" class="page configs-page">
       <div class="title-wrapper">
         <span class="title-word" style="color:#ffffff;">Community</span>
@@ -1458,7 +1458,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Login Modal -->
+  
   <div class="modal" id="loginModal">
     <div class="modal-content">
       <h2 class="modal-title">Login to Axion</h2>
@@ -1475,7 +1475,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Create Config Modal -->
+  
   <div class="modal" id="createModal">
     <div class="modal-content">
       <h2 class="modal-title">Create Public Config</h2>
@@ -1514,7 +1514,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- View Config Modal -->
+  
   <div class="modal config-detail-modal" id="viewModal">
     <div class="modal-content">
       <h2 class="modal-title" id="viewConfigName">Config Name</h2>
@@ -1838,9 +1838,7 @@ def serve_home():
     """SPA Homepage with all tabs"""
     return _INDEX_HTML
 
-# ============================================================================
-# DASHBOARD WITH ANTI-DEVTOOLS PROTECTION
-# ============================================================================
+
 
 DASHBOARD_HTML = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1970,7 +1968,7 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
     </div>
   </main>
 
-  <!-- Login Modal -->
+  
   <div id="loginModal" class="modal">
     <div class="modal-content">
       <div class="modal-title">Welcome to Axion Dashboard</div>
@@ -1985,7 +1983,7 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Redeem Modal -->
+  
   <div id="redeemModal" class="modal">
     <div class="modal-content">
       <div class="modal-title">Redeem Axion Key</div>
@@ -2001,14 +1999,14 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
     let licenseKey = localStorage.getItem('axion_license');
     let hasLicense = localStorage.getItem('axion_has_license') === 'true';
 
-    // Show login modal on first visit
+    
     if (!localStorage.getItem('axion_dashboard_visited')) {{
       document.getElementById('loginModal').classList.add('show');
     }} else if (hasLicense && licenseKey) {{
       loadDashboard();
     }}
 
-    // No license button - browse without license
+    
     document.getElementById('noLicenseBtn').onclick = () => {{
       localStorage.setItem('axion_dashboard_visited', 'true');
       localStorage.setItem('axion_has_license', 'false');
@@ -2018,7 +2016,7 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
       setUnknownState();
     }};
 
-    // Yes license button - validate and login
+   
     document.getElementById('yesLicenseBtn').onclick = async () => {{
       const key = document.getElementById('loginKeyInput').value.trim();
       
@@ -2048,7 +2046,7 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
       }}
     }};
 
-    // Set everything to "Unknown" for no license mode
+    
     function setUnknownState() {{
       document.getElementById('activeSubs').textContent = 'Unknown';
       document.getElementById('totalResets').textContent = 'Unknown';
@@ -2058,7 +2056,7 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
       document.getElementById('hwidDisplay').textContent = 'Unknown';
     }}
 
-    // Load dashboard data with license
+    
     async function loadDashboard() {{
       if (!hasLicense || !licenseKey) {{
         setUnknownState();
@@ -2077,12 +2075,12 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
         
         const data = await res.json();
         
-        // Update stats
+        
         document.getElementById('activeSubs').textContent = data.active ? '1' : '0';
         document.getElementById('totalResets').textContent = data.hwid_resets || 0;
         document.getElementById('subStatus').textContent = data.active ? 'Active' : 'Inactive';
         
-        // Update duration display
+        
         const durationMap = {{
           'weekly': 'Weekly',
           'monthly': 'Monthly',
@@ -2091,7 +2089,7 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
         }};
         document.getElementById('subDuration').textContent = durationMap[data.duration] || data.duration.toUpperCase();
         
-        // Update security info
+        
         document.getElementById('licenseDisplay').textContent = data.license_key;
         document.getElementById('hwidDisplay').textContent = data.hwid || 'Not bound';
         
@@ -2101,7 +2099,7 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
       }}
     }}
 
-    // Tab navigation
+    
     document.querySelectorAll('nav a').forEach(link => {{
       link.addEventListener('click', e => {{
         e.preventDefault();
@@ -2118,19 +2116,19 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
       }});
     }});
 
-    // Redeem from subscriptions button
+    
     document.getElementById('redeem-from-subs').onclick = () => {{
       document.querySelector('a[href="#manage"]').click();
     }};
 
-    // HWID reset
+    
     document.getElementById('hwidDisplay').onclick = async () => {{
       if (!hasLicense || !licenseKey) {{
         alert('Please login with a license key to reset HWID');
         return;
       }}
 
-      if (!confirm("Are you sure you want to reset your HWID? This action cannot be undone.")) return;
+      if (!confirm("im a loser for doing this basic stuff but do you wanna reset yes no probably yes ngl but yeah bye have nice day boi")) return;
       
       try {{
         const res = await fetch(`/api/reset-hwid/${{licenseKey}}`, {{ method: 'POST' }});
@@ -2150,7 +2148,7 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
       }}
     }};
 
-    // Modal handling for redeem
+    
     const redeemModal = document.getElementById('redeemModal');
     const redeemBtn = document.getElementById('redeemBtn');
     const continueBtn = document.getElementById('continueBtn');
