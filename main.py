@@ -1,45 +1,39 @@
-from fastapi import FastAPI, HTTPException, Cookie, Response, Request, Depends
+from fastapi import FastAPI, HTTPException, Cookie, Response, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, validator
+from typing import Optional
 import psycopg2
 import sqlite3
 import os
 import json
 import secrets
-import hashlib
-import hmac
-from datetime import datetime, timedelta
 import re
-from functools import wraps
-import binascii
-import struct
+import time
+from datetime import datetime, timedelta
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+import html
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI()
 
-# Security middleware
-security = HTTPBearer(auto_error=False)
+# Add rate limiting middleware
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
-# CORS configuration - only allow dashboard.getaxion.lol
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://dashboard.getaxion.lol", "http://dashboard.getaxion.lol"],
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"]
 )
-
-
-
-# Anti-bot/brute force protection
-RATE_LIMITS = {}
-MAX_REQUESTS_PER_MINUTE = 4
-
-# Encryption key for license keys
-ENCRYPTION_KEY = hashlib.sha256(b"CHANGE_THIS_TO_RANDOM_KEY_IN_PRODUCTION").digest()
 
 DEFAULT_CONFIG = {
     "triggerbot": {
@@ -79,6 +73,30 @@ DEFAULT_CONFIG = {
 DATABASE_URL = os.getenv("DATABASE_URL")
 USE_POSTGRES = DATABASE_URL is not None
 
+# SQL injection patterns
+SQL_INJECTION_PATTERNS = [
+    r"(?i)(\bunion\b.*\bselect\b)",
+    r"(?i)(\bselect\b.*\bfrom\b)",
+    r"(?i)(\binsert\b.*\binto\b)",
+    r"(?i)(\bupdate\b.*\bset\b)",
+    r"(?i)(\bdelete\b.*\bfrom\b)",
+    r"(?i)(\bdrop\b.*\btable\b)",
+    r"(?i)(\btruncate\b.*\btable\b)",
+    r"(?i)(\balter\b.*\btable\b)",
+    r"(?i)(\bcreate\b.*\btable\b)",
+    r"(?i)(\bexec\b.*\b\(|\bsp_executesql\b)",
+    r"(?i)(\bwaitfor\b.*\bdelay\b)",
+    r"(?i)(\bsleep\b\(.*\))",
+    r"(?i)(\bbenchmark\b\(.*\))",
+    r"(--|\#|\/\*)",
+    r"(\bxp_cmdshell\b|\bsp_oacreate\b)",
+    r"(;.*\bselect\b|\bselect\b.*;)",
+    r"(\binto\b.*\boutfile\b|\binto\b.*\bdumpfile\b)",
+]
+
+# Request tracking for rate limiting
+request_tracker = {}
+
 def get_db():
     if USE_POSTGRES:
         return psycopg2.connect(DATABASE_URL)
@@ -91,173 +109,107 @@ def q(query):
         return query
     return query.replace("%s", "?")
 
-# Encryption functions for license keys
-def encrypt_license_key(plain_text: str) -> str:
-    """Encrypt license key using XOR + HMAC for integrity"""
-    if not plain_text:
-        return ""
+def sanitize_input(input_str: str, max_length: int = 100) -> str:
+    """Sanitize input against SQL injection and XSS"""
+    if not isinstance(input_str, str):
+        return input_str
     
-    # Generate random IV
-    iv = secrets.token_bytes(16)
+    # Check length
+    if len(input_str) > max_length:
+        raise HTTPException(status_code=400, detail="Input too long")
     
-    # XOR encryption with key
-    key_bytes = ENCRYPTION_KEY[:len(plain_text.encode())]
-    plain_bytes = plain_text.encode()
-    encrypted = bytes(p ^ k for p, k in zip(plain_bytes, key_bytes))
+    # Check for SQL injection patterns
+    for pattern in SQL_INJECTION_PATTERNS:
+        if re.search(pattern, input_str, re.IGNORECASE):
+            print(f"SQL injection attempt blocked: {input_str[:50]}")
+            raise HTTPException(status_code=400, detail="Invalid input")
     
-    # Create HMAC for integrity
-    hmac_obj = hmac.new(ENCRYPTION_KEY, iv + encrypted, hashlib.sha256)
-    hmac_digest = hmac_obj.digest()[:8]
+    # Escape HTML for XSS protection
+    sanitized = html.escape(input_str)
     
-    # Combine IV + encrypted + HMAC
-    combined = iv + encrypted + hmac_digest
-    return binascii.hexlify(combined).decode()
+    # Remove null bytes
+    sanitized = sanitized.replace('\x00', '')
+    
+    return sanitized
 
-def decrypt_license_key(encrypted_text: str) -> Optional[str]:
-    """Decrypt and verify license key"""
-    if not encrypted_text:
-        return None
-    
-    try:
-        combined = binascii.unhexlify(encrypted_text)
-        
-        # Extract components
-        iv = combined[:16]
-        encrypted = combined[16:-8]
-        received_hmac = combined[-8:]
-        
-        # Verify HMAC
-        hmac_obj = hmac.new(ENCRYPTION_KEY, iv + encrypted, hashlib.sha256)
-        expected_hmac = hmac_obj.digest()[:8]
-        
-        if not hmac.compare_digest(received_hmac, expected_hmac):
-            return None
-        
-        # XOR decryption
-        key_bytes = ENCRYPTION_KEY[:len(encrypted)]
-        plain_bytes = bytes(p ^ k for p, k in zip(encrypted, key_bytes))
-        
-        return plain_bytes.decode()
-    except:
-        return None
-
-# Security middleware
-async def rate_limit_middleware(request: Request):
-    """Rate limiting middleware"""
-    client_ip = request.client.host
-    now = datetime.now()
-    
-    if client_ip in RATE_LIMITS:
-        requests, timestamp = RATE_LIMITS[client_ip]
-        if (now - timestamp).seconds < 60:
-            if requests > MAX_REQUESTS_PER_MINUTE:
-                raise HTTPException(status_code=429, detail="Too many requests")
-            RATE_LIMITS[client_ip] = (requests + 1, timestamp)
-        else:
-            RATE_LIMITS[client_ip] = (1, now)
-    else:
-        RATE_LIMITS[client_ip] = (1, now)
-
-async def sql_injection_protection(data: dict):
-    """Check for SQL injection patterns"""
-    injection_patterns = [
-        r"(?i)(union\s+select)",
-        r"(?i)(select.*from)",
-        r"(?i)(insert\s+into)",
-        r"(?i)(update\s+set)",
-        r"(?i)(delete\s+from)",
-        r"(?i)(drop\s+table)",
-        r"(?i)(--\s*$)",
-        r"(?i)(/\*.*\*/)",
-        r"(?i)(;\s*$)",
-        r"(?i)(exec\s*\()",
-        r"(?i)(xp_cmdshell)",
-        r"(?i)(waitfor\s+delay)",
-        r"(?i)(sleep\s*\()",
-        r"(\-\-)",
-        r"(\|\|.*\|\|)",
-        r"(\%27|\')",
-        r"(\%22|\")",
-        r"(\%3B|\;)",
-        r"(\%00|\x00)",
-        r"(1=1)",
-        r"(or\s+1=1)",
-    ]
-    
-    def check_value(value):
-        if isinstance(value, str):
-            for pattern in injection_patterns:
-                if re.search(pattern, value, re.IGNORECASE):
-                    raise HTTPException(status_code=400, detail="Invalid input detected")
-    
-    for key, value in data.items():
-        if isinstance(value, dict):
-            await sql_injection_protection(value)
-        elif isinstance(value, list):
-            for item in value:
-                if isinstance(item, (dict, list)):
-                    await sql_injection_protection(item)
-                else:
-                    check_value(str(item))
-        else:
-            check_value(str(value))
-
-# Input validation
-def validate_discord_id(discord_id: str):
-    """Validate Discord ID format"""
-    if not re.match(r'^\d{17,19}$', discord_id):
-        raise HTTPException(status_code=400, detail="Invalid Discord ID format")
-    return discord_id
-
-def validate_license_key_format(key: str):
+def validate_license_key(key: str) -> bool:
     """Validate license key format"""
-    if not re.match(r'^\d{4}-\d{4}-\d{4}-\d{4}$', key):
-        raise HTTPException(status_code=400, detail="Invalid license key format")
-    return key
+    pattern = r"^[0-9]{4}-[0-9]{4}-[0-9]{4}-[0-9]{4}$"
+    return bool(re.match(pattern, key))
 
-def validate_hwid(hwid: str):
-    """Validate HWID format"""
-    if hwid != 'web-login' and not re.match(r'^[A-F0-9-]{20,}$', hwid, re.IGNORECASE):
-        raise HTTPException(status_code=400, detail="Invalid HWID format")
-    return hwid
+def validate_discord_id(discord_id: str) -> bool:
+    """Validate Discord ID format"""
+    pattern = r"^\d{17,20}$"
+    return bool(re.match(pattern, discord_id))
 
-# Safe database execution
-def safe_db_execute(query: str, params: tuple = (), fetch_one: bool = False, fetch_all: bool = False):
-    """Execute database query safely with parameterized inputs"""
-    db = get_db()
-    cur = db.cursor()
+def check_rate_limit(client_ip: str, endpoint: str) -> bool:
+    """Simple rate limiting: 2 requests per minute"""
+    current_time = time.time()
+    key = f"{client_ip}:{endpoint}"
     
+    if key not in request_tracker:
+        request_tracker[key] = []
+    
+    # Clean old requests (older than 60 seconds)
+    request_tracker[key] = [t for t in request_tracker[key] if current_time - t < 60]
+    
+    # Check if limit exceeded
+    if len(request_tracker[key]) >= 2:
+        return False
+    
+    # Add current request
+    request_tracker[key].append(current_time)
+    return True
+
+def execute_safe_query(query: str, params: tuple = (), fetch_one: bool = False, fetch_all: bool = False):
+    """Execute SQL query with parameterized inputs"""
+    db = None
     try:
-        # Convert query for correct database
-        safe_query = q(query)
+        db = get_db()
+        cur = db.cursor()
         
         # Execute with parameters
-        cur.execute(safe_query, params)
+        cur.execute(q(query), params)
         
         if fetch_one:
             result = cur.fetchone()
         elif fetch_all:
             result = cur.fetchall()
         else:
+            db.commit()
             result = None
         
-        db.commit()
         return result
+        
     except Exception as e:
-        db.rollback()
+        if db:
+            db.rollback()
+        # Don't expose database errors to client
+        print(f"Database error: {type(e).__name__}")
         raise HTTPException(status_code=500, detail="Database error")
     finally:
-        cur.close()
-        db.close()
+        if db:
+            db.close()
+
+def rate_limit_decorator(func):
+    """Decorator to add rate limiting to endpoints"""
+    async def wrapper(request: Request, *args, **kwargs):
+        client_ip = get_remote_address(request)
+        endpoint = request.url.path
+        
+        if not check_rate_limit(client_ip, endpoint):
+            raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again in 60 seconds.")
+        
+        return await func(request, *args, **kwargs)
+    return wrapper
+
 def init_db():
-    """Initialize database with encrypted license keys"""
     db = get_db()
     cur = db.cursor()
     
     if USE_POSTGRES:
         cur.execute("""CREATE TABLE IF NOT EXISTS keys (
             key TEXT PRIMARY KEY,
-            encrypted_key TEXT NOT NULL,
             duration TEXT NOT NULL,
             created_at TEXT NOT NULL,
             expires_at TEXT,
@@ -270,20 +222,11 @@ def init_db():
         )""")
         
         try:
-            cur.execute("ALTER TABLE keys ADD COLUMN IF NOT EXISTS encrypted_key TEXT")
             cur.execute("ALTER TABLE keys ADD COLUMN IF NOT EXISTS hwid_resets INTEGER DEFAULT 0")
             db.commit()
         except:
             pass
         
-        # Migrate existing keys to encrypted format
-        cur.execute("SELECT key FROM keys WHERE encrypted_key IS NULL")
-        rows = cur.fetchall()
-        for row in rows:
-            plain_key = row[0]
-            encrypted = encrypt_license_key(plain_key)
-            cur.execute("UPDATE keys SET encrypted_key = %s WHERE key = %s", (encrypted, plain_key))
-        
         cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
             id SERIAL PRIMARY KEY,
             license_key TEXT NOT NULL,
@@ -305,6 +248,24 @@ def init_db():
             downloads INTEGER DEFAULT 0
         )""")
         
+        try:
+            cur.execute("SELECT discord_id FROM public_configs LIMIT 1")
+            cur.execute("DROP TABLE IF EXISTS public_configs")
+            cur.execute("""CREATE TABLE public_configs (
+                id SERIAL PRIMARY KEY,
+                config_name TEXT NOT NULL,
+                author_name TEXT NOT NULL,
+                game_name TEXT NOT NULL,
+                description TEXT,
+                config_data TEXT NOT NULL,
+                license_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                downloads INTEGER DEFAULT 0
+            )""")
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            
         cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
             session_id TEXT PRIMARY KEY,
             license_key TEXT NOT NULL,
@@ -316,20 +277,9 @@ def init_db():
             key TEXT PRIMARY KEY,
             config TEXT NOT NULL
         )""")
-        
-        cur.execute("""CREATE TABLE IF NOT EXISTS audit_log (
-            id SERIAL PRIMARY KEY,
-            action TEXT NOT NULL,
-            license_key TEXT,
-            ip_address TEXT,
-            user_agent TEXT,
-            timestamp TEXT NOT NULL,
-            details TEXT
-        )""")
     else:
         cur.execute("""CREATE TABLE IF NOT EXISTS keys (
             key TEXT PRIMARY KEY,
-            encrypted_key TEXT,
             duration TEXT NOT NULL,
             created_at TEXT NOT NULL,
             expires_at TEXT,
@@ -342,19 +292,10 @@ def init_db():
         )""")
         
         try:
-            cur.execute("ALTER TABLE keys ADD COLUMN encrypted_key TEXT")
             cur.execute("ALTER TABLE keys ADD COLUMN hwid_resets INTEGER DEFAULT 0")
             db.commit()
         except:
             pass
-        
-        # Migrate existing keys to encrypted format
-        cur.execute("SELECT key FROM keys WHERE encrypted_key IS NULL")
-        rows = cur.fetchall()
-        for row in rows:
-            plain_key = row[0]
-            encrypted = encrypt_license_key(plain_key)
-            cur.execute("UPDATE keys SET encrypted_key = ? WHERE key = ?", (encrypted, plain_key))
         
         cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -377,6 +318,27 @@ def init_db():
             downloads INTEGER DEFAULT 0
         )""")
         
+        try:
+            cur.execute("SELECT discord_id FROM public_configs LIMIT 1")
+            cur.execute("DROP TABLE IF EXISTS public_configs")
+            cur.execute("""CREATE TABLE public_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                config_name TEXT NOT NULL,
+                author_name TEXT NOT NULL,
+                game_name TEXT NOT NULL,
+                description TEXT,
+                config_data TEXT NOT NULL,
+                license_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                downloads INTEGER DEFAULT 0
+            )""")
+            db.commit()
+        except Exception as e:
+            try:
+                db.rollback()
+            except:
+                pass
+                
         cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
             session_id TEXT PRIMARY KEY,
             license_key TEXT NOT NULL,
@@ -388,94 +350,49 @@ def init_db():
             key TEXT PRIMARY KEY,
             config TEXT NOT NULL
         )""")
-        
-        cur.execute("""CREATE TABLE IF NOT EXISTS audit_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            action TEXT NOT NULL,
-            license_key TEXT,
-            ip_address TEXT,
-            user_agent TEXT,
-            timestamp TEXT NOT NULL,
-            details TEXT
-        )""")
     
     db.commit()
     db.close()
+    print("good")
 
-# Audit logging
-def log_audit(request: Request, action: str, license_key: str = None, details: str = None):
-    """Log security-relevant actions"""
-    try:
-        ip_address = request.client.host if request.client else "unknown"
-        user_agent = request.headers.get("user-agent", "unknown")
-        
-        safe_db_execute(
-            "INSERT INTO audit_log (action, license_key, ip_address, user_agent, timestamp, details) VALUES (%s, %s, %s, %s, %s, %s)",
-            (action, license_key, ip_address, user_agent, datetime.now().isoformat(), details)
-        )
-    except:
-        pass  # Don't crash if audit logging fails
 
-# Request validation middleware
-async def validate_request(request: Request):
-    """Validate all incoming requests"""
-    # Rate limiting
-    await rate_limit_middleware(request)
-    
-    # Check for XSS in headers
-    xss_patterns = [r"<script", r"javascript:", r"onerror=", r"onload=", r"eval\("]
-    for header, value in request.headers.items():
-        if any(re.search(pattern, value, re.IGNORECASE) for pattern in xss_patterns):
-            raise HTTPException(status_code=400, detail="Malicious request detected")
-    
-    # Check user agent
-    if "user-agent" not in request.headers:
-        raise HTTPException(status_code=400, detail="User agent required")
-
-# Pydantic models with validation
 class KeyValidate(BaseModel):
     key: str
     hwid: str
     
-    def validate(self):
-        validate_license_key_format(self.key)
-        validate_hwid(self.hwid)
-        return self
+    @validator('key')
+    def validate_key(cls, v):
+        if not validate_license_key(v):
+            raise ValueError('Invalid license key format')
+        return sanitize_input(v)
+    
+    @validator('hwid')
+    def validate_hwid(cls, v):
+        if v != 'web-login' and not re.match(r'^[A-F0-9\-]{8,64}$', v):
+            raise ValueError('Invalid HWID format')
+        return sanitize_input(v)
 
 class ConfigData(BaseModel):
     name: str
     data: dict
     
-    def validate(self):
-        if len(self.name) > 100:
-            raise HTTPException(status_code=400, detail="Config name too long")
-        
-        # Basic XSS prevention in config data
-        def check_for_xss(obj):
-            if isinstance(obj, dict):
-                for k, v in obj.items():
-                    if isinstance(v, str):
-                        if any(xss in v.lower() for xss in ["<script>", "javascript:", "onclick="]):
-                            raise HTTPException(status_code=400, detail="Invalid config data")
-                    elif isinstance(v, (dict, list)):
-                        check_for_xss(v)
-            elif isinstance(obj, list):
-                for item in obj:
-                    check_for_xss(item)
-        
-        check_for_xss(self.data)
-        return self
+    @validator('name')
+    def validate_name(cls, v):
+        return sanitize_input(v, max_length=50)
 
 class KeyCreate(BaseModel):
     duration: str
     created_by: str
     
-    def validate(self):
-        if self.duration not in ["weekly", "monthly", "3monthly", "lifetime"]:
-            raise HTTPException(status_code=400, detail="Invalid duration")
-        if len(self.created_by) > 50:
-            raise HTTPException(status_code=400, detail="Creator name too long")
-        return self
+    @validator('duration')
+    def validate_duration(cls, v):
+        if v not in ['weekly', 'monthly', '3monthly', 'lifetime']:
+            raise ValueError('Invalid duration')
+        return sanitize_input(v)
+    
+    @validator('created_by')
+    def validate_created_by(cls, v):
+        return sanitize_input(v, max_length=50)
 
 class PublicConfig(BaseModel):
     config_name: str
@@ -484,302 +401,300 @@ class PublicConfig(BaseModel):
     description: str
     config_data: dict
     
-    def validate(self):
-        if len(self.config_name) > 100:
-            raise HTTPException(status_code=400, detail="Config name too long")
-        if len(self.author_name) > 50:
-            raise HTTPException(status_code=400, detail="Author name too long")
-        if len(self.game_name) > 50:
-            raise HTTPException(status_code=400, detail="Game name too long")
-        if len(self.description) > 500:
-            raise HTTPException(status_code=400, detail="Description too long")
-        
-        # XSS prevention
-        xss_patterns = [r"<script", r"javascript:", r"onerror=", r"onload="]
-        for field in [self.config_name, self.author_name, self.game_name, self.description]:
-            if any(re.search(pattern, field, re.IGNORECASE) for pattern in xss_patterns):
-                raise HTTPException(status_code=400, detail="Invalid input detected")
-        
-        # Validate config data structure
-        if not isinstance(self.config_data, dict):
-            raise HTTPException(status_code=400, detail="Invalid config data")
-        
-        return self
+    @validator('config_name')
+    def validate_config_name(cls, v):
+        return sanitize_input(v, max_length=50)
+    
+    @validator('author_name')
+    def validate_author_name(cls, v):
+        return sanitize_input(v, max_length=30)
+    
+    @validator('game_name')
+    def validate_game_name(cls, v):
+        return sanitize_input(v, max_length=30)
+    
+    @validator('description')
+    def validate_description(cls, v):
+        return sanitize_input(v, max_length=500)
 
 class SaveConfig(BaseModel):
     name: str
     data: dict
     
-    def validate(self):
-        if len(self.name) > 100:
-            raise HTTPException(status_code=400, detail="Config name too long")
-        return self
+    @validator('name')
+    def validate_name(cls, v):
+        return sanitize_input(v, max_length=50)
 
 class RedeemRequest(BaseModel):
     key: str
     discord_id: str
     
-    def validate(self):
-        validate_license_key_format(self.key)
-        validate_discord_id(self.discord_id)
-        return self
+    @validator('key')
+    def validate_key(cls, v):
+        if not validate_license_key(v):
+            raise ValueError('Invalid license key format')
+        return sanitize_input(v)
+    
+    @validator('discord_id')
+    def validate_discord_id(cls, v):
+        if not validate_discord_id(v):
+            raise ValueError('Invalid Discord ID')
+        return sanitize_input(v)
 
 class SavedConfigRequest(BaseModel):
     config_name: str
     config_data: dict
     
-    def validate(self):
-        if len(self.config_name) > 100:
-            raise HTTPException(status_code=400, detail="Config name too long")
-        return self
+    @validator('config_name')
+    def validate_config_name(cls, v):
+        return sanitize_input(v, max_length=50)
 
-# API endpoints with security enhancements
-@app.middleware("http")
-async def security_middleware(request: Request, call_next):
-    """Global security middleware"""
-    # Validate request
-    await validate_request(request)
-    
-    # Process request
-    response = await call_next(request)
-    
-    # Security headers
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
-    
-    return response
+
 
 @app.post("/api/validate")
-async def validate_user(data: KeyValidate, request: Request):
-    """Validate license key with enhanced security"""
-    # Validate input
-    data.validate()
-    
-    # Check for SQL injection
-    await sql_injection_protection(data.dict())
-    
-    # Log the attempt
-    log_audit(request, "VALIDATE_ATTEMPT", data.key, f"HWID: {data.hwid}")
-    
-    # Check if key exists and is valid
-    result = safe_db_execute(
-        "SELECT encrypted_key, active, expires_at, hwid FROM keys WHERE key = %s",
-        (data.key,),
-        fetch_one=True
-    )
-    
-    if not result:
-        log_audit(request, "VALIDATE_FAIL", data.key, "Invalid key")
-        return {"valid": False, "error": "Invalid license key"}
-    
-    encrypted_key, active, expires_at, hwid = result
-    
-    # Verify encrypted key matches
-    decrypted_key = decrypt_license_key(encrypted_key)
-    if decrypted_key != data.key:
-        log_audit(request, "VALIDATE_FAIL", data.key, "Key tampering detected")
-        return {"valid": False, "error": "Invalid license key"}
-    
-    if active == 0:
-        log_audit(request, "VALIDATE_FAIL", data.key, "License inactive")
-        return {"valid": False, "error": "License inactive"}
-    
-    if expires_at and datetime.now() > datetime.fromisoformat(expires_at):
-        log_audit(request, "VALIDATE_FAIL", data.key, "License expired")
-        return {"valid": False, "error": "License expired"}
-    
-    if data.hwid != 'web-login':
-        if hwid is None:
-            # Bind HWID
-            safe_db_execute(
-                "UPDATE keys SET hwid = %s WHERE key = %s",
-                (data.hwid, data.key)
-            )
-            log_audit(request, "VALIDATE_SUCCESS", data.key, "HWID bound")
-            return {"valid": True, "message": "HWID bound successfully"}
-        elif hwid == data.hwid:
-            log_audit(request, "VALIDATE_SUCCESS", data.key, "Authentication successful")
-            return {"valid": True, "message": "Authentication successful"}
-        else:
-            log_audit(request, "VALIDATE_FAIL", data.key, "HWID mismatch")
-            return {"valid": False, "error": "HWID mismatch"}
-    
-    log_audit(request, "VALIDATE_SUCCESS", data.key, "Web login successful")
-    return {"valid": True, "message": "Authentication successful"}
+@rate_limit_decorator
+async def validate_user(request: Request, data: KeyValidate):
+    """Validate license key"""
+    try:
+        result = execute_safe_query(
+            "SELECT key, active, expires_at, hwid FROM keys WHERE key=%s",
+            (data.key,),
+            fetch_one=True
+        )
+        
+        if not result:
+            return {"valid": False, "error": "Invalid license key"}
+        
+        key, active, expires_at, hwid = result
+        
+        if active == 0:
+            return {"valid": False, "error": "License inactive"}
+        
+        if expires_at and datetime.now() > datetime.fromisoformat(expires_at):
+            return {"valid": False, "error": "License expired"}
+        
+        if data.hwid != 'web-login':
+            if hwid is None:
+                execute_safe_query(
+                    "UPDATE keys SET hwid=%s WHERE key=%s",
+                    (data.hwid, data.key)
+                )
+                return {"valid": True, "message": "HWID bound successfully"}
+            elif hwid == data.hwid:
+                return {"valid": True, "message": "Authentication successful"}
+            else:
+                return {"valid": False, "error": "HWID mismatch"}
+        
+        return {"valid": True, "message": "Authentication successful"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Validation error: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
+
+
 
 @app.get("/api/config/{key}")
-async def get_config(key: str, request: Request):
+@rate_limit_decorator
+async def get_config(request: Request, key: str):
     """Get config for a license key"""
-    # Validate key format
-    validate_license_key_format(key)
+    if not validate_license_key(key):
+        raise HTTPException(status_code=400, detail="Invalid license key format")
     
-    # Log access
-    log_audit(request, "GET_CONFIG", key)
+    key = sanitize_input(key)
     
-    result = safe_db_execute(
-        "SELECT config FROM settings WHERE key = %s",
-        (key,),
-        fetch_one=True
-    )
-    
-    if not result:
-        # Create default config if not exists
-        safe_db_execute(
-            "INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING",
-            (key, json.dumps(DEFAULT_CONFIG))
+    try:
+        result = execute_safe_query(
+            "SELECT config FROM settings WHERE key=%s",
+            (key,),
+            fetch_one=True
         )
+        
+        if not result:
+            if USE_POSTGRES:
+                execute_safe_query(
+                    "INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING",
+                    (key, json.dumps(DEFAULT_CONFIG))
+                )
+            else:
+                execute_safe_query(
+                    "INSERT OR IGNORE INTO settings (key, config) VALUES (?, ?)",
+                    (key, json.dumps(DEFAULT_CONFIG))
+                )
+            return DEFAULT_CONFIG
+        
+        return json.loads(result[0])
+        
+    except Exception as e:
+        print(f"Error in get_config: {e}")
         return DEFAULT_CONFIG
-    
-    return json.loads(result[0])
 
 @app.post("/api/config/{key}")
-async def set_config(key: str, data: dict, request: Request):
+@rate_limit_decorator
+async def set_config(request: Request, key: str, data: dict):
     """Save config for a license key"""
-    # Validate key format
-    validate_license_key_format(key)
+    if not validate_license_key(key):
+        raise HTTPException(status_code=400, detail="Invalid license key format")
     
-    # Check for SQL injection in config data
-    await sql_injection_protection(data)
-    
-    # Log the update
-    log_audit(request, "SET_CONFIG", key)
+    key = sanitize_input(key)
     
     try:
-        safe_db_execute(
-            """INSERT INTO settings (key, config) VALUES (%s, %s)
-               ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
-            (key, json.dumps(data))
-        )
+        if USE_POSTGRES:
+            execute_safe_query(
+                """INSERT INTO settings (key, config) VALUES (%s, %s)
+                   ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
+                (key, json.dumps(data))
+            )
+        else:
+            execute_safe_query(
+                """INSERT INTO settings (key, config) VALUES (?, ?)
+                   ON CONFLICT (key) DO UPDATE SET config = excluded.config""",
+                (key, json.dumps(data))
+            )
+        
         return {"status": "ok"}
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        print(f"Error in set_config: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
+
+
 
 @app.get("/api/configs/{license_key}/list")
-async def list_configs(license_key: str, request: Request):
+@rate_limit_decorator
+async def list_configs(request: Request, license_key: str):
     """List saved configs"""
-    validate_license_key_format(license_key)
-    log_audit(request, "LIST_CONFIGS", license_key)
+    if not validate_license_key(license_key):
+        raise HTTPException(status_code=400, detail="Invalid license key format")
     
-    rows = safe_db_execute(
-        "SELECT config_name, created_at FROM saved_configs WHERE license_key = %s ORDER BY created_at DESC",
-        (license_key,),
-        fetch_all=True
-    )
-    
-    configs = [{"name": row[0], "created_at": row[1]} for row in rows]
-    return {"configs": configs}
-
-@app.post("/api/configs/{license_key}/save")
-async def save_config(license_key: str, data: SavedConfigRequest, request: Request):
-    """Save a config"""
-    # Validate inputs
-    validate_license_key_format(license_key)
-    data.validate()
-    
-    # Check for SQL injection
-    await sql_injection_protection(data.dict())
-    
-    log_audit(request, "SAVE_CONFIG", license_key, f"Config: {data.config_name}")
+    license_key = sanitize_input(license_key)
     
     try:
-        existing = safe_db_execute(
-            "SELECT id FROM saved_configs WHERE license_key = %s AND config_name = %s",
+        rows = execute_safe_query(
+            "SELECT config_name, created_at FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC",
+            (license_key,),
+            fetch_all=True
+        )
+        
+        configs = [{"name": row[0], "created_at": row[1]} for row in rows]
+        return {"configs": configs}
+        
+    except Exception as e:
+        print(f"Error listing configs: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
+
+@app.post("/api/configs/{license_key}/save")
+@rate_limit_decorator
+async def save_config(request: Request, license_key: str, data: SavedConfigRequest):
+    """Save a config"""
+    if not validate_license_key(license_key):
+        raise HTTPException(status_code=400, detail="Invalid license key format")
+    
+    license_key = sanitize_input(license_key)
+    
+    try:
+        existing = execute_safe_query(
+            "SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s",
             (license_key, data.config_name),
             fetch_one=True
         )
         
         if existing:
-            safe_db_execute(
-                "UPDATE saved_configs SET config_data = %s WHERE license_key = %s AND config_name = %s",
+            execute_safe_query(
+                "UPDATE saved_configs SET config_data=%s WHERE license_key=%s AND config_name=%s",
                 (json.dumps(data.config_data), license_key, data.config_name)
             )
         else:
-            safe_db_execute(
+            execute_safe_query(
                 "INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (%s, %s, %s, %s)",
                 (license_key, data.config_name, json.dumps(data.config_data), datetime.now().isoformat())
             )
         
         return {"success": True, "message": "Config saved"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        print(f"Error saving config: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @app.get("/api/configs/{license_key}/load/{config_name}")
-async def load_config(license_key: str, config_name: str, request: Request):
+@rate_limit_decorator
+async def load_config(request: Request, license_key: str, config_name: str):
     """Load a saved config"""
-    validate_license_key_format(license_key)
+    if not validate_license_key(license_key):
+        raise HTTPException(status_code=400, detail="Invalid license key format")
     
-    # Sanitize config name
-    if not re.match(r'^[a-zA-Z0-9_\-\. ]+$', config_name):
-        raise HTTPException(status_code=400, detail="Invalid config name")
+    license_key = sanitize_input(license_key)
+    config_name = sanitize_input(config_name)
     
-    log_audit(request, "LOAD_CONFIG", license_key, f"Config: {config_name}")
-    
-    row = safe_db_execute(
-        "SELECT config_data FROM saved_configs WHERE license_key = %s AND config_name = %s",
-        (license_key, config_name),
-        fetch_one=True
-    )
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Config not found")
-    
-    return json.loads(row[0])
+    try:
+        row = execute_safe_query(
+            "SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s",
+            (license_key, config_name),
+            fetch_one=True
+        )
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Config not found")
+        
+        return json.loads(row[0])
+    except Exception as e:
+        print(f"Error loading config: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @app.post("/api/configs/{license_key}/rename")
-async def rename_config(license_key: str, data: dict, request: Request):
+@rate_limit_decorator
+async def rename_config(request: Request, license_key: str, data: dict):
     """Rename a config"""
-    validate_license_key_format(license_key)
+    if not validate_license_key(license_key):
+        raise HTTPException(status_code=400, detail="Invalid license key format")
     
-    old_name = data.get("old_name")
-    new_name = data.get("new_name")
+    license_key = sanitize_input(license_key)
+    old_name = sanitize_input(data.get("old_name", ""), max_length=50)
+    new_name = sanitize_input(data.get("new_name", ""), max_length=50)
     
-    # Validate names
     if not old_name or not new_name:
         raise HTTPException(status_code=400, detail="Missing old_name or new_name")
     
-    if not re.match(r'^[a-zA-Z0-9_\-\. ]+$', old_name) or not re.match(r'^[a-zA-Z0-9_\-\. ]+$', new_name):
-        raise HTTPException(status_code=400, detail="Invalid config name")
-    
-    if len(new_name) > 100:
-        raise HTTPException(status_code=400, detail="Config name too long")
-    
-    log_audit(request, "RENAME_CONFIG", license_key, f"{old_name} -> {new_name}")
-    
-    safe_db_execute(
-        "UPDATE saved_configs SET config_name = %s WHERE license_key = %s AND config_name = %s",
-        (new_name, license_key, old_name)
-    )
-    
-    return {"success": True}
+    try:
+        execute_safe_query(
+            "UPDATE saved_configs SET config_name=%s WHERE license_key=%s AND config_name=%s",
+            (new_name, license_key, old_name)
+        )
+        
+        return {"success": True}
+    except Exception as e:
+        print(f"Error renaming config: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @app.delete("/api/configs/{license_key}/delete/{config_name}")
-async def delete_config(license_key: str, config_name: str, request: Request):
+@rate_limit_decorator
+async def delete_config(request: Request, license_key: str, config_name: str):
     """Delete a config"""
-    validate_license_key_format(license_key)
+    if not validate_license_key(license_key):
+        raise HTTPException(status_code=400, detail="Invalid license key format")
     
-    # Sanitize config name
-    if not re.match(r'^[a-zA-Z0-9_\-\. ]+$', config_name):
-        raise HTTPException(status_code=400, detail="Invalid config name")
-    
-    log_audit(request, "DELETE_CONFIG", license_key, f"Config: {config_name}")
-    
-    safe_db_execute(
-        "DELETE FROM saved_configs WHERE license_key = %s AND config_name = %s",
-        (license_key, config_name)
-    )
-    
-    return {"success": True}
-
-@app.get("/api/public-configs")
-async def get_public_configs(request: Request):
-    """Get all public configs"""
-    log_audit(request, "GET_PUBLIC_CONFIGS")
+    license_key = sanitize_input(license_key)
+    config_name = sanitize_input(config_name)
     
     try:
-        rows = safe_db_execute(
+        execute_safe_query(
+            "DELETE FROM saved_configs WHERE license_key=%s AND config_name=%s",
+            (license_key, config_name)
+        )
+        
+        return {"success": True}
+    except Exception as e:
+        print(f"Error deleting config: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
+
+
+
+@app.get("/api/public-configs")
+@rate_limit_decorator
+async def get_public_configs(request: Request):
+    """Get all public configs"""
+    try:
+        rows = execute_safe_query(
             "SELECT id, config_name, author_name, game_name, description, downloads, created_at FROM public_configs ORDER BY created_at DESC",
             fetch_all=True
         )
@@ -798,316 +713,334 @@ async def get_public_configs(request: Request):
         
         return {"configs": configs}
     except Exception as e:
+        print(f"Error: {e}")
         return {"configs": []}
 
 @app.post("/api/public-configs/create")
-async def create_public_config(data: PublicConfig, request: Request):
+@rate_limit_decorator
+async def create_public_config(request: Request, data: PublicConfig):
     """Create a public config"""
-    # Validate input
-    data.validate()
-    
-    # Check for SQL injection
-    await sql_injection_protection(data.dict())
-    
-    log_audit(request, "CREATE_PUBLIC_CONFIG", None, f"Config: {data.config_name}")
-    
     try:
-        safe_db_execute(
+        execute_safe_query(
             "INSERT INTO public_configs (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads) VALUES (%s, %s, %s, %s, %s, %s, %s, 0)",
             (data.config_name, data.author_name, data.game_name, data.description, json.dumps(data.config_data), "web-user", datetime.now().isoformat())
         )
         return {"success": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        print(f"Error creating public config: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @app.get("/api/public-configs/{config_id}")
-async def get_public_config(config_id: int, request: Request):
+@rate_limit_decorator
+async def get_public_config(request: Request, config_id: int):
     """Get a single config"""
-    # Validate config_id
-    if not isinstance(config_id, int) or config_id <= 0:
+    if config_id <= 0:
         raise HTTPException(status_code=400, detail="Invalid config ID")
-    
-    log_audit(request, "GET_PUBLIC_CONFIG", None, f"ID: {config_id}")
-    
-    row = safe_db_execute(
-        "SELECT id, config_name, author_name, game_name, description, config_data, downloads FROM public_configs WHERE id = %s",
-        (config_id,),
-        fetch_one=True
-    )
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    return {
-        "id": row[0],
-        "config_name": row[1],
-        "author_name": row[2],
-        "game_name": row[3],
-        "description": row[4],
-        "config_data": json.loads(row[5]) if row[5] else {},
-        "downloads": row[6]
-    }
-
-@app.post("/api/public-configs/{config_id}/download")
-async def download_config(config_id: int, request: Request):
-    """Increment downloads"""
-    # Validate config_id
-    if not isinstance(config_id, int) or config_id <= 0:
-        raise HTTPException(status_code=400, detail="Invalid config ID")
-    
-    log_audit(request, "DOWNLOAD_CONFIG", None, f"ID: {config_id}")
-    
-    safe_db_execute(
-        "UPDATE public_configs SET downloads = downloads + 1 WHERE id = %s",
-        (config_id,)
-    )
-    return {"success": True}
-
-@app.post("/api/keys/create")
-async def create_key(data: KeyCreate, request: Request):
-    """Create a license key"""
-    # Validate input
-    data.validate()
-    
-    # Generate secure key
-    key = f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}"
-    
-    # Encrypt the key before storing
-    encrypted_key = encrypt_license_key(key)
-    
-    log_audit(request, "CREATE_KEY", None, f"Duration: {data.duration}, Creator: {data.created_by}")
     
     try:
-        safe_db_execute(
-            "INSERT INTO keys (key, encrypted_key, duration, created_at, active, created_by) VALUES (%s, %s, %s, %s, 0, %s)",
-            (key, encrypted_key, data.duration, datetime.now().isoformat(), data.created_by)
+        row = execute_safe_query(
+            "SELECT id, config_name, author_name, game_name, description, config_data, downloads FROM public_configs WHERE id=%s",
+            (config_id,),
+            fetch_one=True
+        )
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        return {
+            "id": row[0],
+            "config_name": row[1],
+            "author_name": row[2],
+            "game_name": row[3],
+            "description": row[4],
+            "config_data": json.loads(row[5]) if row[5] else {},
+            "downloads": row[6]
+        }
+    except Exception as e:
+        print(f"Error getting public config: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
+
+@app.post("/api/public-configs/{config_id}/download")
+@rate_limit_decorator
+async def download_config(request: Request, config_id: int):
+    """Increment downloads"""
+    if config_id <= 0:
+        raise HTTPException(status_code=400, detail="Invalid config ID")
+    
+    try:
+        execute_safe_query(
+            "UPDATE public_configs SET downloads = downloads + 1 WHERE id=%s",
+            (config_id,)
+        )
+        return {"success": True}
+    except Exception as e:
+        print(f"Error downloading config: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
+
+
+
+@app.post("/api/keys/create")
+@rate_limit_decorator
+async def create_key(request: Request, data: KeyCreate):
+    """Create a license key"""
+    key = f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}"
+    
+    try:
+        execute_safe_query(
+            "INSERT INTO keys (key, duration, created_at, active, created_by) VALUES (%s, %s, %s, 0, %s)",
+            (key, data.duration, datetime.now().isoformat(), data.created_by)
         )
         return {"key": key, "duration": data.duration}
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        print(f"Error creating key: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @app.delete("/api/keys/{license_key}")
-async def delete_key(license_key: str, request: Request):
+@rate_limit_decorator
+async def delete_key(request: Request, license_key: str):
     """Delete a key"""
-    validate_license_key_format(license_key)
+    if not validate_license_key(license_key):
+        raise HTTPException(status_code=400, detail="Invalid license key format")
     
-    log_audit(request, "DELETE_KEY", license_key)
+    license_key = sanitize_input(license_key)
     
-    safe_db_execute(
-        "DELETE FROM keys WHERE key = %s",
-        (license_key,)
-    )
-    return {"success": True}
+    try:
+        execute_safe_query(
+            "DELETE FROM keys WHERE key=%s",
+            (license_key,)
+        )
+        return {"success": True}
+    except Exception as e:
+        print(f"Error deleting key: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
+
+
 
 @app.get("/api/dashboard/{license_key}")
-async def get_dashboard_data(license_key: str, request: Request):
+@rate_limit_decorator
+async def get_dashboard_data(request: Request, license_key: str):
     """Get dashboard data"""
-    validate_license_key_format(license_key)
+    if not validate_license_key(license_key):
+        raise HTTPException(status_code=400, detail="Invalid license key format")
     
-    log_audit(request, "GET_DASHBOARD", license_key)
+    license_key = sanitize_input(license_key)
     
-    result = safe_db_execute(
-        "SELECT key, duration, expires_at, active, hwid, redeemed_by, hwid_resets FROM keys WHERE key = %s",
-        (license_key,),
-        fetch_one=True
-    )
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    key, duration, expires_at, active, hwid, discord_id, hwid_resets = result
-    
-    return {
-        "license_key": key,
-        "duration": duration,
-        "expires_at": expires_at,
-        "active": active,
-        "hwid": hwid,
-        "discord_id": discord_id,
-        "hwid_resets": hwid_resets if hwid_resets else 0
-    }
+    try:
+        result = execute_safe_query(
+            "SELECT key, duration, expires_at, active, hwid, redeemed_by, hwid_resets FROM keys WHERE key=%s",
+            (license_key,),
+            fetch_one=True
+        )
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        key, duration, expires_at, active, hwid, discord_id, hwid_resets = result
+        
+        return {
+            "license_key": key,
+            "duration": duration,
+            "expires_at": expires_at,
+            "active": active,
+            "hwid": hwid,
+            "discord_id": discord_id,
+            "hwid_resets": hwid_resets if hwid_resets else 0
+        }
+    except Exception as e:
+        print(f"Error getting dashboard data: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @app.post("/api/redeem")
-async def redeem_key(data: RedeemRequest, request: Request):
+@rate_limit_decorator
+async def redeem_key(request: Request, data: RedeemRequest):
     """Redeem a key"""
-    # Validate input
-    data.validate()
-    
-    log_audit(request, "REDEEM_ATTEMPT", data.key, f"Discord: {data.discord_id}")
-    
-    result = safe_db_execute(
-        "SELECT key, duration, redeemed_at FROM keys WHERE key = %s",
-        (data.key,),
-        fetch_one=True
-    )
-    
-    if not result:
-        log_audit(request, "REDEEM_FAIL", data.key, "Invalid key")
-        raise HTTPException(status_code=404, detail="Invalid key")
-    
-    key, duration, redeemed_at = result
-    
-    if redeemed_at:
-        log_audit(request, "REDEEM_FAIL", data.key, "Already redeemed")
-        raise HTTPException(status_code=400, detail="Already redeemed")
-    
-    now = datetime.now()
-    expires_at = None
-    if duration == "monthly":
-        expires_at = (now + timedelta(days=30)).isoformat()
-    elif duration == "weekly":
-        expires_at = (now + timedelta(days=7)).isoformat()
-    elif duration == "3monthly":
-        expires_at = (now + timedelta(days=90)).isoformat()
-    
-    safe_db_execute(
-        "UPDATE keys SET redeemed_at = %s, redeemed_by = %s, expires_at = %s, active = 1 WHERE key = %s",
-        (now.isoformat(), data.discord_id, expires_at, data.key)
-    )
-    
-    log_audit(request, "REDEEM_SUCCESS", data.key, f"Duration: {duration}")
-    
-    return {"success": True, "duration": duration, "expires_at": expires_at, "message": "Key redeemed successfully"}
+    try:
+        result = execute_safe_query(
+            "SELECT key, duration, redeemed_at FROM keys WHERE key=%s",
+            (data.key,),
+            fetch_one=True
+        )
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Invalid key")
+        
+        key, duration, redeemed_at = result
+        
+        if redeemed_at:
+            raise HTTPException(status_code=400, detail="Already redeemed")
+        
+        now = datetime.now()
+        expires_at = None
+        if duration == "monthly":
+            expires_at = (now + timedelta(days=30)).isoformat()
+        elif duration == "weekly":
+            expires_at = (now + timedelta(days=7)).isoformat()
+        elif duration == "3monthly":
+            expires_at = (now + timedelta(days=90)).isoformat()
+        
+        execute_safe_query(
+            "UPDATE keys SET redeemed_at=%s, redeemed_by=%s, expires_at=%s, active=1 WHERE key=%s",
+            (now.isoformat(), data.discord_id, expires_at, data.key)
+        )
+        
+        return {"success": True, "duration": duration, "expires_at": expires_at, "message": "Key redeemed successfully"}
+    except Exception as e:
+        print(f"Error redeeming key: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @app.post("/api/reset-hwid/{license_key}")
-async def reset_hwid(license_key: str, request: Request):
-    """Reset HWID with rate limiting"""
-    validate_license_key_format(license_key)
+@rate_limit_decorator
+async def reset_hwid(request: Request, license_key: str):
+    """Reset HWID"""
+    if not validate_license_key(license_key):
+        raise HTTPException(status_code=400, detail="Invalid license key format")
     
-    # Check rate limit for HWID resets
-    client_ip = request.client.host
-    reset_key = f"hwid_reset_{client_ip}"
+    license_key = sanitize_input(license_key)
     
-    if reset_key in RATE_LIMITS:
-        resets, timestamp = RATE_LIMITS[reset_key]
-        if (datetime.now() - timestamp).seconds < 3600:  # 1 hour
-            if resets >= 3:  # Max 3 resets per hour
-                raise HTTPException(status_code=429, detail="Too many HWID resets. Please wait.")
-            RATE_LIMITS[reset_key] = (resets + 1, timestamp)
-        else:
-            RATE_LIMITS[reset_key] = (1, datetime.now())
-    else:
-        RATE_LIMITS[reset_key] = (1, datetime.now())
-    
-    result = safe_db_execute(
-        "SELECT hwid_resets FROM keys WHERE key = %s",
-        (license_key,),
-        fetch_one=True
-    )
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    resets = result[0] if result[0] else 0
-    
-    safe_db_execute(
-        "UPDATE keys SET hwid = NULL, hwid_resets = %s WHERE key = %s",
-        (resets + 1, license_key)
-    )
-    
-    log_audit(request, "RESET_HWID", license_key, f"New count: {resets + 1}")
-    
-    return {"success": True, "hwid_resets": resets + 1}
+    try:
+        result = execute_safe_query(
+            "SELECT hwid_resets FROM keys WHERE key=%s",
+            (license_key,),
+            fetch_one=True
+        )
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        resets = result[0] if result[0] else 0
+        
+        execute_safe_query(
+            "UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE key=%s",
+            (resets + 1, license_key)
+        )
+        
+        return {"success": True, "hwid_resets": resets + 1}
+    except Exception as e:
+        print(f"Error resetting HWID: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @app.get("/api/users/{user_id}/license")
-async def get_user_license(user_id: str, request: Request):
+@rate_limit_decorator
+async def get_user_license(request: Request, user_id: str):
     """Get user's license by Discord ID"""
-    validate_discord_id(user_id)
+    if not validate_discord_id(user_id):
+        raise HTTPException(status_code=400, detail="Invalid Discord ID format")
     
-    log_audit(request, "GET_USER_LICENSE", None, f"User: {user_id}")
+    user_id = sanitize_input(user_id)
     
-    result = safe_db_execute(
-        "SELECT key, duration, expires_at, redeemed_at, hwid, active FROM keys WHERE redeemed_by = %s",
-        (user_id,),
-        fetch_one=True
-    )
-    
-    if not result:
-        return {"active": False, "message": "No license found"}
-    
-    key, duration, expires_at, redeemed_at, hwid, active = result
-    
-    if expires_at:
-        is_expired = datetime.now() > datetime.fromisoformat(expires_at)
-        if is_expired:
-            return {"active": False, "expired": True, "key": key}
-    
-    return {
-        "active": True,
-        "key": key,
-        "duration": duration,
-        "expires_at": expires_at,
-        "redeemed_at": redeemed_at,
-        "hwid": hwid
-    }
+    try:
+        result = execute_safe_query(
+            "SELECT key, duration, expires_at, redeemed_at, hwid, active FROM keys WHERE redeemed_by=%s",
+            (user_id,),
+            fetch_one=True
+        )
+        
+        if not result:
+            return {"active": False, "message": "No license found"}
+        
+        key, duration, expires_at, redeemed_at, hwid, active = result
+        
+        if expires_at:
+            is_expired = datetime.now() > datetime.fromisoformat(expires_at)
+            if is_expired:
+                return {"active": False, "expired": True, "key": key}
+        
+        return {
+            "active": True,
+            "key": key,
+            "duration": duration,
+            "expires_at": expires_at,
+            "redeemed_at": redeemed_at,
+            "hwid": hwid
+        }
+    except Exception as e:
+        print(f"Error getting user license: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @app.delete("/api/users/{user_id}/license")
-async def delete_user_license(user_id: str, request: Request):
+@rate_limit_decorator
+async def delete_user_license(request: Request, user_id: str):
     """Delete user's license by Discord ID"""
-    validate_discord_id(user_id)
+    if not validate_discord_id(user_id):
+        raise HTTPException(status_code=400, detail="Invalid Discord ID format")
     
-    log_audit(request, "DELETE_USER_LICENSE", None, f"User: {user_id}")
+    user_id = sanitize_input(user_id)
     
-    result = safe_db_execute(
-        "SELECT key FROM keys WHERE redeemed_by = %s",
-        (user_id,),
-        fetch_one=True
-    )
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="No license found")
-    
-    key = result[0]
-    safe_db_execute(
-        "DELETE FROM keys WHERE redeemed_by = %s",
-        (user_id,)
-    )
-    
-    return {"status": "deleted", "key": key, "user_id": user_id}
+    try:
+        result = execute_safe_query(
+            "SELECT key FROM keys WHERE redeemed_by=%s",
+            (user_id,),
+            fetch_one=True
+        )
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="No license found")
+        
+        key = result[0]
+        execute_safe_query(
+            "DELETE FROM keys WHERE redeemed_by=%s",
+            (user_id,)
+        )
+        
+        return {"status": "deleted", "key": key, "user_id": user_id}
+    except Exception as e:
+        print(f"Error deleting user license: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @app.post("/api/users/{user_id}/reset-hwid")
-async def reset_user_hwid(user_id: str, request: Request):
+@rate_limit_decorator
+async def reset_user_hwid(request: Request, user_id: str):
     """Reset HWID for user's license"""
-    validate_discord_id(user_id)
+    if not validate_discord_id(user_id):
+        raise HTTPException(status_code=400, detail="Invalid Discord ID format")
     
-    log_audit(request, "RESET_USER_HWID", None, f"User: {user_id}")
+    user_id = sanitize_input(user_id)
     
-    result = safe_db_execute(
-        "SELECT hwid, hwid_resets FROM keys WHERE redeemed_by = %s",
-        (user_id,),
-        fetch_one=True
-    )
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="No license found")
-    
-    old_hwid, resets = result
-    resets = resets if resets else 0
-    
-    safe_db_execute(
-        "UPDATE keys SET hwid = NULL, hwid_resets = %s WHERE redeemed_by = %s",
-        (resets + 1, user_id)
-    )
-    
-    return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
+    try:
+        result = execute_safe_query(
+            "SELECT hwid, hwid_resets FROM keys WHERE redeemed_by=%s",
+            (user_id,),
+            fetch_one=True
+        )
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="No license found")
+        
+        old_hwid, resets = result
+        resets = resets if resets else 0
+        
+        execute_safe_query(
+            "UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE redeemed_by=%s",
+            (resets + 1, user_id)
+        )
+        
+        return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
+    except Exception as e:
+        print(f"Error resetting user HWID: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @app.get("/api/keepalive")
+@rate_limit_decorator
 async def keepalive(request: Request):
     """Keep server awake"""
     return {"status": "alive"}
+
 
 ENHANCED_ANTI_DEVTOOLS_JS = """
 <script>
 (function() {
     'use strict';
     
+    
     document.addEventListener('keydown', function(e) {
+        
         if (e.key === 'F12' || e.keyCode === 123) {
             e.preventDefault();
             e.stopPropagation();
             startDebuggerSpam();
             return false;
         }
+        
         
         if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) {
             e.preventDefault();
@@ -1116,6 +1049,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
             return false;
         }
         
+        
         if (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) {
             e.preventDefault();
             e.stopPropagation();
@@ -1123,12 +1057,14 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
             return false;
         }
         
+        
         if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) {
             e.preventDefault();
             e.stopPropagation();
             startDebuggerSpam();
             return false;
         }
+        
         
         if (e.ctrlKey && (e.key === 'U' || e.keyCode === 85)) {
             e.preventDefault();
@@ -1138,6 +1074,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         }
     });
     
+    
     document.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         e.stopPropagation();
@@ -1145,13 +1082,17 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
     });
     
     function startDebuggerSpam() {
+        
         setInterval(() => {
             try {
                 debugger;
                 eval("debugger");
                 Function("debugger")();
-            } catch(e) {}
+            } catch(e) {
+                
+            }
         }, 50);
+        
         
         setInterval(() => {
             if (typeof console !== 'undefined') {
@@ -1161,12 +1102,14 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         }, 100);
     }
     
+    
     let lastWidth = window.innerWidth;
     let lastHeight = window.innerHeight;
     
     setInterval(() => {
         const widthDiff = Math.abs(window.outerWidth - window.innerWidth);
         const heightDiff = Math.abs(window.outerHeight - window.innerHeight);
+        
         
         if (widthDiff > 150 || heightDiff > 150) {
             startDebuggerSpam();
@@ -1175,6 +1118,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         lastWidth = window.innerWidth;
         lastHeight = window.innerHeight;
     }, 1000);
+    
 })();
 </script>
 """
@@ -2202,15 +2146,14 @@ _INDEX_HTML = f"""<!DOCTYPE html>
   </script>
   
   {ENHANCED_ANTI_DEVTOOLS_JS}
-</body>
-</html>"""
+</html>
+"""
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/home", response_class=HTMLResponse)
 async def serve_home(request: Request):
     """SPA Homepage with all tabs"""
-    log_audit(request, "VISIT_HOME")
-    return _INDEX_HTML
+    return HTMLResponse(content=_INDEX_HTML)
 
 DASHBOARD_HTML = f"""<!DOCTYPE html>
 <html lang="en">
@@ -2259,7 +2202,7 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
     .empty-section{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:80px 32px;text-align:center}}
     #redeem-from-subs{{background:transparent;border:1px solid rgb(35,35,35);color:#ddd;padding:12px 40px;border-radius:6px;font-size:15px;font-weight:500;cursor:pointer;transition:all .2s}}
     #redeem-from-subs:hover{{border-color:#777;color:#fff}}
-    .modal{{display:none;position:fixed;top:0;left:0;width:100%;height=100%;background:rgba(0,0,0,.85);justify-content:center;align-items:center;z-index:1000;opacity:0;transition:opacity .3s ease}}
+    .modal{{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);justify-content:center;align-items:center;z-index:1000;opacity:0;transition:opacity .3s ease}}
     .modal.show{{display:flex;opacity:1}}
     .modal-content{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:32px;max-width:420px;width:90%;text-align:center;transform:scale(.95);transition:transform .3s ease}}
     .modal.show .modal-content{{transform:scale(1)}}
@@ -2586,22 +2529,32 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
 </html>"""
 
 @app.get("/dashboard", response_class=HTMLResponse)
+@rate_limit_decorator
 async def serve_customer_dashboard(request: Request):
     """Customer Account Dashboard with Modal Login"""
-    log_audit(request, "VISIT_DASHBOARD")
-    return DASHBOARD_HTML
+    return HTMLResponse(content=DASHBOARD_HTML)
 
 @app.get("/{license_key}", response_class=HTMLResponse)
-async def serve_dashboard(license_key: str, request: Request):
+@rate_limit_decorator
+async def serve_dashboard(request: Request, license_key: str):
     """Personal dashboard"""
     if license_key in ["api", "favicon.ico", "home"]:
         raise HTTPException(status_code=404)
+   
+    if not validate_license_key(license_key):
+        raise HTTPException(status_code=400, detail="Invalid license key")
     
-    log_audit(request, "VISIT_LICENSE_DASHBOARD", license_key)
+    license_key = sanitize_input(license_key)
     
-    # Validate license key format
-    if not re.match(r'^\d{4}-\d{4}-\d{4}-\d{4}$', license_key):
-        return f"""<!DOCTYPE html>
+    try:
+        result = execute_safe_query(
+            "SELECT * FROM keys WHERE key=%s",
+            (license_key,),
+            fetch_one=True
+        )
+       
+        if not result:
+            return HTMLResponse(content=f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
@@ -2622,41 +2575,10 @@ button:hover{{background:#444}}
 </div>
 {ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
-</html>"""
-    
-    # Check if key exists
-    result = safe_db_execute(
-        "SELECT key FROM keys WHERE key = %s",
-        (license_key,),
-        fetch_one=True
-    )
-    
-    if not result:
-        return f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Invalid License - Axion</title>
-<style>
-body{{background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
-.container{{text-align:center;padding:40px;background:rgba(0,0,0,0.5);border-radius:10px;border:1px solid rgba(255,255,255,0.1)}}
-h1{{color:rgb(255,68,68);margin-bottom:20px}}
-button{{margin-top:20px;padding:12px 30px;background:#333;color:white;border:none;border-radius:5px;cursor:pointer;font-size:16px}}
-button:hover{{background:#444}}
-</style>
-</head>
-<body>
-<div class="container">
-<h1>Invalid License</h1>
-<p>License key not found or has expired</p>
-<button onclick="window.location.href='/'">Return to Home</button>
-</div>
-{ENHANCED_ANTI_DEVTOOLS_JS}
-</body>
-</html>"""
-    
-    # Return the dashboard HTML (same as before)
-    return f"""<!DOCTYPE html>
+</html>""")
+       
+        # Generate dashboard HTML with the license key
+        DASHBOARD_HTML_TEMPLATE = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -2679,7 +2601,7 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 .content{{flex:1;padding:10px;background:#0c0c0c;display:flex;align-items:center;justify-content:center;position:relative}}
 .tab-content{{width:100%;height:100%;display:none}}
 .tab-content.active{{display:block}}
-.merged-panel{{width:100%;height=100%;background:#0c0c0c;border:1px solid #222;overflow:hidden;display:flex;align-items:center;justify-content:center}}
+.merged-panel{{width:100%;height:100%;background:#0c0c0c;border:1px solid #222;overflow:hidden;display:flex;align-items:center;justify-content:center}}
 .inner-container{{width:98%;height:96%;display:flex;gap:14px;overflow:hidden}}
 .half-panel{{flex:1;background:#111;border:1px solid #2a2a2a;box-shadow:0 0 25px rgba(0,0,0,0.6) inset;overflow-y:auto;padding:14px 16px;position:relative}}
 .panel-header{{position:absolute;top:10px;left:16px;color:#bfbfbf;font-size:11px;font-weight:normal;pointer-events:none;z-index:1}}
@@ -2724,14 +2646,14 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 .input-box{{width:100%;height:24px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;padding:0 8px;outline:none}}
 .config-btn{{background:#0f0f0f;border:1px solid #2a2a2a;padding:6px 12px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;width:100%;margin-top:6px}}
 .config-btn:hover{{background:#222}}
-.modal-overlay{{position:fixed;top:0;left:0;width=100vw;height=100vh;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:9999}}
+.modal-overlay{{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:9999}}
 .modal-overlay.active{{display:flex}}
 .modal-box{{background:linear-gradient(#111,#0a0a0a);border:1px solid #2a2a2a;padding:24px;min-width:300px;box-shadow:0 8px 32px rgba(0,0,0,0.8)}}
 .modal-title{{color:#fff;font-size:13px;margin-bottom:16px;font-weight:normal}}
-.modal-input{{width:100%;height=28px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none;margin-bottom:12px}}
+.modal-input{{width:100%;height:28px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none;margin-bottom:12px}}
 .modal-input:focus{{border-color:#555}}
 .modal-buttons{{display:flex;gap:8px}}
-.modal-btn{{flex:1;height=28px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;cursor:pointer;transition:background 0.2s}}
+.modal-btn{{flex:1;height:28px;background:#0f0f0f;border:1px solid #2a2a2a;color:#cfcfcf;font-size:11px;cursor:pointer;transition:background 0.2s}}
 .modal-btn:hover{{background:#222}}
 .modal-btn.primary{{background:#1a1a1a}}
 .modal-btn.primary:hover{{background:#252525}}
@@ -3386,11 +3308,14 @@ setInterval(loadConfig, 1000);
 {ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
 </html>"""
+        
+        return HTMLResponse(content=DASHBOARD_HTML_TEMPLATE)
+        
+    except Exception as e:
+        print(f"Error serving dashboard: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 if __name__ == "__main__":
-    # Initialize database with encryption support
     init_db()
-    
-    # Run the server
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
