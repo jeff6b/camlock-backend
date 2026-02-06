@@ -1,6 +1,5 @@
-
-from fastapi import FastAPI, HTTPException, Cookie, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Cookie, Response, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -9,10 +8,20 @@ import sqlite3
 import os
 import json
 import secrets
+import httpx
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI()
 
+# Discord OAuth Configuration
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
+DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI")
+SESSION_SECRET = os.getenv("SESSION_SECRET", secrets.token_hex(32))
 
 app.add_middleware(
     CORSMiddleware,
@@ -79,13 +88,27 @@ def init_db():
     cur = db.cursor()
     
     if USE_POSTGRES:
+        # Add users table for Discord OAuth
+        cur.execute("""CREATE TABLE IF NOT EXISTS users (
+            discord_id TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            discriminator TEXT,
+            avatar TEXT,
+            email TEXT,
+            created_at TEXT NOT NULL,
+            last_login TEXT,
+            access_token TEXT,
+            refresh_token TEXT,
+            token_expires_at TEXT
+        )""")
+        
         cur.execute("""CREATE TABLE IF NOT EXISTS keys (
             key TEXT PRIMARY KEY,
             duration TEXT NOT NULL,
             created_at TEXT NOT NULL,
             expires_at TEXT,
             redeemed_at TEXT,
-            redeemed_by TEXT,
+            discord_id TEXT,
             hwid TEXT,
             hwid_resets INTEGER DEFAULT 0,
             active INTEGER DEFAULT 0,
@@ -144,18 +167,39 @@ def init_db():
             expires_at TEXT NOT NULL
         )""")
         
+        cur.execute("""CREATE TABLE IF NOT EXISTS oauth_sessions (
+            state TEXT PRIMARY KEY,
+            discord_id TEXT,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        )""")
+        
         cur.execute("""CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             config TEXT NOT NULL
         )""")
     else:
+        # SQLite version
+        cur.execute("""CREATE TABLE IF NOT EXISTS users (
+            discord_id TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            discriminator TEXT,
+            avatar TEXT,
+            email TEXT,
+            created_at TEXT NOT NULL,
+            last_login TEXT,
+            access_token TEXT,
+            refresh_token TEXT,
+            token_expires_at TEXT
+        )""")
+        
         cur.execute("""CREATE TABLE IF NOT EXISTS keys (
             key TEXT PRIMARY KEY,
             duration TEXT NOT NULL,
             created_at TEXT NOT NULL,
             expires_at TEXT,
             redeemed_at TEXT,
-            redeemed_by TEXT,
+            discord_id TEXT,
             hwid TEXT,
             hwid_resets INTEGER DEFAULT 0,
             active INTEGER DEFAULT 0,
@@ -217,6 +261,13 @@ def init_db():
             expires_at TEXT NOT NULL
         )""")
         
+        cur.execute("""CREATE TABLE IF NOT EXISTS oauth_sessions (
+            state TEXT PRIMARY KEY,
+            discord_id TEXT,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        )""")
+        
         cur.execute("""CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             config TEXT NOT NULL
@@ -257,6 +308,235 @@ class RedeemRequest(BaseModel):
 class SavedConfigRequest(BaseModel):
     config_name: str
     config_data: dict
+
+
+
+# Discord OAuth Endpoints
+
+@app.get("/api/auth/login")
+async def discord_login(request: Request):
+    """Redirect to Discord OAuth"""
+    # Generate a secure state parameter
+    state = secrets.token_urlsafe(32)
+    
+    # Save state to database with expiration
+    db = get_db()
+    cur = db.cursor()
+    expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
+    cur.execute(q("INSERT INTO oauth_sessions (state, created_at, expires_at) VALUES (%s, %s, %s)"),
+               (state, datetime.now().isoformat(), expires_at))
+    db.commit()
+    db.close()
+    
+    # Discord OAuth URL
+    discord_auth_url = (
+        f"https://discord.com/api/oauth2/authorize"
+        f"?client_id={DISCORD_CLIENT_ID}"
+        f"&redirect_uri={DISCORD_REDIRECT_URI}"
+        f"&response_type=code"
+        f"&scope=identify%20email"
+        f"&state={state}"
+    )
+    
+    return RedirectResponse(url=discord_auth_url)
+
+@app.get("/api/auth/callback")
+async def discord_callback(code: str, state: str, request: Request, response: Response):
+    """Handle Discord OAuth callback"""
+    # Verify state parameter
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT * FROM oauth_sessions WHERE state=%s"), (state,))
+    session = cur.fetchone()
+    
+    if not session:
+        raise HTTPException(status_code=400, detail="Invalid state parameter")
+    
+    # Clean up used state
+    cur.execute(q("DELETE FROM oauth_sessions WHERE state=%s"), (state,))
+    db.commit()
+    
+    try:
+        # Exchange code for access token
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                "https://discord.com/api/oauth2/token",
+                data={
+                    "client_id": DISCORD_CLIENT_ID,
+                    "client_secret": DISCORD_CLIENT_SECRET,
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": DISCORD_REDIRECT_URI,
+                    "scope": "identify email"
+                }
+            )
+            
+            if token_response.status_code != 200:
+                raise HTTPException(status_code=400, detail="Failed to get access token")
+            
+            token_data = token_response.json()
+            access_token = token_data["access_token"]
+            refresh_token = token_data.get("refresh_token")
+            expires_in = token_data.get("expires_in", 604800)  # Default 7 days
+            
+            # Get user info from Discord
+            user_response = await client.get(
+                "https://discord.com/api/users/@me",
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+            
+            if user_response.status_code != 200:
+                raise HTTPException(status_code=400, detail="Failed to get user info")
+            
+            user_data = user_response.json()
+            discord_id = user_data["id"]
+            username = user_data["username"]
+            discriminator = user_data.get("discriminator", "0")
+            avatar = user_data.get("avatar")
+            email = user_data.get("email")
+            
+            # Calculate token expiration
+            expires_at = (datetime.now() + timedelta(seconds=expires_in)).isoformat()
+            
+            # Save or update user in database
+            cur.execute(q("""SELECT discord_id FROM users WHERE discord_id=%s"""), (discord_id,))
+            existing_user = cur.fetchone()
+            
+            if existing_user:
+                # Update existing user
+                cur.execute(q("""UPDATE users SET 
+                               username=%s, discriminator=%s, avatar=%s, email=%s,
+                               last_login=%s, access_token=%s, refresh_token=%s,
+                               token_expires_at=%s WHERE discord_id=%s"""),
+                           (username, discriminator, avatar, email,
+                            datetime.now().isoformat(), access_token,
+                            refresh_token, expires_at, discord_id))
+            else:
+                # Create new user
+                cur.execute(q("""INSERT INTO users 
+                               (discord_id, username, discriminator, avatar, email,
+                                created_at, last_login, access_token, refresh_token,
+                                token_expires_at) 
+                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""),
+                           (discord_id, username, discriminator, avatar, email,
+                            datetime.now().isoformat(), datetime.now().isoformat(),
+                            access_token, refresh_token, expires_at))
+            
+            db.commit()
+            
+            # Create a session for the user
+            session_token = secrets.token_urlsafe(64)
+            session_expires = (datetime.now() + timedelta(days=30)).isoformat()
+            
+            if USE_POSTGRES:
+                cur.execute(
+                    """INSERT INTO user_sessions (session_id, license_key, created_at, expires_at)
+                       VALUES (%s, %s, %s, %s)
+                       ON CONFLICT (session_id) DO UPDATE SET expires_at=%s""",
+                    (session_token, discord_id, datetime.now().isoformat(), session_expires, session_expires)
+                )
+            else:
+                cur.execute(
+                    """INSERT OR REPLACE INTO user_sessions (session_id, license_key, created_at, expires_at)
+                       VALUES (?, ?, ?, ?)""",
+                    (session_token, discord_id, datetime.now().isoformat(), session_expires)
+                )
+            
+            db.commit()
+            db.close()
+            
+            # Set session cookie
+            response.set_cookie(
+                key="session_token",
+                value=session_token,
+                httponly=True,
+                max_age=30 * 24 * 60 * 60,  # 30 days
+                secure=False,  # Set to True in production with HTTPS
+                samesite="lax"
+            )
+            
+            # Redirect to dashboard
+            return RedirectResponse(url="/dashboard")
+            
+    except Exception as e:
+        db.close()
+        print(f"OAuth error: {e}")
+        raise HTTPException(status_code=500, detail="Authentication failed")
+
+@app.get("/api/auth/logout")
+async def logout(response: Response, session_token: Optional[str] = Cookie(None)):
+    """Logout user"""
+    if session_token:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(q("DELETE FROM user_sessions WHERE session_id=%s"), (session_token,))
+        db.commit()
+        db.close()
+    
+    response.delete_cookie(key="session_token")
+    return {"success": True}
+
+@app.get("/api/auth/me")
+async def get_current_user(session_token: Optional[str] = Cookie(None)):
+    """Get current user info"""
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    # Check session validity
+    cur.execute(q("SELECT license_key, expires_at FROM user_sessions WHERE session_id=%s"), (session_token,))
+    session = cur.fetchone()
+    
+    if not session:
+        db.close()
+        raise HTTPException(status_code=401, detail="Invalid session")
+    
+    discord_id, expires_at = session
+    
+    if datetime.now() > datetime.fromisoformat(expires_at):
+        cur.execute(q("DELETE FROM user_sessions WHERE session_id=%s"), (session_token,))
+        db.commit()
+        db.close()
+        raise HTTPException(status_code=401, detail="Session expired")
+    
+    # Get user info
+    cur.execute(q("SELECT username, discriminator, avatar, email, created_at FROM users WHERE discord_id=%s"), (discord_id,))
+    user = cur.fetchone()
+    
+    if not user:
+        db.close()
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    username, discriminator, avatar, email, created_at = user
+    
+    # Get user's license info
+    cur.execute(q("SELECT key, duration, expires_at, active FROM keys WHERE discord_id=%s"), (discord_id,))
+    license_info = cur.fetchone()
+    
+    db.close()
+    
+    user_data = {
+        "discord_id": discord_id,
+        "username": username,
+        "discriminator": discriminator,
+        "avatar": avatar,
+        "email": email,
+        "created_at": created_at,
+        "has_license": license_info is not None
+    }
+    
+    if license_info:
+        key, duration, expires_at, active = license_info
+        user_data.update({
+            "license_key": key,
+            "license_duration": duration,
+            "license_expires_at": expires_at,
+            "license_active": bool(active)
+        })
+    
+    return user_data
 
 
 
@@ -556,7 +836,7 @@ def get_dashboard_data(license_key: str):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT key, duration, expires_at, active, hwid, redeemed_by, hwid_resets FROM keys WHERE key=%s"), (license_key,))
+    cur.execute(q("SELECT key, duration, expires_at, active, hwid, discord_id, hwid_resets FROM keys WHERE key=%s"), (license_key,))
     result = cur.fetchone()
     
     db.close()
@@ -604,7 +884,7 @@ def redeem_key(data: RedeemRequest):
     elif duration == "3monthly":
         expires_at = (now + timedelta(days=90)).isoformat()
     
-    cur.execute(q("UPDATE keys SET redeemed_at=%s, redeemed_by=%s, expires_at=%s, active=1 WHERE key=%s"),
+    cur.execute(q("UPDATE keys SET redeemed_at=%s, discord_id=%s, expires_at=%s, active=1 WHERE key=%s"),
                (now.isoformat(), data.discord_id, expires_at, data.key))
     db.commit()
     db.close()
@@ -638,7 +918,7 @@ def get_user_license(user_id: str):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT key, duration, expires_at, redeemed_at, hwid, active FROM keys WHERE redeemed_by=%s"), (user_id,))
+    cur.execute(q("SELECT key, duration, expires_at, redeemed_at, hwid, active FROM keys WHERE discord_id=%s"), (user_id,))
     result = cur.fetchone()
     db.close()
     
@@ -667,7 +947,7 @@ def delete_user_license(user_id: str):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT key FROM keys WHERE redeemed_by=%s"), (user_id,))
+    cur.execute(q("SELECT key FROM keys WHERE discord_id=%s"), (user_id,))
     result = cur.fetchone()
     
     if not result:
@@ -675,7 +955,7 @@ def delete_user_license(user_id: str):
         raise HTTPException(status_code=404, detail="No license found")
     
     key = result[0]
-    cur.execute(q("DELETE FROM keys WHERE redeemed_by=%s"), (user_id,))
+    cur.execute(q("DELETE FROM keys WHERE discord_id=%s"), (user_id,))
     db.commit()
     db.close()
     
@@ -687,7 +967,7 @@ def reset_user_hwid(user_id: str):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT hwid, hwid_resets FROM keys WHERE redeemed_by=%s"), (user_id,))
+    cur.execute(q("SELECT hwid, hwid_resets FROM keys WHERE discord_id=%s"), (user_id,))
     result = cur.fetchone()
     
     if not result:
@@ -697,7 +977,7 @@ def reset_user_hwid(user_id: str):
     old_hwid, resets = result
     resets = resets if resets else 0
     
-    cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE redeemed_by=%s"), (resets + 1, user_id))
+    cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE discord_id=%s"), (resets + 1, user_id))
     db.commit()
     db.close()
     
@@ -1452,7 +1732,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
         <div class="login-required">
           <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
           <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
-          <button class="login-btn" onclick="showLoginModal()">Login</button>
+          <button class="login-btn" onclick="window.location.href='/api/auth/login'">Login with Discord</button>
         </div>
       </div>
     </div>
@@ -1553,78 +1833,47 @@ _INDEX_HTML = f"""<!DOCTYPE html>
     let currentViewConfig = null;
     const CONFIGS_PER_PAGE = 6;
 
+    // Check if user is logged in on page load
+    async function checkAuth() {{
+      try {{
+        const res = await fetch('/api/auth/me', {{ credentials: 'include' }});
+        if (res.ok) {{
+          const userData = await res.json();
+          currentUser = userData;
+          
+          document.getElementById('userArea').innerHTML = `
+            <div class="user-info" onclick="window.location.href='/dashboard'">
+              <span>${{userData.username}}#${{userData.discriminator}}</span>
+            </div>
+          `;
+          
+          if (window.location.hash === '#configs') {{
+            showPage('configs');
+            loadConfigs();
+          }}
+        }}
+      }} catch (e) {{
+        console.log('Not logged in');
+      }}
+    }}
+
     function showPage(pageId) {{
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.getElementById(pageId).classList.add('active');
       
-      if (pageId === 'configs' && currentUser) {{
-        loadConfigs();
-      }}
-    }}
-
-    function showLoginModal() {{
-      document.getElementById('loginModal').classList.add('active');
-    }}
-
-    function closeLoginModal() {{
-      document.getElementById('loginModal').classList.remove('active');
-    }}
-
-    async function submitLogin() {{
-      const licenseKey = document.getElementById('licenseKeyInput').value.trim();
-
-      if (!licenseKey) {{
-        alert('Please enter your license key');
-        return;
-      }}
-
-      try {{
-        const res = await fetch(`/api/validate`, {{
-          method: 'POST',
-          headers: {{ 'Content-Type': 'application/json' }},
-          body: JSON.stringify({{ key: licenseKey, hwid: 'web-login' }})
-        }});
-
-        if (res.ok) {{
-          const data = await res.json();
-          
-          if (data.valid) {{
-            currentUser = {{ 
-              license_key: licenseKey
-            }};
-            
-            document.getElementById('userArea').innerHTML = `
-              <div class="user-info" onclick="logout()">
-                <span>${{licenseKey.substring(0, 12)}}...</span>
-              </div>
-            `;
-            
-            closeLoginModal();
-            loadConfigs();
-          }} else {{
-            alert('Invalid or expired license key');
-          }}
+      if (pageId === 'configs') {{
+        if (currentUser) {{
+          loadConfigs();
         }} else {{
-          alert('Invalid license key');
+          document.getElementById('configsContent').innerHTML = `
+            <div class="login-required">
+              <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
+              <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
+              <button class="login-btn" onclick="window.location.href='/api/auth/login'">Login with Discord</button>
+            </div>
+          `;
         }}
-      }} catch (e) {{
-        alert('Connection error. Please check your internet connection.');
-        console.error('Login error:', e);
       }}
-    }}
-
-    function logout() {{
-      currentUser = null;
-      document.getElementById('userArea').innerHTML = `
-        <button class="login-btn" onclick="showLoginModal()">Login</button>
-      `;
-      document.getElementById('configsContent').innerHTML = `
-        <div class="login-required">
-          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
-          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
-          <button class="login-btn" onclick="showLoginModal()">Login</button>
-        </div>
-      `;
     }}
 
     async function loadConfigs() {{
@@ -1696,7 +1945,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
       document.getElementById('createModal').classList.add('active');
       
       try {{
-        const res = await fetch(`/api/configs/${{currentUser.license_key}}/list`);
+        const res = await fetch(`/api/configs/${{currentUser.discord_id}}/list`);
         const data = await res.json();
         
         const select = document.getElementById('savedConfigSelect');
@@ -1735,7 +1984,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
       }}
 
       try {{
-        const configRes = await fetch(`/api/configs/${{currentUser.license_key}}/load/${{selectedConfig}}`);
+        const configRes = await fetch(`/api/configs/${{currentUser.discord_id}}/load/${{selectedConfig}}`);
         const configData = await configRes.json();
 
         const res = await fetch('/api/public-configs/create', {{
@@ -1795,7 +2044,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
       }}
 
       try {{
-        const res = await fetch(`/api/configs/${{currentUser.license_key}}/save`, {{
+        const res = await fetch(`/api/configs/${{currentUser.discord_id}}/save`, {{
           method: 'POST',
           headers: {{ 'Content-Type': 'application/json' }},
           body: JSON.stringify({{
@@ -1823,14 +2072,13 @@ _INDEX_HTML = f"""<!DOCTYPE html>
       }}
     }});
 
-    document.getElementById('userArea').innerHTML = `
-      <button class="login-btn" onclick="showLoginModal()">Login</button>
-    `;
+    // Initialize
+    checkAuth();
   </script>
   
   {ENHANCED_ANTI_DEVTOOLS_JS}
-</html>
-"""
+</body>
+</html>"""
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/home", response_class=HTMLResponse)
@@ -1996,24 +2244,79 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
   </div>
 
   <script>
-    let licenseKey = localStorage.getItem('axion_license');
-    let hasLicense = localStorage.getItem('axion_has_license') === 'true';
+    async function checkAuth() {{
+      try {{
+        const res = await fetch('/api/auth/me', {{ credentials: 'include' }});
+        if (!res.ok) {{
+          // Not logged in, show login modal
+          document.getElementById('loginModal').classList.add('show');
+          return;
+        }}
+        
+        const userData = await res.json();
+        loadDashboard(userData);
+      }} catch (e) {{
+        console.error('Auth check failed:', e);
+        document.getElementById('loginModal').classList.add('show');
+      }}
+    }}
+
+    async function loadDashboard(userData) {{
+      try {{
+        // Get user's license info
+        const licenseRes = await fetch(`/api/users/${{userData.discord_id}}/license`);
+        const licenseData = await licenseRes.json();
+        
+        if (licenseData.active) {{
+          document.getElementById('activeSubs').textContent = '1';
+          document.getElementById('subStatus').textContent = 'Active';
+          document.getElementById('licenseDisplay').textContent = licenseData.key;
+          document.getElementById('hwidDisplay').textContent = licenseData.hwid || 'Not bound';
+          
+          const durationMap = {{
+            'weekly': 'Weekly',
+            'monthly': 'Monthly',
+            '3monthly': 'Quarterly',
+            'lifetime': 'Lifetime'
+          }};
+          document.getElementById('subDuration').textContent = durationMap[licenseData.duration] || licenseData.duration.toUpperCase();
+          
+          // Get HWID resets
+          const dashboardRes = await fetch(`/api/dashboard/${{licenseData.key}}`);
+          const dashboardData = await dashboardRes.json();
+          document.getElementById('totalResets').textContent = dashboardData.hwid_resets || 0;
+          
+          // Update UI
+          document.getElementById('subsSection').innerHTML = `
+            <div style="font-size:20px;color:#fff;margin-bottom:12px">Active Subscription</div>
+            <div style="font-size:15px;color:#888;margin-bottom:32px">
+              ${{licenseData.duration.toUpperCase()}} - Expires: ${{new Date(licenseData.expires_at).toLocaleDateString()}}
+            </div>
+            <button id="redeem-from-subs" onclick="document.querySelector('a[href=\"#manage\"]').click()">Manage Subscription</button>
+          `;
+        }} else {{
+          setUnknownState();
+        }}
+      }} catch (e) {{
+        console.error('Dashboard load error:', e);
+        setUnknownState();
+      }}
+    }}
 
     
-    if (!localStorage.getItem('axion_dashboard_visited')) {{
-      document.getElementById('loginModal').classList.add('show');
-    }} else if (hasLicense && licenseKey) {{
-      loadDashboard();
+    function setUnknownState() {{
+      document.getElementById('activeSubs').textContent = 'Unknown';
+      document.getElementById('totalResets').textContent = 'Unknown';
+      document.getElementById('subStatus').textContent = 'Unknown';
+      document.getElementById('subDuration').textContent = 'Unknown';
+      document.getElementById('licenseDisplay').textContent = 'Unknown';
+      document.getElementById('hwidDisplay').textContent = 'Unknown';
     }}
 
     
     document.getElementById('noLicenseBtn').onclick = () => {{
-      localStorage.setItem('axion_dashboard_visited', 'true');
-      localStorage.setItem('axion_has_license', 'false');
-      hasLicense = false;
-      licenseKey = null;
-      document.getElementById('loginModal').classList.remove('show');
-      setUnknownState();
+      // Redirect to Discord OAuth login
+      window.location.href = '/api/auth/login';
     }};
 
    
@@ -2032,72 +2335,12 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
           return;
         }}
 
-        const data = await res.json();
-        licenseKey = key;
-        hasLicense = true;
-        localStorage.setItem('axion_license', key);
-        localStorage.setItem('axion_has_license', 'true');
-        localStorage.setItem('axion_dashboard_visited', 'true');
-        
-        document.getElementById('loginModal').classList.remove('show');
-        loadDashboard();
+        // Redirect to license key dashboard
+        window.location.href = `/${{key}}`;
       }} catch (e) {{
         alert('Error validating license: ' + e.message);
       }}
     }};
-
-    
-    function setUnknownState() {{
-      document.getElementById('activeSubs').textContent = 'Unknown';
-      document.getElementById('totalResets').textContent = 'Unknown';
-      document.getElementById('subStatus').textContent = 'Unknown';
-      document.getElementById('subDuration').textContent = 'Unknown';
-      document.getElementById('licenseDisplay').textContent = 'Unknown';
-      document.getElementById('hwidDisplay').textContent = 'Unknown';
-    }}
-
-    
-    async function loadDashboard() {{
-      if (!hasLicense || !licenseKey) {{
-        setUnknownState();
-        return;
-      }}
-
-      try {{
-        const res = await fetch(`/api/dashboard/${{licenseKey}}`);
-        if (!res.ok) {{
-          alert('Invalid license key');
-          localStorage.removeItem('axion_license');
-          localStorage.setItem('axion_has_license', 'false');
-          setUnknownState();
-          return;
-        }}
-        
-        const data = await res.json();
-        
-        
-        document.getElementById('activeSubs').textContent = data.active ? '1' : '0';
-        document.getElementById('totalResets').textContent = data.hwid_resets || 0;
-        document.getElementById('subStatus').textContent = data.active ? 'Active' : 'Inactive';
-        
-        
-        const durationMap = {{
-          'weekly': 'Weekly',
-          'monthly': 'Monthly',
-          '3monthly': 'Quarterly',
-          'lifetime': 'Lifetime'
-        }};
-        document.getElementById('subDuration').textContent = durationMap[data.duration] || data.duration.toUpperCase();
-        
-        
-        document.getElementById('licenseDisplay').textContent = data.license_key;
-        document.getElementById('hwidDisplay').textContent = data.hwid || 'Not bound';
-        
-      }} catch (e) {{
-        console.error('Error loading dashboard:', e);
-        setUnknownState();
-      }}
-    }}
 
     
     document.querySelectorAll('nav a').forEach(link => {{
@@ -2123,8 +2366,9 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
 
     
     document.getElementById('hwidDisplay').onclick = async () => {{
-      if (!hasLicense || !licenseKey) {{
-        alert('Please login with a license key to reset HWID');
+      const licenseKey = document.getElementById('licenseDisplay').textContent;
+      if (licenseKey === 'Unknown') {{
+        alert('No active license found');
         return;
       }}
 
@@ -2184,14 +2428,11 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
         
         if (res.ok) {{
           alert('Key redeemed successfully!');
-          localStorage.setItem('axion_license', key);
-          localStorage.setItem('axion_has_license', 'true');
-          licenseKey = key;
-          hasLicense = true;
           redeemModal.classList.remove('show');
           setTimeout(() => redeemModal.style.display = 'none', 300);
           redeemKeyInput.value = '';
-          loadDashboard();
+          // Reload the page to update dashboard
+          window.location.reload();
         }} else {{
           const error = await res.json();
           alert('Error: ' + error.detail);
@@ -2207,6 +2448,9 @@ DASHBOARD_HTML = f"""<!DOCTYPE html>
         setTimeout(() => redeemModal.style.display = 'none', 300);
       }}
     }};
+
+    // Initialize
+    checkAuth();
   </script>
   
   {ENHANCED_ANTI_DEVTOOLS_JS}
@@ -2334,6 +2578,31 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 .modal-btn:hover{{background:#222}}
 .modal-btn.primary{{background:#1a1a1a}}
 .modal-btn.primary:hover{{background:#252525}}
+
+/* Save Changes Button */
+.save-changes-btn {{
+    position: absolute;
+    top: 10px;
+    right: 16px;
+    background: white;
+    color: black;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+    z-index: 100;
+    display: none;
+}}
+.save-changes-btn:hover {{
+    background: #f0f0f0;
+    transform: scale(1.05);
+}}
+.save-changes-btn.visible {{
+    display: block;
+}}
 </style>
 </head>
 <body>
@@ -2352,6 +2621,10 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
             </div>
         </div>
     </div>
+    
+    <!-- Save Changes Button -->
+    <button class="save-changes-btn" id="saveChangesBtn" onclick="saveConfig()">Save Changes</button>
+    
     <div class="content">
         <div class="tab-content active" id="aimbot">
             <div class="merged-panel">
@@ -2537,13 +2810,6 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
                                 <div class="slider-value" id="predValue">0.10</div>
                             </div>
                         </div>
-                        <div class="slider-label" style="top:250px">FOV</div>
-                        <div class="slider-container" id="trigFovSlider" style="top:264px" data-setting="triggerbot.FOV">
-                            <div class="slider-track">
-                                <div class="slider-fill" id="trigFovFill"></div>
-                                <div class="slider-value" id="trigFovValue">25</div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -2621,6 +2887,19 @@ let config = {{
     }}
 }};
 
+let hasUnsavedChanges = false;
+const saveChangesBtn = document.getElementById('saveChangesBtn');
+
+function showSaveButton() {{
+    hasUnsavedChanges = true;
+    saveChangesBtn.classList.add('visible');
+}}
+
+function hideSaveButton() {{
+    hasUnsavedChanges = false;
+    saveChangesBtn.classList.remove('visible');
+}}
+
 document.querySelectorAll('.tab').forEach(tab => {{
     tab.addEventListener('click', () => {{
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -2637,6 +2916,7 @@ async function saveConfig() {{
             headers: {{'Content-Type': 'application/json'}},
             body: JSON.stringify(config)
         }});
+        hideSaveButton();
     }} catch(e) {{
         console.error('Save failed:', e);
     }}
@@ -2645,8 +2925,16 @@ async function saveConfig() {{
 async function loadConfig() {{
     try {{
         const res = await fetch(`/api/config/${{key}}`);
-        config = await res.json();
+        const loadedConfig = await res.json();
+        
+        // Merge with defaults to ensure all fields exist
+        config = {{
+            ...config,
+            ...loadedConfig
+        }};
+        
         applyConfigToUI();
+        hideSaveButton();
     }} catch(e) {{
         console.error('Load failed:', e);
     }}
@@ -2672,7 +2960,6 @@ function applyConfigToUI() {{
     if (sliders.delay)       {{ sliders.delay.current = config.triggerbot.Delay;       sliders.delay.update(); }}
     if (sliders.maxStuds)    {{ sliders.maxStuds.current = config.triggerbot.MaxStuds; sliders.maxStuds.update(); }}
     if (sliders.pred)        {{ sliders.pred.current = config.triggerbot.Prediction;   sliders.pred.update(); }}
-    if (sliders.trigFov)     {{ sliders.trigFov.current = config.triggerbot.FOV;       sliders.trigFov.update(); }}
     if (sliders.fov)         {{ sliders.fov.current = config.camlock.FOV;              sliders.fov.update(); }}
     if (sliders.smoothX)     {{ sliders.smoothX.current = config.camlock.SmoothX;      sliders.smoothX.update(); }}
     if (sliders.smoothY)     {{ sliders.smoothY.current = config.camlock.SmoothY;      sliders.smoothY.update(); }}
@@ -2700,7 +2987,7 @@ document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
         const setting = toggle.dataset.setting;
         const [section, key] = setting.split('.');
         config[section][key] = toggle.classList.contains('active');
-        saveConfig();
+        showSaveButton();
     }});
 }});
 
@@ -2722,7 +3009,7 @@ document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
             const setting = picker.dataset.setting;
             const [section, key] = setting.split('.');
             config[section][key] = keyName;
-            saveConfig();
+            showSaveButton();
             document.removeEventListener('keydown', listener);
             document.removeEventListener('mousedown', listener);
         }};
@@ -2743,7 +3030,7 @@ document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item => {{
         item.classList.add('selected');
         document.getElementById('bodyPartList').classList.remove('open');
         config.camlock.BodyPart = value;
-        saveConfig();
+        showSaveButton();
     }});
 }});
 
@@ -2759,7 +3046,7 @@ document.querySelectorAll('#easingList .dropdown-item').forEach(item => {{
         item.classList.add('selected');
         document.getElementById('easingList').classList.remove('open');
         config.camlock.EasingStyle = value;
-        saveConfig();
+        showSaveButton();
     }});
 }});
 
@@ -2797,7 +3084,7 @@ function createDecimalSlider(id, fillId, valueId, defaultVal, min, max, step, se
             obj.update();
             const [section, key] = obj.setting.split('.');
             config[section][key] = obj.current;
-            saveConfig();
+            showSaveButton();
         }}
         function up() {{
             document.removeEventListener('mousemove', move);
@@ -2838,7 +3125,7 @@ function createIntSlider(id, fillId, valueId, defaultVal, max, blackThreshold, s
             obj.update();
             const [section, key] = obj.setting.split('.');
             config[section][key] = Math.round(obj.current);
-            saveConfig();
+            showSaveButton();
         }}
         function up() {{
             document.removeEventListener('mousemove', move);
@@ -2852,10 +3139,10 @@ function createIntSlider(id, fillId, valueId, defaultVal, max, blackThreshold, s
     return obj;
 }}
 
+// Note: FOV slider for triggerbot has been removed as requested
 sliders.delay           = createDecimalSlider('delaySlider',       'delayFill',       'delayValue',       0.05, 0.01, 1.00, 0.01, 'triggerbot.Delay');
 sliders.maxStuds        = createIntSlider(   'maxStudsSlider',    'maxStudsFill',    'maxStudsValue',    120,  300,  150,   'triggerbot.MaxStuds');
 sliders.pred            = createDecimalSlider('predSlider',        'predFill',        'predValue',        0.10, 0.01, 1.00, 0.01, 'triggerbot.Prediction');
-sliders.trigFov         = createIntSlider(   'trigFovSlider',     'trigFovFill',     'trigFovValue',     25,   100,  50,    'triggerbot.FOV');
 sliders.fov             = createIntSlider(   'fovSlider',         'fovFill',         'fovValue',         280,  500,  250,   'camlock.FOV');
 sliders.smoothX         = createIntSlider(   'smoothXSlider',     'smoothXFill',     'smoothXValue',     14,   30,   15,    'camlock.SmoothX');
 sliders.smoothY         = createIntSlider(   'smoothYSlider',     'smoothYFill',     'smoothYValue',     14,   30,   15,    'camlock.SmoothY');
@@ -2912,6 +3199,7 @@ async function saveCurrentConfig() {{
         }});
         document.getElementById('saveConfigInput').value = '';
         await loadSavedConfigs();
+        hideSaveButton(); // Changes saved, hide the save button
     }} catch(e) {{
         alert('Failed to save');
     }}
@@ -2920,9 +3208,10 @@ async function saveCurrentConfig() {{
 async function loadConfigByName(name) {{
     try {{
         const res = await fetch(`/api/configs/${{key}}/load/${{name}}`);
-        config = await res.json();
+        const loadedConfig = await res.json();
+        config = loadedConfig;
         applyConfigToUI();
-        await saveConfig();
+        showSaveButton(); // Loading a config might create unsaved changes
     }} catch(e) {{
         alert('Failed to load');
     }}
@@ -2977,9 +3266,22 @@ async function deleteConfigByName(name) {{
     }}
 }}
 
+// Add beforeunload warning for unsaved changes
+window.addEventListener('beforeunload', (e) => {{
+    if (hasUnsavedChanges) {{
+        e.preventDefault();
+        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+    }}
+}});
+
 loadSavedConfigs();
 loadConfig();
-setInterval(loadConfig, 1000);
+// Auto-save every 5 seconds if there are changes
+setInterval(() => {{
+    if (hasUnsavedChanges) {{
+        saveConfig();
+    }}
+}}, 5000);
 </script>
 
 {ENHANCED_ANTI_DEVTOOLS_JS}
