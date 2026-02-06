@@ -3,6 +3,8 @@ uvicorn
 pydantic
 psycopg2-binary
 requests
-psycopg2 
+psycopg2
 bcrypt
 slowapi
+httpx
+python-dotenv
