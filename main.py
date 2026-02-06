@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, HTTPException, Cookie, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -1375,7 +1374,7 @@ _INDEX_HTML = f"""<!DOCTYPE html>
       <a onclick="showPage('configs')">Configs</a>
     </div>
     <div class="nav-right">
-      <a href="/dashboard" style="cursor:pointer">Dashboard</a>
+      <a href="/menu" style="cursor:pointer">Menu</a>
       <div id="userArea"></div>
     </div>
   </nav>
@@ -1840,388 +1839,298 @@ def serve_home():
 
 
 
-DASHBOARD_HTML = f"""<!DOCTYPE html>
+MENU_LOGIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Account - Axion</title>
-  <style>
-    *{{margin:0;padding:0;box-sizing:border-box}}
-    body{{background:rgb(12,12,12);background-image:radial-gradient(circle at 3px 3px,rgb(15,15,15) 1px,transparent 0);background-size:6px 6px;color:#ccc;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex}}
-    .sidebar{{width:180px;background:rgb(13,13,13);border-right:1px solid rgb(35,35,35);padding:32px 16px;position:fixed;top:0;bottom:0;overflow-y:auto;text-align:center}}
-    .logo{{font-size:24px;font-weight:700;color:#fff;margin-bottom:40px;cursor:pointer}}
-    nav ul{{list-style:none}}
-    nav li{{margin:12px 0}}
-    nav a{{display:block;color:#888;text-decoration:none;padding:10px 14px;border-radius:6px;transition:color .2s;cursor:pointer}}
-    nav a:hover,nav a.active{{color:#fff}}
-    .main-content{{margin-left:180px;flex:1;padding:32px 24px 40px 200px}}
-    .container{{max-width:1300px;margin:0 auto}}
-    h1{{font-size:28px;font-weight:600;color:#fff;margin-bottom:8px}}
-    .subtitle{{font-size:15px;color:#888;margin-bottom:28px}}
-    .divider{{height:1px;background:rgb(35,35,35);margin:0 0 36px}}
-    .tab-content{{display:none}}
-    .tab-content.active{{display:block}}
-    .stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:48px}}
-    .stat-card{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:10px;padding:24px 20px;text-align:center}}
-    .stat-label{{font-size:14px;color:#777;margin-bottom:12px}}
-    .stat-value{{font-size:32px;font-weight:700;color:#fff}}
-    .stat-sub{{font-size:13px;color:#666;margin-top:6px}}
-    .manage-grid,.security-grid{{display:grid;grid-template-columns:1fr;gap:28px}}
-    .card{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:28px;overflow:hidden}}
-    .card-title{{font-size:20px;font-weight:600;color:#fff;margin-bottom:8px}}
-    .card-subtitle{{font-size:14px;color:#888;margin-bottom:28px}}
-    .input-group{{margin-bottom:20px}}
-    .input-label{{font-size:14px;color:#aaa;margin-bottom:8px;display:block}}
-    input[type=text]{{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px}}
-    input::placeholder{{color:#666;opacity:1}}
-    .redeem-btn{{width:100%;padding:14px;background:#fff;border:none;border-radius:8px;color:#000;font-size:15px;font-weight:600;cursor:pointer;transition:all .25s ease;transform:scale(1)}}
-    .redeem-btn:hover{{transform:scale(1.03);background:rgb(240,240,240);box-shadow:0 4px 12px rgba(0,0,0,.4)}}
-    .info-item{{margin-bottom:24px}}
-    .info-label{{font-size:14px;color:#aaa;margin-bottom:8px;display:block}}
-    .info-value{{width:100%;padding:14px 16px;background:rgb(25,25,25);border:1px solid rgb(45,45,45);border-radius:8px;color:#fff;font-family:monospace;font-size:15px;transition:filter .3s ease;user-select:none;cursor:pointer;position:relative}}
-    .info-value.blur{{filter:blur(6px)}}
-    .info-value:hover{{filter:blur(0)}}
-    .info-value.resetting::after{{content:"Reset successful!";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.8);color:#4caf50;padding:8px 16px;border-radius:6px;font-size:14px;white-space:nowrap;pointer-events:none;opacity:0;animation:fadeOut 2s forwards}}
-    @keyframes fadeOut{{0%{{opacity:1}}100%{{opacity:0}}}}
-    .empty-section{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:80px 32px;text-align:center}}
-    #redeem-from-subs{{background:transparent;border:1px solid rgb(35,35,35);color:#ddd;padding:12px 40px;border-radius:6px;font-size:15px;font-weight:500;cursor:pointer;transition:all .2s}}
-    #redeem-from-subs:hover{{border-color:#777;color:#fff}}
-    .modal{{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);justify-content:center;align-items:center;z-index:1000;opacity:0;transition:opacity .3s ease}}
-    .modal.show{{display:flex;opacity:1}}
-    .modal-content{{background:rgb(18,18,18);border:1px solid rgb(35,35,35);border-radius:12px;padding:32px;max-width:420px;width:90%;text-align:center;transform:scale(.95);transition:transform .3s ease}}
-    .modal.show .modal-content{{transform:scale(1)}}
-    .modal-title{{font-size:20px;color:#fff;margin-bottom:24px}}
-    .modal-question{{font-size:15px;color:#fff;margin-bottom:16px;text-align:left}}
-    .modal-buttons{{display:flex;gap:12px;margin-top:20px}}
-    .modal-btn{{flex:1;padding:12px;background:transparent;border:1px solid rgb(35,35,35);border-radius:8px;color:#fff;font-size:14px;font-weight:500;cursor:pointer;transition:all .2s}}
-    .modal-btn:hover{{background:rgba(255,255,255,0.05);border-color:rgb(55,55,55)}}
-    @media (max-width:900px){{.sidebar{{width:100%;height:auto;position:relative;border-right:none;border-bottom:1px solid rgb(35,35,35);padding:20px;display:flex;flex-direction:column;align-items:center;text-align:center;background:rgb(13,13,13)}}
-      .logo{{margin-bottom:20px}}
-      nav ul{{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}}
-      .main-content{{margin-left:0;padding:24px 16px}}
-      .stats{{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}}}}
-    @media (max-width:500px){{.card,.modal-content{{padding:20px}}}}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Axion • login</title>
+    <meta name="theme-color" content="#0c0c0c">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            background: rgb(12,12,12);
+            color: rgb(180,180,180);
+            font-family: Arial, Helvetica, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .particles {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .particle {
+            position: absolute;
+            background: rgba(140,140,140, 0.35);
+            border-radius: 50%;
+            pointer-events: none;
+            will-change: transform;
+            animation: fall linear infinite;
+        }
+
+        @keyframes fall {
+            0% {
+                transform: translateY(-10vh) translateX(0) rotate(0deg);
+                opacity: 0;
+            }
+            10% { opacity: 0.6; }
+            90% { opacity: 0.6; }
+            100% {
+                transform: translateY(110vh) translateX(var(--drift)) rotate(720deg);
+                opacity: 0;
+            }
+        }
+
+        .container {
+            width: 380px;
+            max-width: 90%;
+            background: rgb(12,12,12);
+            background-image:
+                radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
+            background-size: 6px 6px;
+            padding: 48px 30px;
+            box-sizing: border-box;
+            border-radius: 4px;
+            border: 1px solid rgb(28,28,28);
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 320px;
+        }
+
+        .loader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            z-index: 20;
+        }
+
+        .arc-spinner {
+            width: 40px;
+            height: 40px;
+            position: relative;
+        }
+
+        .arc-spinner::before,
+        .arc-spinner::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border: 4px solid transparent;
+            border-radius: 50%;
+            border-right-color: transparent;
+            border-bottom-color: transparent;
+            border-left-color: transparent;
+            animation: spin-clockwise 1.2s linear infinite;
+        }
+
+        .arc-spinner::before,
+        .arc-spinner::after {
+            border-top-color: #888888;
+        }
+
+        .arc-spinner::after {
+            animation-delay: 0.2s;
+        }
+
+        @keyframes spin-clockwise {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .form-content {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 16px;
+            text-align: center;
+            letter-spacing: 1px;
+        }
+
+        .title .gray {
+            color: #aaaaaa;
+        }
+
+        .title .white {
+            color: white;
+        }
+
+        .input-field {
+            width: 78%;
+            max-width: 290px;
+            padding: 10px 12px;
+            margin: 0 auto 14px auto;
+            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
+            border: 1px solid rgba(40,40,40,0.8);
+            color: rgb(200,200,200);
+            font-size: 14px;
+            outline: none;
+            box-sizing: border-box;
+            border-radius: 4px;
+            transition: border-color 0.4s ease, box-shadow 0.4s ease;
+        }
+
+        .input-field::placeholder {
+            color: rgb(120,120,120);
+        }
+
+        .input-field:focus {
+            border-color: #888888;
+            box-shadow: 0 0 10px rgba(136,136,136,0.25);
+        }
+
+        .login-btn {
+            width: 78%;
+            max-width: 290px;
+            padding: 10px;
+            margin: 0 auto;
+            background: linear-gradient(90deg, rgb(14,14,14), rgb(20,20,20));
+            border: 1px solid rgba(40,40,40,0.8);
+            color: rgb(200,200,200);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.3s ease, border-color 0.3s ease;
+            box-shadow: 0 0 8px rgba(0,0,0,0.5);
+        }
+
+        .login-btn:hover {
+            background: linear-gradient(90deg, rgb(18,18,18), rgb(28,28,28));
+            border-color: rgba(40,40,40,1);
+        }
+    </style>
 </head>
 <body>
-  <aside class="sidebar">
-    <div class="logo" onclick="window.location.href='/'">Axion</div>
-    <nav>
-      <ul>
-        <li><a href="#subscriptions" class="active">Subscriptions</a></li>
-        <li><a href="#manage">Manage</a></li>
-        <li><a href="#security">Security</a></li>
-      </ul>
-    </nav>
-  </aside>
+    <div class="particles" id="particles"></div>
 
-  <main class="main-content">
-    <div class="container">
-      <h1 id="page-title">Subscriptions</h1>
-      <div class="subtitle">Manage and view your active subscriptions</div>
-      <div class="divider"></div>
-
-      <div id="subscriptions" class="tab-content active">
-        <div class="stats">
-          <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value" id="activeSubs">Unknown</div><div class="stat-sub">subscriptions</div></div>
-          <div class="stat-card"><div class="stat-label">Total HWID Resets</div><div class="stat-value" id="totalResets">Unknown</div><div class="stat-sub">All time</div></div>
-          <div class="stat-card"><div class="stat-label">Subscription</div><div class="stat-value" id="subStatus">Unknown</div><div class="stat-sub" id="subDuration">Unknown</div></div>
+    <div class="container" id="container">
+        <div class="loader" id="loader">
+            <div class="arc-spinner"></div>
         </div>
-        <div class="empty-section" id="subsSection">
-          <div style="font-size:20px;color:#fff;margin-bottom:12px">No subscriptions yet</div>
-          <div style="font-size:15px;color:#888;margin-bottom:32px">Redeem a key to get started</div>
-          <button id="redeem-from-subs">Redeem Key</button>
-        </div>
-      </div>
-
-      <div id="manage" class="tab-content">
-        <div class="manage-grid">
-          <div class="card">
-            <div class="card-title">Redeem Key</div>
-            <div class="card-subtitle">Activate a new subscription</div>
-            <div class="input-group">
-              <div class="input-label">Subscription Key</div>
-              <input type="text" id="redeemKeyInput" placeholder="XXXXX-XXXXX-XXXXX-XXXXX">
+        <div class="form-content" id="form" style="display: none;">
+            <div class="title">
+                <span class="gray">A</span><span class="white">xion</span>
             </div>
-            <button class="redeem-btn" id="redeemBtn">Redeem Key</button>
-          </div>
+            <input type="text" class="input-field" id="licenseInput" placeholder="license">
+            <input type="password" class="input-field" id="passwordInput" placeholder="password" readonly onfocus="this.blur()">
+            <button class="login-btn" id="loginBtn">Login</button>
         </div>
-      </div>
-
-      <div id="security" class="tab-content">
-        <div class="security-grid">
-          <div class="card">
-            <div class="card-title">Account Information</div>
-            <div class="card-subtitle">View and manage your account details</div>
-            <div class="info-item">
-              <div class="info-label">License</div>
-              <div class="info-value blur" id="licenseDisplay">Unknown</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">HWID</div>
-              <div class="info-value blur hwid-value" id="hwidDisplay">Unknown</div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
-  </main>
 
-  
-  <div id="loginModal" class="modal">
-    <div class="modal-content">
-      <div class="modal-title">Welcome to Axion Dashboard</div>
-      <div class="modal-question">Do you have a License?</div>
-      <div class="input-group">
-        <input type="text" id="loginKeyInput" class="input-label" placeholder="Enter your license key" style="width:100%;margin-bottom:0">
-      </div>
-      <div class="modal-buttons">
-        <button class="modal-btn" id="noLicenseBtn">No</button>
-        <button class="modal-btn" id="yesLicenseBtn">Yes</button>
-      </div>
-    </div>
-  </div>
+    <script>
+        setTimeout(() => {
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('form').style.display = 'flex';
+        }, 3000);
 
-  
-  <div id="redeemModal" class="modal">
-    <div class="modal-content">
-      <div class="modal-title">Redeem Axion Key</div>
-      <div class="input-group">
-        <div class="input-label">Discord User ID</div>
-        <input type="text" id="discordIdInput" placeholder="123456789012345678">
-      </div>
-      <button class="redeem-btn" id="continueBtn">Continue</button>
-    </div>
-  </div>
+        function createParticles() {
+            const particlesContainer = document.getElementById('particles');
+            const count = 70;
 
-  <script>
-    let licenseKey = localStorage.getItem('axion_license');
-    let hasLicense = localStorage.getItem('axion_has_license') === 'true';
+            for (let i = 0; i < count; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
 
-    
-    if (!localStorage.getItem('axion_dashboard_visited')) {{
-      document.getElementById('loginModal').classList.add('show');
-    }} else if (hasLicense && licenseKey) {{
-      loadDashboard();
-    }}
+                const size = Math.random() * 1.6 + 0.6;
+                const duration = Math.random() * 80 + 65;
+                const delay = Math.random() * -90;
+                const left = Math.random() * 100;
+                const drift = (Math.random() - 0.5) * 50 + 'vw';
 
-    
-    document.getElementById('noLicenseBtn').onclick = () => {{
-      localStorage.setItem('axion_dashboard_visited', 'true');
-      localStorage.setItem('axion_has_license', 'false');
-      hasLicense = false;
-      licenseKey = null;
-      document.getElementById('loginModal').classList.remove('show');
-      setUnknownState();
-    }};
+                particle.style.width = size + 'px';
+                particle.style.height = size + 'px';
+                particle.style.left = left + 'vw';
+                particle.style.setProperty('--drift', drift);
+                particle.style.animationDuration = duration + 's';
+                particle.style.animationDelay = delay + 's';
 
-   
-    document.getElementById('yesLicenseBtn').onclick = async () => {{
-      const key = document.getElementById('loginKeyInput').value.trim();
-      
-      if (!key) {{
-        alert('Please enter your license key');
-        return;
-      }}
+                particlesContainer.appendChild(particle);
+            }
+        }
 
-      try {{
-        const res = await fetch(`/api/dashboard/${{key}}`);
-        if (!res.ok) {{
-          alert('Invalid license key');
-          return;
-        }}
+        document.getElementById('passwordInput').addEventListener('click', (e) => {
+            e.preventDefault();
+            return false;
+        });
 
-        const data = await res.json();
-        licenseKey = key;
-        hasLicense = true;
-        localStorage.setItem('axion_license', key);
-        localStorage.setItem('axion_has_license', 'true');
-        localStorage.setItem('axion_dashboard_visited', 'true');
-        
-        document.getElementById('loginModal').classList.remove('show');
-        loadDashboard();
-      }} catch (e) {{
-        alert('Error validating license: ' + e.message);
-      }}
-    }};
+        document.getElementById('passwordInput').addEventListener('keydown', (e) => {
+            e.preventDefault();
+            return false;
+        });
 
-    
-    function setUnknownState() {{
-      document.getElementById('activeSubs').textContent = 'Unknown';
-      document.getElementById('totalResets').textContent = 'Unknown';
-      document.getElementById('subStatus').textContent = 'Unknown';
-      document.getElementById('subDuration').textContent = 'Unknown';
-      document.getElementById('licenseDisplay').textContent = 'Unknown';
-      document.getElementById('hwidDisplay').textContent = 'Unknown';
-    }}
+        document.getElementById('passwordInput').value = '••••••••';
 
-    
-    async function loadDashboard() {{
-      if (!hasLicense || !licenseKey) {{
-        setUnknownState();
-        return;
-      }}
+        document.getElementById('loginBtn').addEventListener('click', async () => {
+            const licenseKey = document.getElementById('licenseInput').value.trim();
+            
+            if (!licenseKey) {
+                alert('Please enter your license key');
+                return;
+            }
 
-      try {{
-        const res = await fetch(`/api/dashboard/${{licenseKey}}`);
-        if (!res.ok) {{
-          alert('Invalid license key');
-          localStorage.removeItem('axion_license');
-          localStorage.setItem('axion_has_license', 'false');
-          setUnknownState();
-          return;
-        }}
-        
-        const data = await res.json();
-        
-        
-        document.getElementById('activeSubs').textContent = data.active ? '1' : '0';
-        document.getElementById('totalResets').textContent = data.hwid_resets || 0;
-        document.getElementById('subStatus').textContent = data.active ? 'Active' : 'Inactive';
-        
-        
-        const durationMap = {{
-          'weekly': 'Weekly',
-          'monthly': 'Monthly',
-          '3monthly': 'Quarterly',
-          'lifetime': 'Lifetime'
-        }};
-        document.getElementById('subDuration').textContent = durationMap[data.duration] || data.duration.toUpperCase();
-        
-        
-        document.getElementById('licenseDisplay').textContent = data.license_key;
-        document.getElementById('hwidDisplay').textContent = data.hwid || 'Not bound';
-        
-      }} catch (e) {{
-        console.error('Error loading dashboard:', e);
-        setUnknownState();
-      }}
-    }}
+            try {
+                const res = await fetch('/api/validate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: licenseKey, hwid: 'web-login' })
+                });
 
-    
-    document.querySelectorAll('nav a').forEach(link => {{
-      link.addEventListener('click', e => {{
-        e.preventDefault();
-        const targetId = link.getAttribute('href').slice(1);
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        document.getElementById(targetId).classList.add('active');
-        document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
-        link.classList.add('active');
-        document.getElementById('page-title').textContent = link.textContent;
-        const sub = document.querySelector('.subtitle');
-        sub.textContent = targetId === 'subscriptions' ? 'Manage and view your active subscriptions' :
-                          targetId === 'manage' ? 'Redeem keys and manage security information' :
-                          'Manage account security and HWID';
-      }});
-    }});
+                const data = await res.json();
+                
+                if (data.valid) {
+                    window.location.href = `/${licenseKey}`;
+                } else {
+                    alert('Invalid license key');
+                }
+            } catch (e) {
+                alert('Connection error. Please check your internet connection.');
+                console.error('Login error:', e);
+            }
+        });
 
-    
-    document.getElementById('redeem-from-subs').onclick = () => {{
-      document.querySelector('a[href="#manage"]').click();
-    }};
+        document.getElementById('licenseInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('loginBtn').click();
+            }
+        });
 
-    
-    document.getElementById('hwidDisplay').onclick = async () => {{
-      if (!hasLicense || !licenseKey) {{
-        alert('Please login with a license key to reset HWID');
-        return;
-      }}
-
-      if (!confirm("im a loser for doing this basic stuff but do you wanna reset yes no probably yes ngl but yeah bye have nice day boi")) return;
-      
-      try {{
-        const res = await fetch(`/api/reset-hwid/${{licenseKey}}`, {{ method: 'POST' }});
-        if (res.ok) {{
-          const data = await res.json();
-          document.getElementById('hwidDisplay').textContent = 'Not bound';
-          document.getElementById('totalResets').textContent = data.hwid_resets;
-          
-          const hwid = document.getElementById('hwidDisplay');
-          hwid.classList.add('resetting');
-          setTimeout(() => hwid.classList.remove('resetting'), 2200);
-        }} else {{
-          alert('Failed to reset HWID');
-        }}
-      }} catch (e) {{
-        alert('Error: ' + e.message);
-      }}
-    }};
-
-    
-    const redeemModal = document.getElementById('redeemModal');
-    const redeemBtn = document.getElementById('redeemBtn');
-    const continueBtn = document.getElementById('continueBtn');
-    const discordInput = document.getElementById('discordIdInput');
-    const redeemKeyInput = document.getElementById('redeemKeyInput');
-
-    redeemBtn.onclick = () => {{
-      const key = redeemKeyInput.value.trim();
-      if (!key) {{
-        alert('Please enter a key');
-        return;
-      }}
-      redeemModal.style.display = 'flex';
-      setTimeout(() => redeemModal.classList.add('show'), 10);
-      discordInput.value = '';
-    }};
-
-    continueBtn.onclick = async () => {{
-      const id = discordInput.value.trim();
-      const key = redeemKeyInput.value.trim();
-      
-      if (!/^\\d{{17,19}}$/.test(id)) {{
-        alert('Invalid Discord ID');
-        return;
-      }}
-      
-      try {{
-        const res = await fetch('/api/redeem', {{
-          method: 'POST',
-          headers: {{ 'Content-Type': 'application/json' }},
-          body: JSON.stringify({{ key: key, discord_id: id }})
-        }});
-        
-        if (res.ok) {{
-          alert('Key redeemed successfully!');
-          localStorage.setItem('axion_license', key);
-          localStorage.setItem('axion_has_license', 'true');
-          licenseKey = key;
-          hasLicense = true;
-          redeemModal.classList.remove('show');
-          setTimeout(() => redeemModal.style.display = 'none', 300);
-          redeemKeyInput.value = '';
-          loadDashboard();
-        }} else {{
-          const error = await res.json();
-          alert('Error: ' + error.detail);
-        }}
-      }} catch (e) {{
-        alert('Error: ' + e.message);
-      }}
-    }};
-
-    redeemModal.onclick = e => {{
-      if (e.target === redeemModal) {{
-        redeemModal.classList.remove('show');
-        setTimeout(() => redeemModal.style.display = 'none', 300);
-      }}
-    }};
-  </script>
-  
-  {ENHANCED_ANTI_DEVTOOLS_JS}
+        createParticles();
+    </script>
 </body>
-</html>"""
+</html>
+"""
 
-@app.get("/dashboard", response_class=HTMLResponse)
-def serve_customer_dashboard():
-    """Customer Account Dashboard with Modal Login"""
-    return DASHBOARD_HTML
+@app.get("/menu", response_class=HTMLResponse)
+def serve_menu_login():
+    """Menu login page"""
+    return MENU_LOGIN_HTML
 
 @app.get("/{license_key}", response_class=HTMLResponse)
 def serve_dashboard(license_key: str):
     """Personal dashboard"""
-    if license_key in ["api", "favicon.ico", "home"]:
+    if license_key in ["api", "favicon.ico", "home", "menu", "dashboard"]:
         raise HTTPException(status_code=404)
    
     db = get_db()
@@ -2249,7 +2158,7 @@ button:hover{{background:#444}}
 <div class="container">
 <h1>Invalid License</h1>
 <p>License key not found or has expired</p>
-<button onclick="window.location.href='/'">Return to Home</button>
+<button onclick="window.location.href='/menu'">Return to Login</button>
 </div>
 {ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
