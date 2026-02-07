@@ -1411,9 +1411,9 @@ _INDEX_HTML = f"""<!DOCTYPE html>
           <div class="plan-price">$5</div>
           <div class="plan-duration">7 days</div>
           <ul class="plan-features">
-            <li>✓ Full access to Axion</li>
-            <li>✓ All features unlocked</li>
-            <li>✓ Discord support</li>
+            <li>✓ jeffre besos/li>
+            <li>✓ tuff</li>
+            <li>✓ goood</li>
           </ul>
         </div>
         <div class="pricing-card">
@@ -1421,8 +1421,8 @@ _INDEX_HTML = f"""<!DOCTYPE html>
           <div class="plan-price">$15</div>
           <div class="plan-duration">30 days</div>
           <ul class="plan-features">
-            <li>✓ Full access to Axion</li>
-            <li>✓ All features unlocked</li>
+            <li>✓ good/li>
+            <li>✓ goodd</li>
             <li>✓ Priority support</li>
           </ul>
         </div>
@@ -1431,9 +1431,9 @@ _INDEX_HTML = f"""<!DOCTYPE html>
           <div class="plan-price">$40</div>
           <div class="plan-duration">forever</div>
           <ul class="plan-features">
-            <li>✓ Full access to Axion</li>
-            <li>✓ All features unlocked</li>
-            <li>✓ VIP support</li>
+            <li>✓ evertthingn</li>
+            <li>✓ tuff alsoo last fordever</li>
+            <li>✓ ver good suppoort</li>
             <li>✓ Best value</li>
           </ul>
         </div>
