@@ -779,6 +779,31 @@ def reset_user_hwid(user_id: str):
     
     return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
 
+@app.post("/api/check-login")
+def check_login(data: dict):
+    """Check if user is logged in (for Python cheat)"""
+    hwid = data.get("hwid")
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    # Find if any key is bound to this HWID
+    cur.execute(q("SELECT key FROM keys WHERE hwid=%s AND active=1"), (hwid,))
+    result = cur.fetchone()
+    db.close()
+    
+    if result:
+        return {
+            "logged_in": True,
+            "username": result[0],
+            "message": "User is logged in"
+        }
+    
+    return {
+        "logged_in": False,
+        "message": "User not logged in"
+    }
+
 @app.get("/api/keepalive")
 def keepalive():
     """Keep server awake"""
