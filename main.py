@@ -68,57 +68,41 @@ def q(query):
     """Convert PostgreSQL placeholders to SQLite if needed"""
     if USE_POSTGRES:
         return query
-    return query.replace("%s", "?")
+    # For SQLite, replace %s with ?
+    import re
+    # Replace %s but not %%s (escaped percent signs)
+    return re.sub(r'(?<!%)%s(?!%)', '?', query)
 
 def init_db():
-    db = get_db()
-    cur = db.cursor()
-    
-    if USE_POSTGRES:
-        cur.execute("""CREATE TABLE IF NOT EXISTS keys (
-            key TEXT PRIMARY KEY,
-            duration TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            expires_at TEXT,
-            redeemed_at TEXT,
-            redeemed_by TEXT,
-            hwid TEXT,
-            hwid_resets INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 0,
-            created_by TEXT
-        )""")
+    try:
+        db = get_db()
+        cur = db.cursor()
         
-        try:
-            cur.execute("ALTER TABLE keys ADD COLUMN IF NOT EXISTS hwid_resets INTEGER DEFAULT 0")
-            db.commit()
-        except:
-            pass
-        
-        cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
-            id SERIAL PRIMARY KEY,
-            license_key TEXT NOT NULL,
-            config_name TEXT NOT NULL,
-            config_data TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            UNIQUE(license_key, config_name)
-        )""")
-        
-        cur.execute("""CREATE TABLE IF NOT EXISTS public_configs (
-            id SERIAL PRIMARY KEY,
-            config_name TEXT NOT NULL,
-            author_name TEXT NOT NULL,
-            game_name TEXT NOT NULL,
-            description TEXT,
-            config_data TEXT NOT NULL,
-            license_key TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            downloads INTEGER DEFAULT 0
-        )""")
-        
-        try:
-            cur.execute("SELECT discord_id FROM public_configs LIMIT 1")
-            cur.execute("DROP TABLE IF EXISTS public_configs")
-            cur.execute("""CREATE TABLE public_configs (
+        # Create keys table
+        if USE_POSTGRES:
+            cur.execute("""CREATE TABLE IF NOT EXISTS keys (
+                key TEXT PRIMARY KEY,
+                duration TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT,
+                redeemed_at TEXT,
+                redeemed_by TEXT,
+                hwid TEXT,
+                hwid_resets INTEGER DEFAULT 0,
+                active INTEGER DEFAULT 0,
+                created_by TEXT
+            )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
+                id SERIAL PRIMARY KEY,
+                license_key TEXT NOT NULL,
+                config_name TEXT NOT NULL,
+                config_data TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(license_key, config_name)
+            )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS public_configs (
                 id SERIAL PRIMARY KEY,
                 config_name TEXT NOT NULL,
                 author_name TEXT NOT NULL,
@@ -129,66 +113,43 @@ def init_db():
                 created_at TEXT NOT NULL,
                 downloads INTEGER DEFAULT 0
             )""")
-            db.commit()
-        except Exception as e:
-            db.rollback()
             
-        cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
-            session_id TEXT PRIMARY KEY,
-            license_key TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            expires_at TEXT NOT NULL
-        )""")
-        
-        cur.execute("""CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            config TEXT NOT NULL
-        )""")
-    else:
-        cur.execute("""CREATE TABLE IF NOT EXISTS keys (
-            key TEXT PRIMARY KEY,
-            duration TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            expires_at TEXT,
-            redeemed_at TEXT,
-            redeemed_by TEXT,
-            hwid TEXT,
-            hwid_resets INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 0,
-            created_by TEXT
-        )""")
-        
-        try:
-            cur.execute("ALTER TABLE keys ADD COLUMN hwid_resets INTEGER DEFAULT 0")
-            db.commit()
-        except:
-            pass
-        
-        cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            license_key TEXT NOT NULL,
-            config_name TEXT NOT NULL,
-            config_data TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            UNIQUE(license_key, config_name)
-        )""")
-        
-        cur.execute("""CREATE TABLE IF NOT EXISTS public_configs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            config_name TEXT NOT NULL,
-            author_name TEXT NOT NULL,
-            game_name TEXT NOT NULL,
-            description TEXT,
-            config_data TEXT NOT NULL,
-            license_key TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            downloads INTEGER DEFAULT 0
-        )""")
-        
-        try:
-            cur.execute("SELECT discord_id FROM public_configs LIMIT 1")
-            cur.execute("DROP TABLE IF EXISTS public_configs")
-            cur.execute("""CREATE TABLE public_configs (
+            cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
+                session_id TEXT PRIMARY KEY,
+                license_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                config TEXT NOT NULL
+            )""")
+            
+        else:
+            cur.execute("""CREATE TABLE IF NOT EXISTS keys (
+                key TEXT PRIMARY KEY,
+                duration TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT,
+                redeemed_at TEXT,
+                redeemed_by TEXT,
+                hwid TEXT,
+                hwid_resets INTEGER DEFAULT 0,
+                active INTEGER DEFAULT 0,
+                created_by TEXT
+            )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                license_key TEXT NOT NULL,
+                config_name TEXT NOT NULL,
+                config_data TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(license_key, config_name)
+            )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS public_configs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 config_name TEXT NOT NULL,
                 author_name TEXT NOT NULL,
@@ -199,28 +160,31 @@ def init_db():
                 created_at TEXT NOT NULL,
                 downloads INTEGER DEFAULT 0
             )""")
-            db.commit()
-        except Exception as e:
-            try:
-                db.rollback()
-            except:
-                pass
-                
-        cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
-            session_id TEXT PRIMARY KEY,
-            license_key TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            expires_at TEXT NOT NULL
-        )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
+                session_id TEXT PRIMARY KEY,
+                license_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                config TEXT NOT NULL
+            )""")
         
-        cur.execute("""CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            config TEXT NOT NULL
-        )""")
-    
-    db.commit()
-    db.close()
-    print("Database initialized")
+        db.commit()
+        print(f"Database initialized successfully. Using: {'PostgreSQL' if USE_POSTGRES else 'SQLite'}")
+        
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        try:
+            db.close()
+        except:
+            pass
 
 class KeyValidate(BaseModel):
     key: str
@@ -809,6 +773,58 @@ def keepalive():
     """Keep server awake"""
     return {"status": "alive"}
 
+@app.get("/api/debug/db")
+def debug_db():
+    """Debug database connection"""
+    try:
+        db = get_db()
+        cur = db.cursor()
+        
+        if USE_POSTGRES:
+            # For PostgreSQL
+            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+        else:
+            # For SQLite
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        
+        tables = cur.fetchall()
+        
+        # Test keys table
+        cur.execute(q("SELECT COUNT(*) FROM keys"))
+        count = cur.fetchone()
+        
+        db.close()
+        
+        return {
+            "database_type": "PostgreSQL" if USE_POSTGRES else "SQLite",
+            "tables_found": [t[0] for t in tables],
+            "keys_count": count[0] if count else 0,
+            "use_postgres": USE_POSTGRES,
+            "database_url": DATABASE_URL if DATABASE_URL else "local.db"
+        }
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+
+@app.get("/api/test/{license_key}")
+def test_license(license_key: str):
+    """Test if license key exists"""
+    try:
+        db = get_db()
+        cur = db.cursor()
+        
+        query = q("SELECT key FROM keys WHERE key=%s")
+        cur.execute(query, (license_key,))
+        result = cur.fetchone()
+        db.close()
+        
+        return {
+            "exists": result is not None,
+            "key_provided": license_key,
+            "key_found": result[0] if result else None
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/community", response_class=HTMLResponse)
 def serve_community():
     """Simple community configs page"""
@@ -1369,15 +1385,17 @@ def serve_menu_login():
 @app.get("/config/{license_key}", response_class=HTMLResponse)
 def serve_config_dashboard(license_key: str):
     """Config dashboard page"""
-    db = get_db()
-    cur = db.cursor()
-   
-    cur.execute(q("SELECT * FROM keys WHERE key=%s"), (license_key,))
-    result = cur.fetchone()
-    db.close()
-   
-    if not result:
-        return f"""<!DOCTYPE html>
+    try:
+        db = get_db()
+        cur = db.cursor()
+        
+        query = q("SELECT * FROM keys WHERE key=%s")
+        cur.execute(query, (license_key,))
+        result = cur.fetchone()
+        db.close()
+        
+        if not result:
+            return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
@@ -1399,8 +1417,9 @@ button:hover{{background:#444}}
 {ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
 </html>"""
-   
-    return f"""<!DOCTYPE html>
+        
+        # Return the full HTML page for valid license
+        return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -2140,6 +2159,33 @@ loadConfig();
 setInterval(loadConfig, 1000);
 </script>
 
+{ENHANCED_ANTI_DEVTOOLS_JS}
+</body>
+</html>"""
+    
+    except Exception as e:
+        print(f"Error in serve_config_dashboard: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Error - Axion</title>
+<style>
+body{{background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
+.container{{text-align:center;padding:40px;background:rgba(0,0,0,0.5);border-radius:10px;border:1px solid rgba(255,255,255,0.1)}}
+h1{{color:rgb(255,68,68);margin-bottom:20px}}
+button{{margin-top:20px;padding:12px 30px;background:#333;color:white;border:none;border-radius:5px;cursor:pointer;font-size:16px}}
+button:hover{{background:#444}}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Server Error</h1>
+<p>{str(e)}</p>
+<button onclick="window.location.href='/menu'">Return to Login</button>
+</div>
 {ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
 </html>"""
