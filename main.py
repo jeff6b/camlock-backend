@@ -12,7 +12,6 @@ from datetime import datetime, timedelta
 
 app = FastAPI()
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,7 +19,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 DEFAULT_CONFIG = {
     "triggerbot": {
@@ -56,7 +54,6 @@ DEFAULT_CONFIG = {
         "Scale": 1.0
     }
 }
-
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 USE_POSTGRES = DATABASE_URL is not None
@@ -223,8 +220,7 @@ def init_db():
     
     db.commit()
     db.close()
-    print("good")
-
+    print("Database initialized")
 
 class KeyValidate(BaseModel):
     key: str
@@ -257,7 +253,98 @@ class SavedConfigRequest(BaseModel):
     config_name: str
     config_data: dict
 
+# Security middleware
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
+ENHANCED_ANTI_DEVTOOLS_JS = """
+<script>
+(function() {
+    'use strict';
+    
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'F12' || e.keyCode === 123) {
+            e.preventDefault();
+            e.stopPropagation();
+            startDebuggerSpam();
+            return false;
+        }
+        
+        if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) {
+            e.preventDefault();
+            e.stopPropagation();
+            startDebuggerSpam();
+            return false;
+        }
+        
+        if (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) {
+            e.preventDefault();
+            e.stopPropagation();
+            startDebuggerSpam();
+            return false;
+        }
+        
+        if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) {
+            e.preventDefault();
+            e.stopPropagation();
+            startDebuggerSpam();
+            return false;
+        }
+        
+        if (e.ctrlKey && (e.key === 'U' || e.keyCode === 85)) {
+            e.preventDefault();
+            e.stopPropagation();
+            startDebuggerSpam();
+            return false;
+        }
+    });
+    
+    document.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    });
+    
+    function startDebuggerSpam() {
+        setInterval(() => {
+            try {
+                debugger;
+                eval("debugger");
+                Function("debugger")();
+            } catch(e) {}
+        }, 50);
+        
+        setInterval(() => {
+            if (typeof console !== 'undefined') {
+                console.clear();
+                console.log('%c dm inlination on discord if u manage to harm the website and lmk how u did it so i can improve thanks', 'color: red; font-size: 30px; font-weight: bold;');
+            }
+        }, 100);
+    }
+    
+    let lastWidth = window.innerWidth;
+    let lastHeight = window.innerHeight;
+    
+    setInterval(() => {
+        const widthDiff = Math.abs(window.outerWidth - window.innerWidth);
+        const heightDiff = Math.abs(window.outerHeight - window.innerHeight);
+        
+        if (widthDiff > 150 || heightDiff > 150) {
+            startDebuggerSpam();
+        }
+        
+        lastWidth = window.innerWidth;
+        lastHeight = window.innerHeight;
+    }, 1000);
+})();
+</script>
+"""
 
 @app.post("/api/validate")
 def validate_user(data: KeyValidate):
@@ -297,8 +384,6 @@ def validate_user(data: KeyValidate):
     
     db.close()
     return {"valid": True, "message": "Authentication successful"}
-
-
 
 @app.get("/api/config/{key}")
 def get_config(key: str):
@@ -361,8 +446,6 @@ def set_config(key: str, data: dict):
         db.close()
         print(f"Error in set_config: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
 
 @app.get("/api/configs/{license_key}/list")
 def list_configs(license_key: str):
@@ -440,8 +523,6 @@ def delete_config(license_key: str, config_name: str):
     
     return {"success": True}
 
-
-
 @app.get("/api/public-configs")
 def get_public_configs():
     """Get all public configs"""
@@ -517,8 +598,6 @@ def download_config(config_id: int):
     db.close()
     return {"success": True}
 
-
-
 @app.post("/api/keys/create")
 def create_key(data: KeyCreate):
     """Create a license key"""
@@ -546,8 +625,6 @@ def delete_key(license_key: str):
     db.commit()
     db.close()
     return {"success": True}
-
-
 
 @app.get("/api/dashboard/{license_key}")
 def get_dashboard_data(license_key: str):
@@ -707,1144 +784,279 @@ def keepalive():
     """Keep server awake"""
     return {"status": "alive"}
 
-
-ENHANCED_ANTI_DEVTOOLS_JS = """
-<script>
-(function() {
-    'use strict';
-    
-    
-    document.addEventListener('keydown', function(e) {
-        
-        if (e.key === 'F12' || e.keyCode === 123) {
-            e.preventDefault();
-            e.stopPropagation();
-            startDebuggerSpam();
-            return false;
-        }
-        
-        
-        if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) {
-            e.preventDefault();
-            e.stopPropagation();
-            startDebuggerSpam();
-            return false;
-        }
-        
-        
-        if (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) {
-            e.preventDefault();
-            e.stopPropagation();
-            startDebuggerSpam();
-            return false;
-        }
-        
-        
-        if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) {
-            e.preventDefault();
-            e.stopPropagation();
-            startDebuggerSpam();
-            return false;
-        }
-        
-        
-        if (e.ctrlKey && (e.key === 'U' || e.keyCode === 85)) {
-            e.preventDefault();
-            e.stopPropagation();
-            startDebuggerSpam();
-            return false;
-        }
-    });
-    
-    
-    document.addEventListener('contextmenu', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
-    });
-    
-    function startDebuggerSpam() {
-        
-        setInterval(() => {
-            try {
-                debugger;
-                eval("debugger");
-                Function("debugger")();
-            } catch(e) {
-                
-            }
-        }, 50);
-        
-        
-        setInterval(() => {
-            if (typeof console !== 'undefined') {
-                console.clear();
-                console.log('%c dm inlination on discord if u manage to harm the website and lmk how u did it so i can improve thanks', 'color: red; font-size: 30px; font-weight: bold;');
-            }
-        }, 100);
-    }
-    
-    
-    let lastWidth = window.innerWidth;
-    let lastHeight = window.innerHeight;
-    
-    setInterval(() => {
-        const widthDiff = Math.abs(window.outerWidth - window.innerWidth);
-        const heightDiff = Math.abs(window.outerHeight - window.innerHeight);
-        
-        
-        if (widthDiff > 150 || heightDiff > 150) {
-            startDebuggerSpam();
-        }
-        
-        lastWidth = window.innerWidth;
-        lastHeight = window.innerHeight;
-    }, 1000);
-    
-})();
-</script>
-"""
-
-_INDEX_HTML = f"""<!DOCTYPE html>
+@app.get("/community", response_class=HTMLResponse)
+def serve_community():
+    """Simple community configs page"""
+    html_content = """<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Axion</title>
-  <style>
-    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-    
-    body, html {{
-      height: 100%;
-      background-color: rgb(12, 12, 12);
-      color: #fff;
-      font-family: system-ui, -apple-system, sans-serif;
-      overflow-x: hidden;
-    }}
-
-    .image-container {{
-      width: 100%;
-      height: 100vh;
-      background-image: url('https://image2url.com/r2/default/images/1768674767693-4fff24d5-abfa-4be9-a3ee-bd44454bad9f.blob');
-      background-size: cover;
-      background-position: center;
-      opacity: 0.01;
-      position: fixed;
-      inset: 0;
-      z-index: 1;
-    }}
-
-    .navbar {{
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      padding: 1.2rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      z-index: 100;
-      backdrop-filter: blur(12px);
-      background: rgba(12, 12, 12, 0.6);
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-    }}
-
-    .nav-links {{
-      display: flex;
-      gap: 2rem;
-    }}
-
-    .nav-links a {{
-      color: rgba(255, 255, 255, 0.6);
-      text-decoration: none;
-      font-size: 0.95rem;
-      font-weight: 500;
-      transition: color 0.3s;
-      cursor: pointer;
-    }}
-
-    .nav-links a:hover {{
-      color: rgba(255, 255, 255, 1);
-    }}
-
-    .nav-right {{
-      display: flex;
-      gap: 1.5rem;
-      align-items: center;
-    }}
-
-    .nav-right a {{
-      color: rgba(255, 255, 255, 0.7);
-      text-decoration: none;
-      font-size: 0.95rem;
-      font-weight: 500;
-      transition: color 0.3s;
-    }}
-
-    .nav-right a:hover {{
-      color: rgba(255, 255, 255, 1);
-    }}
-
-    .login-btn {{
-      padding: 8px 20px;
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 6px;
-      color: white;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-size: 0.9rem;
-    }}
-
-    .login-btn:hover {{
-      background: rgba(255,255,255,0.15);
-    }}
-
-    .user-info {{
-      padding: 8px 20px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 6px;
-      color: white;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-size: 0.9rem;
-    }}
-
-    .user-info:hover {{
-      background: rgba(255,255,255,0.1);
-    }}
-
-    .content {{
-      position: fixed;
-      inset: 0;
-      z-index: 5;
-      overflow-y: auto;
-      pointer-events: none;
-    }}
-
-    .content > * {{
-      pointer-events: auto;
-    }}
-
-    .page {{
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.6s ease;
-    }}
-
-    .page.active {{
-      opacity: 1;
-      pointer-events: auto;
-    }}
-
-    .configs-page {{
-      justify-content: flex-start;
-      padding-top: 15vh;
-    }}
-
-    .about-page {{
-      padding: 20px;
-    }}
-
-    .about-page .description {{
-      max-width: 600px;
-      text-align: center;
-      font-size: 18px;
-      line-height: 1.8;
-      color: #aaa;
-      margin-top: 40px;
-    }}
-
-    .pricing-page {{
-      justify-content: flex-start;
-      padding-top: 15vh;
-    }}
-
-    .pricing-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 30px;
-      width: 90%;
-      max-width: 1000px;
-      margin-top: 60px;
-    }}
-
-    .pricing-card {{
-      background: rgba(18,18,22,0.6);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 12px;
-      padding: 32px;
-      text-align: center;
-      transition: all 0.3s;
-    }}
-
-    .pricing-card:hover {{
-      transform: translateY(-8px);
-      border-color: rgba(255,255,255,0.2);
-      background: rgba(22,22,26,0.7);
-    }}
-
-    .pricing-card.featured {{
-      border-color: rgba(255,255,255,0.3);
-      background: rgba(25,25,30,0.8);
-    }}
-
-    .plan-name {{
-      font-size: 24px;
-      font-weight: 700;
-      color: #fff;
-      margin-bottom: 16px;
-    }}
-
-    .plan-price {{
-      font-size: 48px;
-      font-weight: 900;
-      color: #fff;
-      margin-bottom: 8px;
-    }}
-
-    .plan-duration {{
-      font-size: 14px;
-      color: #888;
-      margin-bottom: 24px;
-    }}
-
-    .plan-features {{
-      list-style: none;
-      text-align: left;
-      margin-top: 24px;
-    }}
-
-    .plan-features li {{
-      padding: 10px 0;
-      color: #aaa;
-      font-size: 15px;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
-    }}
-
-    .plan-features li:last-child {{
-      border-bottom: none;
-    }}
-
-    .title-wrapper {{
-      display: flex;
-      gap: 0.8rem;
-      flex-wrap: wrap;
-      justify-content: center;
-    }}
-
-    .title-word {{
-      font-size: 3.8rem;
-      font-weight: 900;
-      letter-spacing: -1.5px;
-      text-shadow: 0 0 25px rgba(0,0,0,0.7);
-    }}
-
-    .configs-container {{
-      width: 90%;
-      max-width: 1200px;
-      margin-top: 60px;
-    }}
-
-    .login-required {{
-      text-align: center;
-      padding: 60px 20px;
-      background: rgba(18,18,22,0.5);
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.08);
-    }}
-
-    .create-btn {{
-      padding: 14px 32px;
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 8px;
-      color: #fff;
-      font-size: 15px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      margin-bottom: 30px;
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-    }}
-
-    .create-btn:hover {{
-      background: rgba(255,255,255,0.05);
-      border-color: rgba(255,255,255,0.25);
-      transform: translateY(-2px);
-    }}
-
-    .pagination {{
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      margin-top: 30px;
-      margin-bottom: 60px;
-    }}
-
-    .page-btn {{
-      padding: 8px 16px;
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 6px;
-      color: #fff;
-      font-size: 14px;
-      cursor: pointer;
-      transition: all 0.2s;
-      backdrop-filter: blur(10px);
-    }}
-
-    .page-btn:hover:not(:disabled) {{
-      background: rgba(255,255,255,0.05);
-      border-color: rgba(255,255,255,0.25);
-    }}
-
-    .page-btn.active {{
-      background: rgba(255,255,255,0.1);
-      border-color: rgba(255,255,255,0.3);
-    }}
-
-    .page-btn:disabled {{
-      opacity: 0.3;
-      cursor: not-allowed;
-    }}
-
-    .config-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-      gap: 20px;
-      margin-bottom: 40px;
-    }}
-
-    .config-card {{
-      background: rgba(25,25,30,0.6);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 12px;
-      padding: 24px;
-      transition: all 0.3s;
-      cursor: pointer;
-    }}
-
-    .config-card:hover {{
-      background: rgba(30,30,35,0.7);
-      border-color: rgba(255,255,255,0.15);
-      transform: translateY(-4px);
-    }}
-
-    .config-name {{
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }}
-
-    .config-game {{
-      font-size: 12px;
-      color: #888;
-      background: rgba(255,255,255,0.05);
-      padding: 4px 10px;
-      border-radius: 4px;
-      display: inline-block;
-      margin-bottom: 12px;
-    }}
-
-    .config-description {{
-      font-size: 14px;
-      color: #aaa;
-      line-height: 1.5;
-      margin: 12px 0;
-    }}
-
-    .config-footer {{
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 16px;
-      padding-top: 16px;
-      border-top: 1px solid rgba(255,255,255,0.06);
-      font-size: 13px;
-      color: #666;
-    }}
-
-    /* Modal */
-    .modal {{
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.85);
-      backdrop-filter: blur(10px);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-      opacity: 0;
-      transition: opacity 0.3s ease;
-    }}
-
-    .modal.active {{
-      display: flex;
-      animation: fadeIn 0.3s ease forwards;
-    }}
-
-    @keyframes fadeIn {{
-      from {{ opacity: 0; }}
-      to {{ opacity: 1; }}
-    }}
-
-    .modal-content {{
-      background: #1a1a1f;
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 8px;
-      padding: 24px;
-      width: 90%;
-      max-width: 460px;
-      max-height: 80vh;
-      overflow-y: auto;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-      transform: scale(0.95);
-      animation: modalZoom 0.3s ease forwards;
-    }}
-
-    @keyframes modalZoom {{
-      from {{ transform: scale(0.95); }}
-      to {{ transform: scale(1); }}
-    }}
-
-    .modal-title {{
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 20px;
-      color: #fff;
-    }}
-
-    .form-group {{
-      margin-bottom: 16px;
-    }}
-
-    .form-label {{
-      display: block;
-      font-size: 13px;
-      color: #888;
-      margin-bottom: 6px;
-      font-weight: 500;
-    }}
-
-    .form-input, .form-select, .form-textarea {{
-      width: 100%;
-      padding: 10px 14px;
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 6px;
-      color: #fff;
-      font-size: 14px;
-      font-family: inherit;
-      transition: all 0.2s;
-    }}
-
-    .form-input:focus, .form-select:focus, .form-textarea:focus {{
-      outline: none;
-      border-color: rgba(255,255,255,0.3);
-      background: rgba(255,255,255,0.02);
-    }}
-
-    .form-textarea {{
-      resize: vertical;
-      min-height: 90px;
-    }}
-
-    .form-select {{
-      cursor: pointer;
-    }}
-
-    .form-select option {{
-      background: #1a1a1f;
-      color: #fff;
-    }}
-
-    .modal-actions {{
-      display: flex;
-      gap: 10px;
-      margin-top: 20px;
-    }}
-
-    .modal-btn {{
-      flex: 1;
-      padding: 11px;
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 6px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      color: #fff;
-      backdrop-filter: blur(5px);
-    }}
-
-    .modal-btn:hover {{
-      background: rgba(255,255,255,0.05);
-      border-color: rgba(255,255,255,0.25);
-    }}
-
-    .config-detail-modal .modal-content {{
-      max-width: 600px;
-      background: #16161a;
-      padding: 28px;
-    }}
-
-    .config-stats {{
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-      margin: 20px 0;
-      padding: 20px;
-      background: rgba(255,255,255,0.02);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 8px;
-    }}
-
-    .stat-item {{
-      text-align: center;
-    }}
-
-    .stat-label {{
-      font-size: 11px;
-      color: #666;
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }}
-
-    .stat-value {{
-      font-size: 18px;
-      font-weight: 700;
-      color: #fff;
-    }}
-
-    .detail-section {{
-      margin: 20px 0;
-    }}
-
-    .detail-label {{
-      font-size: 12px;
-      color: #666;
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }}
-
-    .detail-content {{
-      color: #aaa;
-      line-height: 1.6;
-      font-size: 14px;
-      padding: 12px;
-      background: rgba(255,255,255,0.02);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 6px;
-    }}
-
-    @media (max-width: 768px) {{
-      .title-word {{
-        font-size: 2.5rem;
-      }}
-      
-      .config-grid {{
-        grid-template-columns: 1fr;
-      }}
-      
-      .pricing-grid {{
-        grid-template-columns: 1fr;
-      }}
-    }}
-  </style>
+<meta charset="UTF-8"/>
+<title>Community Configs - Axion</title>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+body {
+    background: rgb(12, 12, 12);
+    color: #cfcfcf;
+    font-family: Arial, sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+.header {
+    padding: 20px;
+    background: #111;
+    border-bottom: 1px solid #2a2a2a;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.logo {
+    font-size: 20px;
+    font-weight: bold;
+    color: #fff;
+}
+.nav {
+    display: flex;
+    gap: 20px;
+}
+.nav a {
+    color: #9a9a9a;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+.nav a:hover {
+    color: #fff;
+}
+.container {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+.config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+.config-card {
+    background: #111;
+    border: 1px solid #2a2a2a;
+    padding: 20px;
+    border-radius: 8px;
+    transition: transform 0.2s, border-color 0.2s;
+}
+.config-card:hover {
+    transform: translateY(-2px);
+    border-color: #444;
+}
+.config-name {
+    font-size: 18px;
+    color: #fff;
+    margin-bottom: 10px;
+    font-weight: 500;
+}
+.config-game {
+    font-size: 12px;
+    color: #888;
+    background: #1a1a1a;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-bottom: 10px;
+}
+.config-description {
+    color: #aaa;
+    margin: 10px 0;
+    line-height: 1.4;
+    font-size: 14px;
+    min-height: 40px;
+}
+.config-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #666;
+    font-size: 12px;
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid #2a2a2a;
+}
+.config-author {
+    color: #999;
+}
+.config-downloads {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.load-btn {
+    margin-top: 10px;
+    padding: 8px 16px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    color: #fff;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: background 0.2s, border-color 0.2s;
+    width: 100%;
+}
+.load-btn:hover {
+    background: #222;
+    border-color: #444;
+}
+.load-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+    font-size: 16px;
+}
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #888;
+    font-size: 14px;
+}
+.error-state {
+    text-align: center;
+    padding: 40px;
+    color: #ff4444;
+    font-size: 14px;
+}
+.create-btn {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s;
+    z-index: 100;
+}
+.create-btn:hover {
+    background: #222;
+}
+@media (max-width: 768px) {
+    .config-grid {
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    }
+    .header {
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+    }
+    .nav {
+        gap: 15px;
+    }
+}
+</style>
 </head>
 <body>
-  <div class="image-container"></div>
-
-  <nav class="navbar">
-    <div class="nav-links">
-      <a onclick="showPage('home')">Home</a>
-      <a onclick="showPage('about')">About</a>
-      <a onclick="showPage('pricing')">Pricing</a>
-      <a onclick="showPage('configs')">Configs</a>
+<div class="header">
+    <div class="logo">Axion Community Configs</div>
+    <div class="nav">
+        <a href="/menu">Login</a>
+        <a href="#" onclick="refreshConfigs()">Refresh</a>
     </div>
-    <div class="nav-right">
-      <a href="/menu" style="cursor:pointer">Menu</a>
-      <div id="userArea"></div>
+</div>
+<div class="container">
+    <div id="configsList" class="config-grid">
+        <div class="loading">Loading community configs...</div>
     </div>
-  </nav>
+</div>
+<button class="create-btn" onclick="window.location.href='/menu'">
+    Login to Create Config
+</button>
 
-  <div class="content">
+<script>
+async function loadConfigs() {
+    const container = document.getElementById('configsList');
     
-    <div id="home" class="page active">
-      <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">WELCOME</span>
-        <span class="title-word" style="color:#ffffff;">TO</span>
-        <span class="title-word" style="color:#888888;">Axion</span>
-      </div>
-    </div>
-
-    
-    <div id="about" class="page about-page">
-      <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">About</span>
-        <span class="title-word" style="color:#888888;">Axion</span>
-      </div>
-      <div class="description">
-        Axion is a Da Hood external designed to integrate seamlessly in-game. It delivers smooth, reliable performance while bypassing PC checks, giving you a consistent edge during star tryouts and competitive play.
-      </div>
-    </div>
-
-    
-    <div id="pricing" class="page pricing-page">
-      <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">Pricing</span>
-      </div>
-      <div class="pricing-grid">
-        <div class="pricing-card">
-          <div class="plan-name">Weekly</div>
-          <div class="plan-price">$5</div>
-          <div class="plan-duration">7 days</div>
-          <ul class="plan-features">
-            <li>✓ jeffre besos/li>
-            <li>✓ tuff</li>
-            <li>✓ goood</li>
-          </ul>
-        </div>
-        <div class="pricing-card">
-          <div class="plan-name">Monthly</div>
-          <div class="plan-price">$15</div>
-          <div class="plan-duration">30 days</div>
-          <ul class="plan-features">
-            <li>✓ good/li>
-            <li>✓ goodd</li>
-            <li>✓ Priority support</li>
-          </ul>
-        </div>
-        <div class="pricing-card featured">
-          <div class="plan-name">Lifetime</div>
-          <div class="plan-price">$40</div>
-          <div class="plan-duration">forever</div>
-          <ul class="plan-features">
-            <li>✓ evertthingn</li>
-            <li>✓ tuff alsoo last fordever</li>
-            <li>✓ ver good suppoort</li>
-            <li>✓ Best value</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-
-    
-    <div id="configs" class="page configs-page">
-      <div class="title-wrapper">
-        <span class="title-word" style="color:#ffffff;">Community</span>
-        <span class="title-word" style="color:#888888;">Configs</span>
-      </div>
-      
-      <div class="configs-container" id="configsContent">
-        <div class="login-required">
-          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
-          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
-          <button class="login-btn" onclick="showLoginModal()">Login</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  
-  <div class="modal" id="loginModal">
-    <div class="modal-content">
-      <h2 class="modal-title">Login to Axion</h2>
-      
-      <div class="form-group">
-        <label class="form-label">License Key</label>
-        <input type="text" class="form-input" id="licenseKeyInput" placeholder="XXXX-XXXX-XXXX-XXXX">
-      </div>
-
-      <div class="modal-actions">
-        <button class="modal-btn" onclick="closeLoginModal()">Cancel</button>
-        <button class="modal-btn" onclick="submitLogin()">Login</button>
-      </div>
-    </div>
-  </div>
-
-  
-  <div class="modal" id="createModal">
-    <div class="modal-content">
-      <h2 class="modal-title">Create Public Config</h2>
-      
-      <div class="form-group">
-        <label class="form-label">Select Your Saved Config</label>
-        <select class="form-select" id="savedConfigSelect">
-          <option value="">Loading your configs...</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Config Name</label>
-        <input type="text" class="form-input" id="configName" placeholder="e.g., Pro Camlock Settings">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Author Name</label>
-        <input type="text" class="form-input" id="authorName" placeholder="Your name">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Game</label>
-        <input type="text" class="form-input" id="gameName" placeholder="e.g., Da Hood, Hood Modded, etc.">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Description</label>
-        <textarea class="form-textarea" id="configDescription" placeholder="Describe your config..."></textarea>
-      </div>
-
-      <div class="modal-actions">
-        <button class="modal-btn" onclick="closeCreateModal()">Cancel</button>
-        <button class="modal-btn" onclick="publishConfig()">Publish Config</button>
-      </div>
-    </div>
-  </div>
-
-  
-  <div class="modal config-detail-modal" id="viewModal">
-    <div class="modal-content">
-      <h2 class="modal-title" id="viewConfigName">Config Name</h2>
-      
-      <div class="config-stats">
-        <div class="stat-item">
-          <div class="stat-label">Game</div>
-          <div class="stat-value" id="viewGame">-</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-label">Author</div>
-          <div class="stat-value" id="viewAuthor">-</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-label">Downloads</div>
-          <div class="stat-value" id="viewDownloads">0</div>
-        </div>
-      </div>
-
-      <div class="detail-section">
-        <div class="detail-label">Description</div>
-        <div class="detail-content" id="viewDescription">-</div>
-      </div>
-
-      <div class="modal-actions">
-        <button class="modal-btn" onclick="closeViewModal()">Close</button>
-        <button class="modal-btn" onclick="saveConfigToMenu()">Load to Menu</button>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    let currentUser = null;
-    let allConfigs = [];
-    let currentPage = 1;
-    let currentViewConfig = null;
-    const CONFIGS_PER_PAGE = 6;
-
-    function showPage(pageId) {{
-      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-      document.getElementById(pageId).classList.add('active');
-      
-      if (pageId === 'configs' && currentUser) {{
-        loadConfigs();
-      }}
-    }}
-
-    function showLoginModal() {{
-      document.getElementById('loginModal').classList.add('active');
-    }}
-
-    function closeLoginModal() {{
-      document.getElementById('loginModal').classList.remove('active');
-    }}
-
-    async function submitLogin() {{
-      const licenseKey = document.getElementById('licenseKeyInput').value.trim();
-
-      if (!licenseKey) {{
-        alert('Please enter your license key');
-        return;
-      }}
-
-      try {{
-        const res = await fetch(`/api/validate`, {{
-          method: 'POST',
-          headers: {{ 'Content-Type': 'application/json' }},
-          body: JSON.stringify({{ key: licenseKey, hwid: 'web-login' }})
-        }});
-
-        if (res.ok) {{
-          const data = await res.json();
-          
-          if (data.valid) {{
-            currentUser = {{ 
-              license_key: licenseKey
-            }};
-            
-            document.getElementById('userArea').innerHTML = `
-              <div class="user-info" onclick="logout()">
-                <span>${{licenseKey.substring(0, 12)}}...</span>
-              </div>
-            `;
-            
-            closeLoginModal();
-            loadConfigs();
-          }} else {{
-            alert('Invalid or expired license key');
-          }}
-        }} else {{
-          alert('Invalid license key');
-        }}
-      }} catch (e) {{
-        alert('Connection error. Please check your internet connection.');
-        console.error('Login error:', e);
-      }}
-    }}
-
-    function logout() {{
-      currentUser = null;
-      document.getElementById('userArea').innerHTML = `
-        <button class="login-btn" onclick="showLoginModal()">Login</button>
-      `;
-      document.getElementById('configsContent').innerHTML = `
-        <div class="login-required">
-          <h3 style="font-size: 24px; margin-bottom: 12px;">Login Required</h3>
-          <p style="color: #888; margin-bottom: 20px;">Please login to view and create configs</p>
-          <button class="login-btn" onclick="showLoginModal()">Login</button>
-        </div>
-      `;
-    }}
-
-    async function loadConfigs() {{
-      try {{
+    try {
+        container.innerHTML = '<div class="loading">Loading community configs...</div>';
+        
         const res = await fetch('/api/public-configs');
         const data = await res.json();
         
-        allConfigs = data.configs || [];
-        renderConfigsPage();
-      }} catch (e) {{
-        console.error('Load error:', e);
-        document.getElementById('configsContent').innerHTML = '<p>Error loading configs</p>';
-      }}
-    }}
-
-    function renderConfigsPage() {{
-      const startIndex = (currentPage - 1) * CONFIGS_PER_PAGE;
-      const endIndex = startIndex + CONFIGS_PER_PAGE;
-      const pageConfigs = allConfigs.slice(startIndex, endIndex);
-      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
-
-      let html = '<button class="create-btn" onclick="openCreateModal()">+ Create Config</button>';
-      html += '<div class="config-grid">';
-      
-      if (pageConfigs.length > 0) {{
-        pageConfigs.forEach(config => {{
-          html += `
-            <div class="config-card" onclick="viewConfig(${{config.id}})">
-              <div class="config-name">${{config.config_name}}</div>
-              <div class="config-game">${{config.game_name}}</div>
-              <div class="config-description">${{config.description}}</div>
-              <div class="config-footer">
-                <div>by ${{config.author_name}}</div>
-                <div>${{config.downloads}} downloads</div>
-              </div>
-            </div>
-          `;
-        }});
-      }} else {{
-        html += '<p style="color: #888; text-align: center; padding: 40px;">No configs yet! Be the first to create one.</p>';
-      }}
-      
-      html += '</div>';
-
-      if (totalPages > 1) {{
-        html += '<div class="pagination">';
-        html += `<button class="page-btn" onclick="changePage(${{currentPage - 1}})" ${{currentPage === 1 ? 'disabled' : ''}}>Previous</button>`;
+        if (!data.configs || data.configs.length === 0) {
+            container.innerHTML = '<div class="empty-state">No community configs yet. Be the first to share one!</div>';
+            return;
+        }
         
-        for (let i = 1; i <= totalPages; i++) {{
-          html += `<button class="page-btn ${{i === currentPage ? 'active' : ''}}" onclick="changePage(${{i}})">${{i}}</button>`;
-        }}
+        container.innerHTML = '';
         
-        html += `<button class="page-btn" onclick="changePage(${{currentPage + 1}})" ${{currentPage === totalPages ? 'disabled' : ''}}>Next</button>`;
-        html += '</div>';
-      }}
-      
-      document.getElementById('configsContent').innerHTML = html;
-    }}
-
-    function changePage(page) {{
-      const totalPages = Math.ceil(allConfigs.length / CONFIGS_PER_PAGE);
-      if (page < 1 || page > totalPages) return;
-      currentPage = page;
-      renderConfigsPage();
-      window.scrollTo({{ top: 0, behavior: 'smooth' }});
-    }}
-
-    async function openCreateModal() {{
-      document.getElementById('createModal').classList.add('active');
-      
-      try {{
-        const res = await fetch(`/api/configs/${{currentUser.license_key}}/list`);
-        const data = await res.json();
+        data.configs.forEach(config => {
+            const card = document.createElement('div');
+            card.className = 'config-card';
+            card.innerHTML = `
+                <div class="config-name">${escapeHtml(config.config_name)}</div>
+                <div class="config-game">${escapeHtml(config.game_name)}</div>
+                <div class="config-description">${escapeHtml(config.description || 'No description provided')}</div>
+                <div class="config-footer">
+                    <div class="config-author">by ${escapeHtml(config.author_name)}</div>
+                    <div class="config-downloads">
+                        <span>⬇️</span>
+                        <span>${config.downloads || 0}</span>
+                    </div>
+                </div>
+                <button class="load-btn" onclick="viewConfig(${config.id})" title="Login to load this config">
+                    View Details
+                </button>
+            `;
+            container.appendChild(card);
+        });
         
-        const select = document.getElementById('savedConfigSelect');
-        select.innerHTML = '<option value="">Select a config...</option>';
-        
-        if (data.configs && data.configs.length > 0) {{
-          data.configs.forEach(cfg => {{
-            select.innerHTML += `<option value="${{cfg.name}}">${{cfg.name}}</option>`;
-          }});
-        }} else {{
-          select.innerHTML = '<option value="">No saved configs found</option>';
-        }}
-      }} catch (e) {{
-        console.error('Error loading configs:', e);
-      }}
-    }}
+    } catch(error) {
+        console.error('Error loading configs:', error);
+        container.innerHTML = '<div class="error-state">Error loading configs. Please try again later.</div>';
+    }
+}
 
-    function closeCreateModal() {{
-      document.getElementById('createModal').classList.remove('active');
-    }}
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
-    async function publishConfig() {{
-      const selectedConfig = document.getElementById('savedConfigSelect').value;
-      const configName = document.getElementById('configName').value.trim();
-      const authorName = document.getElementById('authorName').value.trim();
-      const gameName = document.getElementById('gameName').value.trim();
-      const description = document.getElementById('configDescription').value.trim();
+function refreshConfigs() {
+    loadConfigs();
+}
 
-      if (!selectedConfig) {{
-        alert('Please select a config');
-        return;
-      }}
-      if (!configName || !authorName || !gameName || !description) {{
-        alert('Please fill in all fields');
-        return;
-      }}
+function viewConfig(configId) {
+    alert('Please login to view and load configs.');
+    window.location.href = '/menu';
+}
 
-      try {{
-        const configRes = await fetch(`/api/configs/${{currentUser.license_key}}/load/${{selectedConfig}}`);
-        const configData = await configRes.json();
+// Load configs when page loads
+document.addEventListener('DOMContentLoaded', loadConfigs);
 
-        const res = await fetch('/api/public-configs/create', {{
-          method: 'POST',
-          headers: {{ 'Content-Type': 'application/json' }},
-          body: JSON.stringify({{
-            config_name: configName,
-            author_name: authorName,
-            game_name: gameName,
-            description: description,
-            config_data: configData
-          }})
-        }});
-
-        if (res.ok) {{
-          alert('Config published successfully!');
-          closeCreateModal();
-          loadConfigs();
-        }} else {{
-          const error = await res.json();
-          alert('Error: ' + (error.detail || 'Failed to publish'));
-        }}
-      }} catch (e) {{
-        alert('Error publishing config: ' + e.message);
-      }}
-    }}
-
-    async function viewConfig(configId) {{
-      try {{
-        const res = await fetch(`/api/public-configs/${{configId}}`);
-        const data = await res.json();
-        
-        currentViewConfig = data;
-        
-        document.getElementById('viewConfigName').textContent = data.config_name;
-        document.getElementById('viewGame').textContent = data.game_name;
-        document.getElementById('viewAuthor').textContent = data.author_name;
-        document.getElementById('viewDownloads').textContent = data.downloads;
-        document.getElementById('viewDescription').textContent = data.description;
-        
-        document.getElementById('viewModal').classList.add('active');
-        
-        fetch(`/api/public-configs/${{configId}}/download`, {{ method: 'POST' }});
-      }} catch (e) {{
-        alert('Error loading config');
-      }}
-    }}
-
-    function closeViewModal() {{
-      document.getElementById('viewModal').classList.remove('active');
-    }}
-
-    async function saveConfigToMenu() {{
-      if (!currentUser || !currentViewConfig) {{
-        alert('Please login first');
-        return;
-      }}
-
-      try {{
-        const res = await fetch(`/api/configs/${{currentUser.license_key}}/save`, {{
-          method: 'POST',
-          headers: {{ 'Content-Type': 'application/json' }},
-          body: JSON.stringify({{
-            config_name: currentViewConfig.config_name,
-            config_data: currentViewConfig.config_data
-          }})
-        }});
-
-        if (res.ok) {{
-          alert('Config loaded to your menu!');
-          closeViewModal();
-        }} else {{
-          alert('Failed to save config');
-        }}
-      }} catch (e) {{
-        alert('Error saving config: ' + e.message);
-      }}
-    }}
-
-    document.addEventListener('keydown', (e) => {{
-      if (e.key === 'Escape') {{
-        closeLoginModal();
-        closeCreateModal();
-        closeViewModal();
-      }}
-    }});
-
-    document.getElementById('userArea').innerHTML = `
-      <button class="login-btn" onclick="showLoginModal()">Login</button>
-    `;
-  </script>
-  
-  {ENHANCED_ANTI_DEVTOOLS_JS}
-</html>
-"""
-
-@app.get("/", response_class=HTMLResponse)
-@app.get("/home", response_class=HTMLResponse)
-def serve_home():
-    """SPA Homepage with all tabs"""
-    return _INDEX_HTML
-
-
+// Auto-refresh every 30 seconds
+setInterval(loadConfigs, 30000);
+</script>
+</body>
+</html>"""
+    
+    return HTMLResponse(content=html_content + ENHANCED_ANTI_DEVTOOLS_JS)
 
 MENU_LOGIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Axion • login</title>
+    <title>Login • Axion</title>
     <meta name="theme-color" content="#0c0c0c">
     <style>
         html, body {
@@ -1960,20 +1172,16 @@ MENU_LOGIN_HTML = """<!DOCTYPE html>
             align-items: center;
         }
 
-        .title {
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 16px;
+        .logo-container {
+            margin-bottom: 24px;
             text-align: center;
-            letter-spacing: 1px;
         }
 
-        .title .gray {
-            color: #aaaaaa;
-        }
-
-        .title .white {
-            color: white;
+        .logo-image {
+            width: 180px;
+            height: 180px;
+            object-fit: contain;
+            filter: brightness(1.1) contrast(1.1);
         }
 
         .input-field {
@@ -2030,8 +1238,8 @@ MENU_LOGIN_HTML = """<!DOCTYPE html>
             <div class="arc-spinner"></div>
         </div>
         <div class="form-content" id="form" style="display: none;">
-            <div class="title">
-                <span class="gray">A</span><span class="white">xion</span>
+            <div class="logo-container">
+                <img src="https://image2url.com/r2/default/images/1770423268822-32a09791-acb6-41e0-b8f9-1b159be9dc14.blob" alt="Axion" class="logo-image">
             </div>
             <input type="text" class="input-field" id="licenseInput" placeholder="license">
             <input type="password" class="input-field" id="passwordInput" placeholder="password" readonly onfocus="this.blur()">
@@ -2100,7 +1308,7 @@ MENU_LOGIN_HTML = """<!DOCTYPE html>
                 const data = await res.json();
                 
                 if (data.valid) {
-                    window.location.href = `/${licenseKey}`;
+                    window.location.href = `/config/${licenseKey}`;
                 } else {
                     alert('Invalid license key');
                 }
@@ -2122,17 +1330,20 @@ MENU_LOGIN_HTML = """<!DOCTYPE html>
 </html>
 """
 
+@app.get("/", response_class=HTMLResponse)
+def serve_home():
+    """Redirect to login"""
+    response = HTMLResponse(content=MENU_LOGIN_HTML)
+    return response
+
 @app.get("/menu", response_class=HTMLResponse)
 def serve_menu_login():
-    """Menu login page"""
+    """Login page"""
     return MENU_LOGIN_HTML
 
-@app.get("/{license_key}", response_class=HTMLResponse)
-def serve_dashboard(license_key: str):
-    """Personal dashboard"""
-    if license_key in ["api", "favicon.ico", "home", "menu", "dashboard"]:
-        raise HTTPException(status_code=404)
-   
+@app.get("/config/{license_key}", response_class=HTMLResponse)
+def serve_config_dashboard(license_key: str):
+    """Config dashboard page"""
     db = get_db()
     cur = db.cursor()
    
@@ -2168,7 +1379,7 @@ button:hover{{background:#444}}
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<title>Axion Dashboard</title>
+<title>Axion Config</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box;user-select:none}}
 body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);font-family:Arial,sans-serif;color:#cfcfcf;display:flex;align-items:center;justify-content:center}}
@@ -2248,11 +1459,11 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
 <body>
 <div class="window">
     <div class="topbar">
-        <div class="title">Axion</div>
+        <div class="title">Axion Config</div>
         <div class="tabs">
-            <div class="tab active" data-tab="aimbot">aimbot</div>
-            <div class="tab" data-tab="triggerbot">triggerbot</div>
-            <div class="tab" data-tab="settings">settings</div>
+            <div class="tab active" data-tab="aimbot">Aimbot</div>
+            <div class="tab" data-tab="triggerbot">Triggerbot</div>
+            <div class="tab" data-tab="settings">Configs</div>
         </div>
         <div class="topbar-right">
             <div class="search-container">
@@ -2266,7 +1477,7 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
             <div class="merged-panel">
                 <div class="inner-container">
                     <div class="half-panel">
-                        <div class="panel-header">aimbot</div>
+                        <div class="panel-header">Aimbot</div>
                         <div class="toggle-row" style="top:32px">
                             <div class="toggle-text">
                                 <div class="toggle active" data-setting="camlock.Enabled"></div>
@@ -2318,7 +1529,7 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
                         </div>
                     </div>
                     <div class="half-panel">
-                        <div class="panel-header">aimbot settings</div>
+                        <div class="panel-header">Aimbot Settings</div>
                         <div class="slider-label" style="top:32px">FOV</div>
                         <div class="slider-container" id="fovSlider" style="top:46px" data-setting="camlock.FOV">
                             <div class="slider-track">
@@ -2391,7 +1602,7 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
             <div class="merged-panel">
                 <div class="inner-container">
                     <div class="half-panel">
-                        <div class="panel-header">triggerbot</div>
+                        <div class="panel-header">Triggerbot</div>
                         <div class="toggle-row" style="top:32px">
                             <div class="toggle-text">
                                 <div class="toggle active" data-setting="triggerbot.Enabled"></div>
@@ -2408,7 +1619,7 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
                         </div>
                     </div>
                     <div class="half-panel">
-                        <div class="panel-header">triggerbot settings</div>
+                        <div class="panel-header">Triggerbot Settings</div>
                         <div class="toggle-row" style="top:32px">
                             <div class="toggle active" data-setting="triggerbot.StudCheck"></div>
                             <span class="enable-text">Stud Check</span>
@@ -2462,16 +1673,21 @@ body{{height:100vh;background:radial-gradient(circle at top,#0f0f0f,#050505);fon
             <div class="merged-panel">
                 <div class="inner-container">
                     <div class="half-panel">
-                        <div class="panel-header">saved configs</div>
+                        <div class="panel-header">Saved Configs</div>
                         <div class="config-list" id="configList"></div>
                     </div>
                     <div class="half-panel">
-                        <div class="panel-header">actions</div>
+                        <div class="panel-header">Actions</div>
                         <div style="position:absolute;top:32px;left:16px;right:16px">
                             <div style="margin-bottom:12px">
                                 <div style="font-size:11px;color:#bfbfbf;margin-bottom:4px">Save Current Config</div>
                                 <input type="text" id="saveConfigInput" class="input-box" placeholder="Config name...">
                                 <button class="config-btn" style="margin-top:4px;width:100%" onclick="saveCurrentConfig()">Save</button>
+                            </div>
+                            <div style="margin-top:20px">
+                                <div style="font-size:11px;color:#bfbfbf;margin-bottom:4px">Quick Actions</div>
+                                <button class="config-btn" onclick="loadDefaultConfig()">Load Default</button>
+                                <button class="config-btn" style="margin-top:8px" onclick="window.location.href='/menu'">Logout</button>
                             </div>
                         </div>
                     </div>
@@ -2554,7 +1770,8 @@ async function saveConfig() {{
 async function loadConfig() {{
     try {{
         const res = await fetch(`/api/config/${{key}}`);
-        config = await res.json();
+        const data = await res.json();
+        config = data;
         applyConfigToUI();
     }} catch(e) {{
         console.error('Load failed:', e);
@@ -2835,6 +2052,13 @@ async function loadConfigByName(name) {{
     }} catch(e) {{
         alert('Failed to load');
     }}
+}}
+
+async function loadDefaultConfig() {{
+    config = {JSON.stringify(DEFAULT_CONFIG)};
+    applyConfigToUI();
+    await saveConfig();
+    alert('Default config loaded');
 }}
 
 let currentRenameConfig = null;
