@@ -2099,7 +2099,7 @@ async function loadConfigByName(name) {{
 }}
 
 async function loadDefaultConfig() {{
-    config = {JSON.stringify(DEFAULT_CONFIG)};
+    config = {json.dumps(DEFAULT_CONFIG)};
     applyConfigToUI();
     await saveConfig();
     alert('Default config loaded');
@@ -2182,9 +2182,9 @@ button:hover{{background:#444}}
 </head>
 <body>
 <div class="container">
-<h1>Server Error</h1>
+<h1sumting bad bout hhappenn tto meh</h1>
 <p>{str(e)}</p>
-<button onclick="window.location.href='/menu'">Return to Login</button>
+<button onclick="window.location.href='/menu'">rearlly error GOOOO BACKKKK</button>
 </div>
 {ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
