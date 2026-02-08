@@ -1109,7 +1109,7 @@ MENU_LOGIN_HTML = """<!DOCTYPE html>
             background-image:
                 radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
             background-size: 6px 6px;
-            padding: 48px 30px;
+            padding: 30px 30px;
             box-sizing: border-box;
             border-radius: 4px;
             border: 1px solid rgb(28,28,28);
@@ -1119,7 +1119,7 @@ MENU_LOGIN_HTML = """<!DOCTYPE html>
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 320px;
+            min-height: 280px;
         }
 
         .loader {
@@ -1173,13 +1173,13 @@ MENU_LOGIN_HTML = """<!DOCTYPE html>
         }
 
         .logo-container {
-            margin-bottom: 24px;
+            margin-bottom: 16px;
             text-align: center;
         }
 
         .logo-image {
-            width: 180px;
-            height: 180px;
+            width: 100px;
+            height: 100px;
             object-fit: contain;
             filter: brightness(1.1) contrast(1.1);
         }
