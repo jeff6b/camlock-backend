@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Cookie, Response
+from fastapi import FastAPI, HTTPException, Cookie, Response, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -9,8 +9,21 @@ import os
 import json
 import secrets
 from datetime import datetime, timedelta
+import time
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI()
+
+# Add rate limiting middleware
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -186,6 +199,37 @@ def init_db():
         except:
             pass
 
+# Helper function to create web sessions
+def create_web_session(license_key):
+    """Create a web session record when user logs in via website"""
+    db = get_db()
+    cur = db.cursor()
+    
+    session_id = secrets.token_hex(16)
+    created_at = datetime.now().isoformat()
+    expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
+    
+    if USE_POSTGRES:
+        cur.execute("""
+            INSERT INTO user_sessions (session_id, license_key, created_at, expires_at)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (license_key) DO UPDATE 
+            SET session_id = EXCLUDED.session_id, 
+                created_at = EXCLUDED.created_at, 
+                expires_at = EXCLUDED.expires_at
+        """, (session_id, license_key, created_at, expires_at))
+    else:
+        cur.execute("""
+            INSERT OR REPLACE INTO user_sessions 
+            (session_id, license_key, created_at, expires_at)
+            VALUES (?, ?, ?, ?)
+        """, (session_id, license_key, created_at, expires_at))
+    
+    db.commit()
+    db.close()
+    
+    return session_id
+
 class KeyValidate(BaseModel):
     key: str
     hwid: str
@@ -219,7 +263,7 @@ class SavedConfigRequest(BaseModel):
 
 # Security middleware
 @app.middleware("http")
-async def security_headers(request, call_next):
+async def security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -310,8 +354,11 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
 </script>
 """
 
+# ========== API ENDPOINTS WITH RATE LIMITING ==========
+
 @app.post("/api/validate")
-def validate_user(data: KeyValidate):
+@limiter.limit("5/minute")
+async def validate_user(request: Request, data: KeyValidate):
     """Validate license key"""
     db = get_db()
     cur = db.cursor()
@@ -346,11 +393,52 @@ def validate_user(data: KeyValidate):
             db.close()
             return {"valid": False, "error": "HWID mismatch"}
     
+    # Web login - create session
     db.close()
-    return {"valid": True, "message": "Authentication successful"}
+    create_web_session(data.key)
+    return {"valid": True, "message": "Web login successful"}
+
+@app.post("/api/check-active-session")
+@limiter.limit("10/minute")
+async def check_active_session(request: Request, data: dict):
+    """Check if there's an active web session for HWID"""
+    hwid = data.get("hwid")
+    
+    if not hwid:
+        return {"has_active_session": False}
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    # Check user_sessions table (created when user logs in via website)
+    # Find sessions created in the last 2 minutes
+    two_minutes_ago = (datetime.now() - timedelta(minutes=2)).isoformat()
+    
+    cur.execute(q("""
+        SELECT us.license_key 
+        FROM user_sessions us
+        JOIN keys k ON us.license_key = k.key
+        WHERE k.hwid = %s 
+        AND us.created_at > %s
+        ORDER BY us.created_at DESC
+        LIMIT 1
+    """), (hwid, two_minutes_ago))
+    
+    result = cur.fetchone()
+    db.close()
+    
+    if result:
+        return {
+            "has_active_session": True,
+            "license_key": result[0],
+            "message": "Active website session found"
+        }
+    
+    return {"has_active_session": False, "message": "No active session"}
 
 @app.get("/api/config/{key}")
-def get_config(key: str):
+@limiter.limit("30/minute")
+def get_config(request: Request, key: str):
     """Get config for a license key"""
     db = get_db()
     cur = db.cursor()
@@ -383,7 +471,8 @@ def get_config(key: str):
         return DEFAULT_CONFIG
 
 @app.post("/api/config/{key}")
-def set_config(key: str, data: dict):
+@limiter.limit("20/minute")
+async def set_config(request: Request, key: str, data: dict):
     """Save config for a license key"""
     db = get_db()
     cur = db.cursor()
@@ -412,7 +501,8 @@ def set_config(key: str, data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/configs/{license_key}/list")
-def list_configs(license_key: str):
+@limiter.limit("30/minute")
+def list_configs(request: Request, license_key: str):
     """List saved configs"""
     db = get_db()
     cur = db.cursor()
@@ -424,7 +514,8 @@ def list_configs(license_key: str):
     return {"configs": configs}
 
 @app.post("/api/configs/{license_key}/save")
-def save_config(license_key: str, data: SavedConfigRequest):
+@limiter.limit("20/minute")
+async def save_config(request: Request, license_key: str, data: SavedConfigRequest):
     """Save a config"""
     db = get_db()
     cur = db.cursor()
@@ -448,7 +539,8 @@ def save_config(license_key: str, data: SavedConfigRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/configs/{license_key}/load/{config_name}")
-def load_config(license_key: str, config_name: str):
+@limiter.limit("30/minute")
+def load_config(request: Request, license_key: str, config_name: str):
     """Load a saved config"""
     db = get_db()
     cur = db.cursor()
@@ -462,7 +554,8 @@ def load_config(license_key: str, config_name: str):
     return json.loads(row[0])
 
 @app.post("/api/configs/{license_key}/rename")
-def rename_config(license_key: str, data: dict):
+@limiter.limit("20/minute")
+async def rename_config(request: Request, license_key: str, data: dict):
     """Rename a config"""
     old_name = data.get("old_name")
     new_name = data.get("new_name")
@@ -477,7 +570,8 @@ def rename_config(license_key: str, data: dict):
     return {"success": True}
 
 @app.delete("/api/configs/{license_key}/delete/{config_name}")
-def delete_config(license_key: str, config_name: str):
+@limiter.limit("20/minute")
+async def delete_config(request: Request, license_key: str, config_name: str):
     """Delete a config"""
     db = get_db()
     cur = db.cursor()
@@ -488,7 +582,8 @@ def delete_config(license_key: str, config_name: str):
     return {"success": True}
 
 @app.get("/api/public-configs")
-def get_public_configs():
+@limiter.limit("60/minute")
+def get_public_configs(request: Request):
     """Get all public configs"""
     try:
         db = get_db()
@@ -515,7 +610,8 @@ def get_public_configs():
         return {"configs": []}
 
 @app.post("/api/public-configs/create")
-def create_public_config(data: PublicConfig):
+@limiter.limit("10/minute")
+async def create_public_config(request: Request, data: PublicConfig):
     """Create a public config"""
     db = get_db()
     cur = db.cursor()
@@ -531,7 +627,8 @@ def create_public_config(data: PublicConfig):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/public-configs/{config_id}")
-def get_public_config(config_id: int):
+@limiter.limit("30/minute")
+def get_public_config(request: Request, config_id: int):
     """Get a single config"""
     db = get_db()
     cur = db.cursor()
@@ -553,7 +650,8 @@ def get_public_config(config_id: int):
     }
 
 @app.post("/api/public-configs/{config_id}/download")
-def download_config(config_id: int):
+@limiter.limit("30/minute")
+async def download_config(request: Request, config_id: int):
     """Increment downloads"""
     db = get_db()
     cur = db.cursor()
@@ -563,7 +661,8 @@ def download_config(config_id: int):
     return {"success": True}
 
 @app.post("/api/keys/create")
-def create_key(data: KeyCreate):
+@limiter.limit("5/minute")
+async def create_key(request: Request, data: KeyCreate):
     """Create a license key"""
     key = f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}"
     
@@ -581,7 +680,8 @@ def create_key(data: KeyCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/keys/{license_key}")
-def delete_key(license_key: str):
+@limiter.limit("10/minute")
+async def delete_key(request: Request, license_key: str):
     """Delete a key"""
     db = get_db()
     cur = db.cursor()
@@ -591,7 +691,8 @@ def delete_key(license_key: str):
     return {"success": True}
 
 @app.get("/api/dashboard/{license_key}")
-def get_dashboard_data(license_key: str):
+@limiter.limit("30/minute")
+def get_dashboard_data(request: Request, license_key: str):
     """Get dashboard data"""
     db = get_db()
     cur = db.cursor()
@@ -617,7 +718,8 @@ def get_dashboard_data(license_key: str):
     }
 
 @app.post("/api/redeem")
-def redeem_key(data: RedeemRequest):
+@limiter.limit("5/minute")
+async def redeem_key(request: Request, data: RedeemRequest):
     """Redeem a key"""
     db = get_db()
     cur = db.cursor()
@@ -652,7 +754,8 @@ def redeem_key(data: RedeemRequest):
     return {"success": True, "duration": duration, "expires_at": expires_at, "message": "Key redeemed successfully"}
 
 @app.post("/api/reset-hwid/{license_key}")
-def reset_hwid(license_key: str):
+@limiter.limit("5/minute")
+async def reset_hwid(request: Request, license_key: str):
     """Reset HWID"""
     db = get_db()
     cur = db.cursor()
@@ -673,7 +776,8 @@ def reset_hwid(license_key: str):
     return {"success": True, "hwid_resets": resets + 1}
 
 @app.get("/api/users/{user_id}/license")
-def get_user_license(user_id: str):
+@limiter.limit("30/minute")
+def get_user_license(request: Request, user_id: str):
     """Get user's license by Discord ID"""
     db = get_db()
     cur = db.cursor()
@@ -702,7 +806,8 @@ def get_user_license(user_id: str):
     }
 
 @app.delete("/api/users/{user_id}/license")
-def delete_user_license(user_id: str):
+@limiter.limit("10/minute")
+async def delete_user_license(request: Request, user_id: str):
     """Delete user's license by Discord ID"""
     db = get_db()
     cur = db.cursor()
@@ -722,7 +827,8 @@ def delete_user_license(user_id: str):
     return {"status": "deleted", "key": key, "user_id": user_id}
 
 @app.post("/api/users/{user_id}/reset-hwid")
-def reset_user_hwid(user_id: str):
+@limiter.limit("5/minute")
+async def reset_user_hwid(request: Request, user_id: str):
     """Reset HWID for user's license"""
     db = get_db()
     cur = db.cursor()
@@ -744,7 +850,8 @@ def reset_user_hwid(user_id: str):
     return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
 
 @app.post("/api/check-login")
-def check_login(data: dict):
+@limiter.limit("10/minute")
+async def check_login(request: Request, data: dict):
     """Check if user is logged in (for Python cheat)"""
     hwid = data.get("hwid")
     
@@ -769,12 +876,14 @@ def check_login(data: dict):
     }
 
 @app.get("/api/keepalive")
-def keepalive():
+@limiter.limit("60/minute")
+def keepalive(request: Request):
     """Keep server awake"""
     return {"status": "alive"}
 
 @app.get("/api/debug/db")
-def debug_db():
+@limiter.limit("10/minute")
+def debug_db(request: Request):
     """Debug database connection"""
     try:
         db = get_db()
@@ -806,7 +915,8 @@ def debug_db():
         return {"error": str(e), "type": type(e).__name__}
 
 @app.get("/api/test/{license_key}")
-def test_license(license_key: str):
+@limiter.limit("30/minute")
+def test_license(request: Request, license_key: str):
     """Test if license key exists"""
     try:
         db = get_db()
@@ -825,267 +935,787 @@ def test_license(license_key: str):
     except Exception as e:
         return {"error": str(e)}
 
+# ========== HTML PAGES ==========
+
 @app.get("/community", response_class=HTMLResponse)
 def serve_community():
-    """Simple community configs page"""
+    """Community configs page with popup login"""
     html_content = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
 <title>Community Configs - Axion</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 body {
-    background: rgb(12, 12, 12);
-    color: #cfcfcf;
-    font-family: Arial, sans-serif;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
+    background: #0a0a0a;
+    color: #e0e0e0;
+    min-height: 100vh;
+    overflow-x: hidden;
 }
 .header {
-    padding: 20px;
-    background: #111;
+    background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
+    padding: 20px 30px;
     border-bottom: 1px solid #2a2a2a;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
 }
 .logo {
-    font-size: 20px;
-    font-weight: bold;
-    color: #fff;
+    font-size: 24px;
+    font-weight: 700;
+    background: linear-gradient(90deg, #fff, #aaa);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    letter-spacing: 1px;
 }
 .nav {
     display: flex;
-    gap: 20px;
+    gap: 25px;
+    align-items: center;
 }
 .nav a {
-    color: #9a9a9a;
+    color: #aaa;
     text-decoration: none;
-    transition: color 0.2s;
+    font-weight: 500;
+    font-size: 15px;
+    transition: all 0.3s ease;
+    padding: 8px 15px;
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+}
+.nav a::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
+    transition: width 0.3s ease;
 }
 .nav a:hover {
     color: #fff;
+    background: rgba(255,255,255,0.05);
+}
+.nav a:hover::before {
+    width: 100%;
 }
 .container {
-    flex: 1;
-    padding: 20px;
-    overflow-y: auto;
+    padding: 30px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+.page-title {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    background: linear-gradient(90deg, #fff, #888);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+.page-subtitle {
+    color: #888;
+    font-size: 16px;
+    margin-bottom: 30px;
+    font-weight: 300;
 }
 .config-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 20px;
-    max-width: 1200px;
-    margin: 0 auto;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 25px;
+    margin-top: 20px;
 }
 .config-card {
-    background: #111;
+    background: linear-gradient(145deg, #121212, #0d0d0d);
     border: 1px solid #2a2a2a;
-    padding: 20px;
-    border-radius: 8px;
-    transition: transform 0.2s, border-color 0.2s;
+    border-radius: 12px;
+    padding: 25px;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+}
+.config-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
 }
 .config-card:hover {
-    transform: translateY(-2px);
-    border-color: #444;
+    transform: translateY(-8px);
+    border-color: #3a3a3a;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.5);
 }
 .config-name {
-    font-size: 18px;
+    font-size: 20px;
     color: #fff;
-    margin-bottom: 10px;
-    font-weight: 500;
+    margin-bottom: 15px;
+    font-weight: 600;
+    line-height: 1.3;
 }
 .config-game {
-    font-size: 12px;
-    color: #888;
-    background: #1a1a1a;
-    padding: 4px 8px;
-    border-radius: 4px;
     display: inline-block;
-    margin-bottom: 10px;
+    background: rgba(106, 17, 203, 0.15);
+    color: #9d6afc;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 15px;
+    border: 1px solid rgba(106, 17, 203, 0.3);
 }
 .config-description {
-    color: #aaa;
-    margin: 10px 0;
-    line-height: 1.4;
-    font-size: 14px;
-    min-height: 40px;
+    color: #bbb;
+    line-height: 1.6;
+    font-size: 14.5px;
+    margin: 15px 0;
+    min-height: 70px;
 }
 .config-footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    color: #666;
-    font-size: 12px;
-    margin-top: 15px;
-    padding-top: 10px;
+    margin-top: 20px;
+    padding-top: 15px;
     border-top: 1px solid #2a2a2a;
 }
 .config-author {
-    color: #999;
+    color: #9a9a9a;
+    font-size: 13px;
+    font-weight: 500;
+}
+.config-author span {
+    color: #ccc;
+    font-weight: 600;
 }
 .config-downloads {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 8px;
+    color: #888;
+    font-size: 13px;
+    font-weight: 500;
+}
+.config-downloads img {
+    width: 16px;
+    height: 16px;
+    filter: invert(0.6);
 }
 .load-btn {
-    margin-top: 10px;
-    padding: 8px 16px;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    color: #fff;
-    cursor: pointer;
-    border-radius: 4px;
-    font-size: 14px;
-    transition: background 0.2s, border-color 0.2s;
     width: 100%;
+    padding: 14px;
+    margin-top: 15px;
+    background: linear-gradient(90deg, #1a1a1a 0%, #222 100%);
+    border: 1px solid #333;
+    color: #ddd;
+    cursor: pointer;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    letter-spacing: 0.5px;
 }
 .load-btn:hover {
-    background: #222;
+    background: linear-gradient(90deg, #222 0%, #2a2a2a 100%);
     border-color: #444;
+    color: #fff;
+    transform: translateY(-2px);
 }
 .load-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    transform: none;
 }
 .empty-state {
     text-align: center;
-    padding: 40px;
+    padding: 60px 20px;
     color: #666;
-    font-size: 16px;
+    font-size: 18px;
+    grid-column: 1 / -1;
 }
 .loading {
     text-align: center;
-    padding: 40px;
+    padding: 60px 20px;
     color: #888;
-    font-size: 14px;
+    font-size: 16px;
+    grid-column: 1 / -1;
+}
+.loading::after {
+    content: '';
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid #333;
+    border-top-color: #6a11cb;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 .error-state {
     text-align: center;
-    padding: 40px;
+    padding: 60px 20px;
     color: #ff4444;
-    font-size: 14px;
+    font-size: 16px;
+    grid-column: 1 / -1;
 }
 .create-btn {
     position: fixed;
     bottom: 30px;
     right: 30px;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
+    background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
     color: #fff;
-    padding: 12px 20px;
-    border-radius: 4px;
+    padding: 15px 25px;
+    border-radius: 50px;
     cursor: pointer;
-    font-size: 14px;
-    transition: background 0.2s;
+    font-size: 15px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border: none;
+    box-shadow: 0 8px 25px rgba(106, 17, 203, 0.4);
     z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 .create-btn:hover {
-    background: #222;
+    transform: translateY(-3px);
+    box-shadow: 0 12px 30px rgba(106, 17, 203, 0.6);
 }
+.create-btn i {
+    font-size: 18px;
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(10px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+.modal-overlay.active {
+    display: flex;
+    opacity: 1;
+}
+.modal-content {
+    background: linear-gradient(145deg, #121212, #0d0d0d);
+    border: 1px solid #2a2a2a;
+    border-radius: 16px;
+    padding: 40px;
+    width: 90%;
+    max-width: 420px;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
+}
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+}
+.modal-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: #fff;
+    margin: 0;
+}
+.close-modal {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 28px;
+    cursor: pointer;
+    transition: color 0.3s;
+    line-height: 1;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+.close-modal:hover {
+    color: #fff;
+    background: rgba(255,255,255,0.1);
+}
+.modal-input {
+    width: 100%;
+    padding: 15px;
+    margin-bottom: 20px;
+    background: #0a0a0a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 15px;
+    transition: all 0.3s;
+}
+.modal-input:focus {
+    outline: none;
+    border-color: #6a11cb;
+    box-shadow: 0 0 0 2px rgba(106, 17, 203, 0.3);
+}
+.modal-input::placeholder {
+    color: #666;
+}
+.modal-button {
+    width: 100%;
+    padding: 16px;
+    background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    letter-spacing: 0.5px;
+}
+.modal-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(106, 17, 203, 0.4);
+}
+.modal-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+.modal-error {
+    color: #ff4444;
+    font-size: 14px;
+    margin-top: 10px;
+    text-align: center;
+    min-height: 20px;
+}
+.modal-success {
+    color: #44ff44;
+    font-size: 14px;
+    margin-top: 10px;
+    text-align: center;
+    min-height: 20px;
+}
+
+/* Stats Section */
+.stats-bar {
+    display: flex;
+    gap: 30px;
+    margin-bottom: 30px;
+    padding: 20px;
+    background: linear-gradient(145deg, #121212, #0d0d0d);
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+}
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+}
+.stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 5px;
+}
+.stat-label {
+    color: #888;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+/* Search Bar */
+.search-container {
+    position: relative;
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto 30px;
+}
+.search-input {
+    width: 100%;
+    padding: 16px 50px 16px 20px;
+    background: #0a0a0a;
+    border: 1px solid #333;
+    border-radius: 50px;
+    color: #fff;
+    font-size: 15px;
+    transition: all 0.3s;
+}
+.search-input:focus {
+    outline: none;
+    border-color: #6a11cb;
+    box-shadow: 0 0 0 2px rgba(106, 17, 203, 0.3);
+}
+.search-icon {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #666;
+    font-size: 18px;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
-    .config-grid {
-        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    }
     .header {
         flex-direction: column;
         gap: 15px;
-        text-align: center;
+        padding: 20px;
     }
     .nav {
-        gap: 15px;
+        width: 100%;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    .config-grid {
+        grid-template-columns: 1fr;
+    }
+    .stats-bar {
+        flex-direction: column;
+        gap: 20px;
+    }
+    .container {
+        padding: 20px;
+    }
+    .create-btn {
+        bottom: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        font-size: 14px;
     }
 }
 </style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 <div class="header">
-    <div class="logo">Axion Community Configs</div>
+    <div class="logo">Axion Community</div>
     <div class="nav">
-        <a href="/menu">Login</a>
-        <a href="#" onclick="refreshConfigs()">Refresh</a>
+        <a href="/menu"><i class="fas fa-sign-in-alt"></i> Login</a>
+        <a href="#" onclick="refreshConfigs()"><i class="fas fa-sync-alt"></i> Refresh</a>
+        <a href="#" onclick="showStats()"><i class="fas fa-chart-bar"></i> Stats</a>
     </div>
 </div>
+
 <div class="container">
-    <div id="configsList" class="config-grid">
-        <div class="loading">Loading community configs...</div>
+    <div class="page-title">Community Configurations</div>
+    <div class="page-subtitle">Browse and download configs shared by the community</div>
+    
+    <div class="search-container">
+        <input type="text" class="search-input" id="searchInput" placeholder="Search configs...">
+        <i class="fas fa-search search-icon"></i>
+    </div>
+    
+    <div class="stats-bar" id="statsBar" style="display: none;">
+        <div class="stat-item">
+            <div class="stat-value" id="totalConfigs">0</div>
+            <div class="stat-label">Total Configs</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value" id="totalDownloads">0</div>
+            <div class="stat-label">Total Downloads</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value" id="topGame">-</div>
+            <div class="stat-label">Top Game</div>
+        </div>
+    </div>
+    
+    <div class="config-grid" id="configsList">
+        <div class="loading">Loading community configs</div>
     </div>
 </div>
-<button class="create-btn" onclick="window.location.href='/menu'">
-    Login to Create Config
+
+<button class="create-btn" onclick="showLoginModal()">
+    <i class="fas fa-plus"></i> Share Config
 </button>
 
+<!-- Login Modal -->
+<div class="modal-overlay" id="loginModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <div class="modal-title">Login Required</div>
+            <button class="close-modal" onclick="hideLoginModal()">&times;</button>
+        </div>
+        <p style="color: #aaa; margin-bottom: 25px; line-height: 1.6;">
+            Please login to download or share configurations. If you don't have an account, contact the administrator.
+        </p>
+        <input type="text" class="modal-input" id="modalLicenseInput" placeholder="Enter your license key">
+        <input type="password" class="modal-input" id="modalPasswordInput" placeholder="Password (enter any value)" readonly onfocus="this.blur()">
+        <button class="modal-button" id="modalLoginBtn" onclick="modalLogin()">
+            <i class="fas fa-sign-in-alt"></i> Login
+        </button>
+        <div class="modal-error" id="modalError"></div>
+        <div class="modal-success" id="modalSuccess"></div>
+        <div style="margin-top: 20px; text-align: center;">
+            <a href="/menu" style="color: #6a11cb; text-decoration: none; font-weight: 500;">
+                <i class="fas fa-external-link-alt"></i> Open Full Login Page
+            </a>
+        </div>
+    </div>
+</div>
+
 <script>
-async function loadConfigs() {
-    const container = document.getElementById('configsList');
+// Global variables
+let allConfigs = [];
+let currentSearch = '';
+
+// DOM Elements
+const configsList = document.getElementById('configsList');
+const loginModal = document.getElementById('loginModal');
+const modalLicenseInput = document.getElementById('modalLicenseInput');
+const modalPasswordInput = document.getElementById('modalPasswordInput');
+const modalLoginBtn = document.getElementById('modalLoginBtn');
+const modalError = document.getElementById('modalError');
+const modalSuccess = document.getElementById('modalSuccess');
+const searchInput = document.getElementById('searchInput');
+const statsBar = document.getElementById('statsBar');
+const totalConfigs = document.getElementById('totalConfigs');
+const totalDownloads = document.getElementById('totalDownloads');
+const topGame = document.getElementById('topGame');
+
+// Set fake password
+modalPasswordInput.value = '••••••••';
+
+// Show/hide login modal
+function showLoginModal() {
+    loginModal.classList.add('active');
+    modalLicenseInput.focus();
+}
+
+function hideLoginModal() {
+    loginModal.classList.remove('active');
+    modalError.textContent = '';
+    modalSuccess.textContent = '';
+    modalLicenseInput.value = '';
+}
+
+// Close modal on overlay click
+loginModal.addEventListener('click', function(e) {
+    if (e.target === loginModal) {
+        hideLoginModal();
+    }
+});
+
+// Modal login function
+async function modalLogin() {
+    const licenseKey = modalLicenseInput.value.trim();
+    
+    if (!licenseKey) {
+        modalError.textContent = 'Please enter your license key';
+        return;
+    }
+    
+    modalError.textContent = '';
+    modalSuccess.textContent = '';
+    modalLoginBtn.disabled = true;
+    modalLoginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in...';
     
     try {
-        container.innerHTML = '<div class="loading">Loading community configs...</div>';
+        const res = await fetch('/api/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: licenseKey, hwid: 'web-login' })
+        });
+        
+        const data = await res.json();
+        
+        if (data.valid) {
+            modalSuccess.textContent = 'Login successful!';
+            
+            // Redirect after short delay
+            setTimeout(() => {
+                window.location.href = `/config/${licenseKey}`;
+            }, 1000);
+        } else {
+            modalError.textContent = data.error || 'Invalid license key';
+        }
+    } catch (e) {
+        modalError.textContent = 'Connection error. Please try again.';
+        console.error('Login error:', e);
+    } finally {
+        modalLoginBtn.disabled = false;
+        modalLoginBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login';
+    }
+}
+
+// Load configs from API
+async function loadConfigs() {
+    try {
+        configsList.innerHTML = '<div class="loading">Loading community configs</div>';
         
         const res = await fetch('/api/public-configs');
         const data = await res.json();
         
-        if (!data.configs || data.configs.length === 0) {
-            container.innerHTML = '<div class="empty-state">No community configs yet. Be the first to share one!</div>';
+        allConfigs = data.configs || [];
+        
+        if (allConfigs.length === 0) {
+            configsList.innerHTML = '<div class="empty-state">No community configs yet. Be the first to share one!</div>';
+            updateStats();
             return;
         }
         
-        container.innerHTML = '';
-        
-        data.configs.forEach(config => {
-            const card = document.createElement('div');
-            card.className = 'config-card';
-            card.innerHTML = `
-                <div class="config-name">${escapeHtml(config.config_name)}</div>
-                <div class="config-game">${escapeHtml(config.game_name)}</div>
-                <div class="config-description">${escapeHtml(config.description || 'No description provided')}</div>
-                <div class="config-footer">
-                    <div class="config-author">by ${escapeHtml(config.author_name)}</div>
-                    <div class="config-downloads">
-                        <span>⬇️</span>
-                        <span>${config.downloads || 0}</span>
-                    </div>
-                </div>
-                <button class="load-btn" onclick="viewConfig(${config.id})" title="Login to load this config">
-                    View Details
-                </button>
-            `;
-            container.appendChild(card);
-        });
+        filterConfigs();
+        updateStats();
         
     } catch(error) {
         console.error('Error loading configs:', error);
-        container.innerHTML = '<div class="error-state">Error loading configs. Please try again later.</div>';
+        configsList.innerHTML = '<div class="error-state">Error loading configs. Please try again later.</div>';
     }
 }
 
+// Filter configs based on search
+function filterConfigs() {
+    const filtered = allConfigs.filter(config => {
+        if (!currentSearch) return true;
+        
+        const searchLower = currentSearch.toLowerCase();
+        return (
+            config.config_name.toLowerCase().includes(searchLower) ||
+            config.game_name.toLowerCase().includes(searchLower) ||
+            config.description.toLowerCase().includes(searchLower) ||
+            config.author_name.toLowerCase().includes(searchLower)
+        );
+    });
+    
+    displayConfigs(filtered);
+}
+
+// Display configs in grid
+function displayConfigs(configs) {
+    if (configs.length === 0) {
+        configsList.innerHTML = '<div class="empty-state">No configs found matching your search.</div>';
+        return;
+    }
+    
+    configsList.innerHTML = '';
+    
+    configs.forEach(config => {
+        const card = document.createElement('div');
+        card.className = 'config-card';
+        card.innerHTML = `
+            <div class="config-name">${escapeHtml(config.config_name)}</div>
+            <div class="config-game">${escapeHtml(config.game_name)}</div>
+            <div class="config-description">${escapeHtml(config.description || 'No description provided')}</div>
+            <div class="config-footer">
+                <div class="config-author">
+                    <i class="fas fa-user"></i> <span>${escapeHtml(config.author_name)}</span>
+                </div>
+                <div class="config-downloads">
+                    <i class="fas fa-download"></i>
+                    <span>${config.downloads || 0}</span>
+                </div>
+            </div>
+            <button class="load-btn" onclick="viewConfig(${config.id})" title="View and download this config">
+                <i class="fas fa-eye"></i> View Details
+            </button>
+        `;
+        configsList.appendChild(card);
+    });
+}
+
+// Update statistics
+function updateStats() {
+    if (allConfigs.length === 0) {
+        statsBar.style.display = 'none';
+        return;
+    }
+    
+    statsBar.style.display = 'flex';
+    totalConfigs.textContent = allConfigs.length;
+    
+    // Calculate total downloads
+    const downloads = allConfigs.reduce((sum, config) => sum + (config.downloads || 0), 0);
+    totalDownloads.textContent = downloads.toLocaleString();
+    
+    // Find top game
+    const gameCounts = {};
+    allConfigs.forEach(config => {
+        const game = config.game_name;
+        gameCounts[game] = (gameCounts[game] || 0) + 1;
+    });
+    
+    const topGameName = Object.keys(gameCounts).reduce((a, b) => 
+        gameCounts[a] > gameCounts[b] ? a : b, 'N/A'
+    );
+    topGame.textContent = topGameName;
+}
+
+// View config details
+function viewConfig(configId) {
+    showLoginModal();
+    // You could store the configId to auto-download after login
+    localStorage.setItem('pendingConfigId', configId);
+}
+
+// Refresh configs
+function refreshConfigs() {
+    loadConfigs();
+}
+
+// Show stats
+function showStats() {
+    statsBar.style.display = statsBar.style.display === 'none' ? 'flex' : 'none';
+}
+
+// Utility function to escape HTML
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-function refreshConfigs() {
-    loadConfigs();
-}
+// Search functionality
+searchInput.addEventListener('input', function() {
+    currentSearch = this.value.trim();
+    filterConfigs();
+});
 
-function viewConfig(configId) {
-    alert('Please login to view and load configs.');
-    window.location.href = '/menu';
-}
+// Auto-refresh every 60 seconds
+setInterval(loadConfigs, 60000);
 
-// Load configs when page loads
+// Load configs on page load
 document.addEventListener('DOMContentLoaded', loadConfigs);
 
-// Auto-refresh every 30 seconds
-setInterval(loadConfigs, 30000);
+// Check for pending config after login
+const pendingConfigId = localStorage.getItem('pendingConfigId');
+if (pendingConfigId) {
+    // You could implement auto-redirect to config page after login
+    localStorage.removeItem('pendingConfigId');
+}
 </script>
 </body>
 </html>"""
@@ -1367,6 +1997,7 @@ MENU_LOGIN_HTML = """<!DOCTYPE html>
 
         createParticles();
     </script>
+""" + ENHANCED_ANTI_DEVTOOLS_JS + """
 </body>
 </html>
 """
