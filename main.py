@@ -14,6 +14,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+import hashlib
+import hmac
 
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
@@ -86,12 +88,29 @@ def q(query):
     # Replace %s but not %%s (escaped percent signs)
     return re.sub(r'(?<!%)%s(?!%)', '?', query)
 
+# Password hashing functions
+def hash_password(password: str, salt: str = None) -> tuple:
+    """Hash password with salt"""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+    return f"{salt}:{key.hex()}", salt
+
+def verify_password(stored_hash: str, password: str) -> bool:
+    """Verify password against stored hash"""
+    try:
+        salt, stored_key = stored_hash.split(':')
+        key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+        return hmac.compare_digest(key.hex(), stored_key)
+    except:
+        return False
+
 def init_db():
     try:
         db = get_db()
         cur = db.cursor()
         
-        # Create keys table
+        # Create keys table with lifetime support
         if USE_POSTGRES:
             cur.execute("""CREATE TABLE IF NOT EXISTS keys (
                 key TEXT PRIMARY KEY,
@@ -139,6 +158,27 @@ def init_db():
                 config TEXT NOT NULL
             )""")
             
+            # Add user accounts table
+            cur.execute("""CREATE TABLE IF NOT EXISTS user_accounts (
+                id SERIAL PRIMARY KEY,
+                license_key TEXT UNIQUE NOT NULL,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                email TEXT,
+                created_at TEXT NOT NULL,
+                last_login TEXT,
+                FOREIGN KEY (license_key) REFERENCES keys(key) ON DELETE CASCADE
+            )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS login_sessions (
+                session_id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                license_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                ip_address TEXT
+            )""")
+            
         else:
             cur.execute("""CREATE TABLE IF NOT EXISTS keys (
                 key TEXT PRIMARY KEY,
@@ -184,6 +224,27 @@ def init_db():
             cur.execute("""CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 config TEXT NOT NULL
+            )""")
+            
+            # Add user accounts table
+            cur.execute("""CREATE TABLE IF NOT EXISTS user_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                license_key TEXT UNIQUE NOT NULL,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                email TEXT,
+                created_at TEXT NOT NULL,
+                last_login TEXT,
+                FOREIGN KEY (license_key) REFERENCES keys(key) ON DELETE CASCADE
+            )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS login_sessions (
+                session_id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                license_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                ip_address TEXT
             )""")
         
         db.commit()
@@ -260,6 +321,21 @@ class RedeemRequest(BaseModel):
 class SavedConfigRequest(BaseModel):
     config_name: str
     config_data: dict
+
+class CreateAccount(BaseModel):
+    license_key: str
+    username: str
+    password: str
+    email: Optional[str] = None
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class UserAuth(BaseModel):
+    username: Optional[str] = None
+    license_key: Optional[str] = None
+    password: str
 
 # Security middleware
 @app.middleware("http")
@@ -357,53 +433,326 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
 # ========== API ENDPOINTS WITH RATE LIMITING ==========
 
 @app.post("/api/validate")
-@limiter.limit("5/minute")
+@limiter.limit("10/minute")
 async def validate_user(request: Request, data: KeyValidate):
     """Validate license key"""
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT key, active, expires_at, hwid FROM keys WHERE key=%s"), (data.key,))
-    result = cur.fetchone()
-    
-    if not result:
-        db.close()
-        return {"valid": False, "error": "Invalid license key"}
-    
-    key, active, expires_at, hwid = result
-    
-    if active == 0:
-        db.close()
-        return {"valid": False, "error": "License inactive"}
-    
-    if expires_at and datetime.now() > datetime.fromisoformat(expires_at):
-        db.close()
-        return {"valid": False, "error": "License expired"}
-    
-    if data.hwid != 'web-login':
-        if hwid is None:
-            cur.execute(q("UPDATE keys SET hwid=%s WHERE key=%s"), (data.hwid, data.key))
-            db.commit()
+    try:
+        cur.execute(q("SELECT key, active, expires_at, hwid FROM keys WHERE key=%s"), (data.key,))
+        result = cur.fetchone()
+        
+        if not result:
             db.close()
-            return {"valid": True, "message": "HWID bound successfully"}
-        elif hwid == data.hwid:
+            return {"valid": False, "error": "Invalid license key"}
+        
+        key, active, expires_at, hwid = result
+        
+        if active == 0:
             db.close()
-            return {"valid": True, "message": "Authentication successful"}
-        else:
-            db.close()
-            return {"valid": False, "error": "HWID mismatch"}
-    
-    # Web login - create session
-    db.close()
-    create_web_session(data.key)
-    return {"valid": True, "message": "Web login successful"}
+            return {"valid": False, "error": "License inactive"}
+        
+        # Check if license is lifetime (no expiration) or expired
+        if expires_at:
+            try:
+                if datetime.now() > datetime.fromisoformat(expires_at):
+                    db.close()
+                    return {"valid": False, "error": "License expired"}
+            except:
+                pass
+        
+        if data.hwid != 'web-login':
+            if hwid is None:
+                cur.execute(q("UPDATE keys SET hwid=%s WHERE key=%s"), (data.hwid, data.key))
+                db.commit()
+                db.close()
+                return {"valid": True, "message": "HWID bound successfully"}
+            elif hwid == data.hwid:
+                db.close()
+                return {"valid": True, "message": "Authentication successful"}
+            else:
+                db.close()
+                return {"valid": False, "error": "HWID mismatch"}
+        
+        # Web login - create session
+        db.close()
+        create_web_session(data.key)
+        return {"valid": True, "message": "Web login successful", "license_key": data.key}
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in validate_user: {e}")
+        return {"valid": False, "error": "Server error"}
 
-@app.post("/api/check-active-session")
-@limiter.limit("10/minute")
-async def check_active_session(request: Request, data: dict):
-    """Check if there's an active web session for HWID"""
-    hwid = data.get("hwid")
+@app.post("/api/create-account")
+@limiter.limit("5/minute")
+async def create_account(request: Request, data: CreateAccount):
+    """Create username/password account for license"""
+    db = get_db()
+    cur = db.cursor()
     
+    try:
+        # Check if license exists and is active
+        cur.execute(q("SELECT key, active, expires_at FROM keys WHERE key=%s"), (data.license_key,))
+        license_result = cur.fetchone()
+        
+        if not license_result:
+            db.close()
+            return {"success": False, "error": "Invalid license key"}
+        
+        key, active, expires_at = license_result
+        
+        if active == 0:
+            db.close()
+            return {"success": False, "error": "License inactive"}
+        
+        # Check if license is expired (except lifetime)
+        if expires_at:
+            try:
+                if datetime.now() > datetime.fromisoformat(expires_at):
+                    db.close()
+                    return {"success": False, "error": "License expired"}
+            except:
+                pass
+        
+        # Check if username already exists
+        cur.execute(q("SELECT username FROM user_accounts WHERE username=%s"), (data.username,))
+        if cur.fetchone():
+            db.close()
+            return {"success": False, "error": "Username already exists"}
+        
+        # Check if license already has an account
+        cur.execute(q("SELECT license_key FROM user_accounts WHERE license_key=%s"), (data.license_key,))
+        if cur.fetchone():
+            db.close()
+            return {"success": False, "error": "Account already exists for this license"}
+        
+        # Hash password
+        password_hash, salt = hash_password(data.password)
+        
+        # Create account
+        cur.execute(q("""
+            INSERT INTO user_accounts (license_key, username, password_hash, email, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+        """), (data.license_key, data.username, password_hash, data.email, datetime.now().isoformat()))
+        
+        db.commit()
+        db.close()
+        
+        return {"success": True, "message": "Account created successfully"}
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in create_account: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/user-login")
+@limiter.limit("10/minute")
+async def user_login(request: Request, data: UserLogin):
+    """Login with username/password"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Get user account
+        cur.execute(q("""
+            SELECT ua.username, ua.password_hash, ua.license_key, k.active, k.expires_at
+            FROM user_accounts ua
+            JOIN keys k ON ua.license_key = k.key
+            WHERE ua.username=%s
+        """), (data.username,))
+        
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            return {"valid": False, "error": "Invalid username or password"}
+        
+        username, password_hash, license_key, active, expires_at = result
+        
+        # Check license status
+        if active == 0:
+            db.close()
+            return {"valid": False, "error": "License inactive"}
+        
+        # Check if license is expired (except lifetime)
+        if expires_at:
+            try:
+                if datetime.now() > datetime.fromisoformat(expires_at):
+                    db.close()
+                    return {"valid": False, "error": "License expired"}
+            except:
+                pass
+        
+        # Verify password
+        if not verify_password(password_hash, data.password):
+            db.close()
+            return {"valid": False, "error": "Invalid username or password"}
+        
+        # Update last login
+        cur.execute(q("UPDATE user_accounts SET last_login=%s WHERE username=%s"),
+                   (datetime.now().isoformat(), username))
+        
+        # Create session
+        session_id = secrets.token_hex(16)
+        created_at = datetime.now().isoformat()
+        expires_at_session = (datetime.now() + timedelta(days=30)).isoformat()
+        
+        cur.execute(q("""
+            INSERT INTO login_sessions (session_id, username, license_key, created_at, expires_at, ip_address)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """), (session_id, username, license_key, created_at, expires_at_session, request.client.host))
+        
+        db.commit()
+        db.close()
+        
+        # Also create web session for backward compatibility
+        create_web_session(license_key)
+        
+        return {
+            "valid": True, 
+            "message": "Login successful",
+            "username": username,
+            "license_key": license_key,
+            "session_id": session_id
+        }
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in user_login: {e}")
+        return {"valid": False, "error": "Server error"}
+
+@app.post("/api/auth-validate")
+@limiter.limit("10/minute")
+async def auth_validate(request: Request, data: UserAuth):
+    """Validate either license key or username/password"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # First try username/password login
+        if data.username:
+            cur.execute(q("""
+                SELECT ua.username, ua.password_hash, ua.license_key, k.active, k.expires_at
+                FROM user_accounts ua
+                JOIN keys k ON ua.license_key = k.key
+                WHERE ua.username=%s
+            """), (data.username,))
+            
+            result = cur.fetchone()
+            
+            if result:
+                username, password_hash, license_key, active, expires_at = result
+                
+                # Check license status
+                if active == 0:
+                    db.close()
+                    return {"valid": False, "error": "License inactive"}
+                
+                # Check if license is expired (except lifetime)
+                if expires_at:
+                    try:
+                        if datetime.now() > datetime.fromisoformat(expires_at):
+                            db.close()
+                            return {"valid": False, "error": "License expired"}
+                    except:
+                        pass
+                
+                # Verify password
+                if verify_password(password_hash, data.password):
+                    # Create web session
+                    create_web_session(license_key)
+                    
+                    # Update last login
+                    cur.execute(q("UPDATE user_accounts SET last_login=%s WHERE username=%s"),
+                               (datetime.now().isoformat(), username))
+                    db.commit()
+                    
+                    db.close()
+                    return {
+                        "valid": True,
+                        "message": "Login successful",
+                        "username": username,
+                        "license_key": license_key,
+                        "auth_method": "username"
+                    }
+        
+        # Fall back to license key only
+        if data.license_key:
+            cur.execute(q("SELECT key, active, expires_at FROM keys WHERE key=%s"), (data.license_key,))
+            result = cur.fetchone()
+            
+            if not result:
+                db.close()
+                return {"valid": False, "error": "Invalid credentials"}
+            
+            key, active, expires_at = result
+            
+            if active == 0:
+                db.close()
+                return {"valid": False, "error": "License inactive"}
+            
+            if expires_at:
+                try:
+                    if datetime.now() > datetime.fromisoformat(expires_at):
+                        db.close()
+                        return {"valid": False, "error": "License expired"}
+                except:
+                    pass
+            
+            # Create web session
+            db.close()
+            create_web_session(data.license_key)
+            return {"valid": True, "message": "License login successful", "auth_method": "license"}
+        
+        db.close()
+        return {"valid": False, "error": "Please provide username or license key"}
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in auth_validate: {e}")
+        return {"valid": False, "error": "Server error"}
+
+@app.get("/api/account-info/{license_key}")
+@limiter.limit("30/minute")
+def get_account_info(request: Request, license_key: str):
+    """Get account info for a license key"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("""
+            SELECT username, email, created_at, last_login 
+            FROM user_accounts 
+            WHERE license_key=%s
+        """), (license_key,))
+        
+        result = cur.fetchone()
+        db.close()
+        
+        if not result:
+            return {"exists": False}
+        
+        username, email, created_at, last_login = result
+        
+        return {
+            "exists": True,
+            "username": username,
+            "email": email,
+            "created_at": created_at,
+            "last_login": last_login
+        }
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in get_account_info: {e}")
+        return {"exists": False, "error": str(e)}
+
+@app.get("/api/check-active-session")
+@limiter.limit("10/minute")
+async def check_active_session(request: Request, hwid: str = None):
+    """Check if there's an active web session for HWID"""
     if not hwid:
         return {"has_active_session": False}
     
@@ -664,19 +1013,32 @@ async def download_config(request: Request, config_id: int):
 @limiter.limit("5/minute")
 async def create_key(request: Request, data: KeyCreate):
     """Create a license key"""
+    # Generate key in format: XXXX-XXXX-XXXX-XXXX
     key = f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}"
     
     db = get_db()
     cur = db.cursor()
     
     try:
-        cur.execute(q("INSERT INTO keys (key, duration, created_at, active, created_by) VALUES (%s, %s, %s, 0, %s)"),
-                   (key, data.duration, datetime.now().isoformat(), data.created_by))
+        # For lifetime keys, don't set expires_at
+        expires_at = None
+        if data.duration != "lifetime":
+            now = datetime.now()
+            if data.duration == "monthly":
+                expires_at = (now + timedelta(days=30)).isoformat()
+            elif data.duration == "weekly":
+                expires_at = (now + timedelta(days=7)).isoformat()
+            elif data.duration == "3monthly":
+                expires_at = (now + timedelta(days=90)).isoformat()
+        
+        cur.execute(q("INSERT INTO keys (key, duration, created_at, expires_at, active, created_by) VALUES (%s, %s, %s, %s, 0, %s)"),
+                   (key, data.duration, datetime.now().isoformat(), expires_at, data.created_by))
         db.commit()
         db.close()
-        return {"key": key, "duration": data.duration}
+        return {"key": key, "duration": data.duration, "expires_at": expires_at}
     except Exception as e:
         db.close()
+        print(f"Error in create_key: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/keys/{license_key}")
@@ -724,27 +1086,31 @@ async def redeem_key(request: Request, data: RedeemRequest):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT key, duration, redeemed_at FROM keys WHERE key=%s"), (data.key,))
+    cur.execute(q("SELECT key, duration, redeemed_at, expires_at FROM keys WHERE key=%s"), (data.key,))
     result = cur.fetchone()
     
     if not result:
         db.close()
         raise HTTPException(status_code=404, detail="Invalid key")
     
-    key, duration, redeemed_at = result
+    key, duration, redeemed_at, existing_expires = result
     
     if redeemed_at:
         db.close()
         raise HTTPException(status_code=400, detail="Already redeemed")
     
     now = datetime.now()
-    expires_at = None
-    if duration == "monthly":
-        expires_at = (now + timedelta(days=30)).isoformat()
-    elif duration == "weekly":
-        expires_at = (now + timedelta(days=7)).isoformat()
-    elif duration == "3monthly":
-        expires_at = (now + timedelta(days=90)).isoformat()
+    expires_at = existing_expires  # Use existing expires_at (for lifetime keys it will be None)
+    
+    # Only calculate expires_at if not already set (for lifetime keys)
+    if not expires_at:
+        if duration == "monthly":
+            expires_at = (now + timedelta(days=30)).isoformat()
+        elif duration == "weekly":
+            expires_at = (now + timedelta(days=7)).isoformat()
+        elif duration == "3monthly":
+            expires_at = (now + timedelta(days=90)).isoformat()
+        # For lifetime keys, expires_at remains None
     
     cur.execute(q("UPDATE keys SET redeemed_at=%s, redeemed_by=%s, expires_at=%s, active=1 WHERE key=%s"),
                (now.isoformat(), data.discord_id, expires_at, data.key))
@@ -790,6 +1156,9 @@ def get_user_license(request: Request, user_id: str):
         return {"active": False, "message": "No license found"}
     
     key, duration, expires_at, redeemed_at, hwid, active = result
+    
+    if active == 0:
+        return {"active": False, "message": "License inactive"}
     
     if expires_at:
         is_expired = datetime.now() > datetime.fromisoformat(expires_at)
@@ -879,7 +1248,7 @@ async def check_login(request: Request, data: dict):
 @limiter.limit("60/minute")
 def keepalive(request: Request):
     """Keep server awake"""
-    return {"status": "alive"}
+    return {"status": "alive", "timestamp": datetime.now().isoformat()}
 
 @app.get("/api/debug/db")
 @limiter.limit("10/minute")
@@ -902,12 +1271,17 @@ def debug_db(request: Request):
         cur.execute(q("SELECT COUNT(*) FROM keys"))
         count = cur.fetchone()
         
+        # Test user_accounts table
+        cur.execute(q("SELECT COUNT(*) FROM user_accounts"))
+        account_count = cur.fetchone()
+        
         db.close()
         
         return {
             "database_type": "PostgreSQL" if USE_POSTGRES else "SQLite",
             "tables_found": [t[0] for t in tables],
             "keys_count": count[0] if count else 0,
+            "accounts_count": account_count[0] if account_count else 0,
             "use_postgres": USE_POSTGRES,
             "database_url": DATABASE_URL if DATABASE_URL else "local.db"
         }
@@ -922,21 +1296,540 @@ def test_license(request: Request, license_key: str):
         db = get_db()
         cur = db.cursor()
         
-        query = q("SELECT key FROM keys WHERE key=%s")
+        query = q("SELECT key, duration, expires_at, active FROM keys WHERE key=%s")
         cur.execute(query, (license_key,))
         result = cur.fetchone()
         db.close()
         
+        if not result:
+            return {
+                "exists": False,
+                "key_provided": license_key
+            }
+        
+        key, duration, expires_at, active = result
+        
         return {
-            "exists": result is not None,
-            "key_provided": license_key,
-            "key_found": result[0] if result else None
+            "exists": True,
+            "key": key,
+            "duration": duration,
+            "expires_at": expires_at,
+            "active": active,
+            "is_lifetime": expires_at is None
         }
     except Exception as e:
         return {"error": str(e)}
 
 # ========== HTML PAGES ==========
 
+ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login • Axion</title>
+    <meta name="theme-color" content="#0c0c0c">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            background: rgb(12,12,12);
+            color: rgb(180,180,180);
+            font-family: Arial, Helvetica, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .particles {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .particle {
+            position: absolute;
+            background: rgba(140,140,140, 0.35);
+            border-radius: 50%;
+            pointer-events: none;
+            will-change: transform;
+            animation: fall linear infinite;
+        }
+
+        @keyframes fall {
+            0% {
+                transform: translateY(-10vh) translateX(0) rotate(0deg);
+                opacity: 0;
+            }
+            10% { opacity: 0.6; }
+            90% { opacity: 0.6; }
+            100% {
+                transform: translateY(110vh) translateX(var(--drift)) rotate(720deg);
+                opacity: 0;
+            }
+        }
+
+        .container {
+            width: 420px;
+            max-width: 90%;
+            background: rgb(12,12,12);
+            background-image:
+                radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
+            background-size: 6px 6px;
+            padding: 30px 30px;
+            box-sizing: border-box;
+            border-radius: 4px;
+            border: 1px solid rgb(28,28,28);
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 320px;
+        }
+
+        .loader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            z-index: 20;
+            display: none;
+        }
+
+        .arc-spinner {
+            width: 40px;
+            height: 40px;
+            position: relative;
+        }
+
+        .arc-spinner::before,
+        .arc-spinner::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border: 4px solid transparent;
+            border-radius: 50%;
+            border-right-color: transparent;
+            border-bottom-color: transparent;
+            border-left-color: transparent;
+            animation: spin-clockwise 1.2s linear infinite;
+        }
+
+        .arc-spinner::before,
+        .arc-spinner::after {
+            border-top-color: #888888;
+        }
+
+        .arc-spinner::after {
+            animation-delay: 0.2s;
+        }
+
+        @keyframes spin-clockwise {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .form-content {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .logo-container {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .logo-image {
+            width: 100px;
+            height: 100px;
+            object-fit: contain;
+            filter: brightness(1.1) contrast(1.1);
+        }
+
+        .login-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .login-tab {
+            padding: 8px 20px;
+            background: rgb(20,20,20);
+            border: 1px solid rgb(40,40,40);
+            color: rgb(150,150,150);
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            border-radius: 4px;
+        }
+
+        .login-tab.active {
+            background: rgb(30,30,30);
+            border-color: rgb(80,80,80);
+            color: rgb(220,220,220);
+        }
+
+        .login-form {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .input-group {
+            width: 100%;
+            max-width: 320px;
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-label {
+            font-size: 12px;
+            color: rgb(120,120,120);
+            margin-bottom: 5px;
+            margin-left: 2px;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 12px 14px;
+            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
+            border: 1px solid rgba(40,40,40,0.8);
+            color: rgb(200,200,200);
+            font-size: 14px;
+            outline: none;
+            box-sizing: border-box;
+            border-radius: 4px;
+            transition: border-color 0.4s ease, box-shadow 0.4s ease;
+        }
+
+        .input-field::placeholder {
+            color: rgb(120,120,120);
+        }
+
+        .input-field:focus {
+            border-color: #888888;
+            box-shadow: 0 0 10px rgba(136,136,136,0.25);
+        }
+
+        .login-btn {
+            width: 100%;
+            max-width: 320px;
+            padding: 12px;
+            margin-top: 10px;
+            background: linear-gradient(90deg, rgb(14,14,14), rgb(20,20,20));
+            border: 1px solid rgba(40,40,40,0.8);
+            color: rgb(200,200,200);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.3s ease, border-color 0.3s ease;
+            box-shadow: 0 0 8px rgba(0,0,0,0.5);
+        }
+
+        .login-btn:hover {
+            background: linear-gradient(90deg, rgb(18,18,18), rgb(28,28,28));
+            border-color: rgba(40,40,40,1);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            color: rgb(255, 80, 80);
+            font-size: 12px;
+            margin-top: 10px;
+            text-align: center;
+            min-height: 20px;
+        }
+
+        .success-message {
+            color: rgb(80, 255, 80);
+            font-size: 12px;
+            margin-top: 10px;
+            text-align: center;
+            min-height: 20px;
+        }
+
+        .forgot-link {
+            font-size: 12px;
+            color: rgb(120,120,120);
+            margin-top: 15px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .forgot-link:hover {
+            color: rgb(180,180,180);
+            text-decoration: underline;
+        }
+        
+        .info-note {
+            font-size: 11px;
+            color: rgb(120,120,120);
+            margin-top: 15px;
+            text-align: center;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+    <div class="particles" id="particles"></div>
+
+    <div class="container" id="container">
+        <div class="loader" id="loader">
+            <div class="arc-spinner"></div>
+        </div>
+        
+        <div class="form-content" id="form">
+            <div class="logo-container">
+                <img src="https://image2url.com/r2/default/images/1770423268822-32a09791-acb6-41e0-b8f9-1b159be9dc14.blob" alt="Axion" class="logo-image">
+            </div>
+            
+            <div class="login-tabs">
+                <div class="login-tab active" data-tab="license">License Key</div>
+                <div class="login-tab" data-tab="account">Username</div>
+            </div>
+            
+            <div class="login-form" id="loginForm">
+                <!-- License Login Form -->
+                <div class="input-group" id="licenseGroup">
+                    <div class="input-label">License Key</div>
+                    <input type="text" class="input-field" id="licenseInput" placeholder="XXXX-XXXX-XXXX-XXXX">
+                    <div class="input-label" style="margin-top: 10px;">Password (Placeholder)</div>
+                    <input type="password" class="input-field" id="passwordPlaceholder" placeholder="Enter any value" value="••••••••" readonly>
+                </div>
+                
+                <!-- Account Login Form (hidden by default) -->
+                <div class="input-group" id="accountGroup" style="display: none;">
+                    <div class="input-label">Username</div>
+                    <input type="text" class="input-field" id="usernameInput" placeholder="Your username">
+                    <div class="input-label" style="margin-top: 10px;">Password</div>
+                    <input type="password" class="input-field" id="passwordInput" placeholder="Your password">
+                </div>
+                
+                <button class="login-btn" id="loginBtn">Login</button>
+                
+                <div class="error-message" id="errorMsg"></div>
+                <div class="success-message" id="successMsg"></div>
+                
+                <div class="info-note">
+                    If you created an account when redeeming,<br>use the "Username" tab to login.
+                </div>
+                
+                <a class="forgot-link" href="https://discord.gg/axion" target="_blank">
+                    Need help? Join our Discord
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Create particles
+        function createParticles() {
+            const particlesContainer = document.getElementById('particles');
+            const count = 70;
+
+            for (let i = 0; i < count; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+
+                const size = Math.random() * 1.6 + 0.6;
+                const duration = Math.random() * 80 + 65;
+                const delay = Math.random() * -90;
+                const left = Math.random() * 100;
+                const drift = (Math.random() - 0.5) * 50 + 'vw';
+
+                particle.style.width = size + 'px';
+                particle.style.height = size + 'px';
+                particle.style.left = left + 'vw';
+                particle.style.setProperty('--drift', drift);
+                particle.style.animationDuration = duration + 's';
+                particle.style.animationDelay = delay + 's';
+
+                particlesContainer.appendChild(particle);
+            }
+        }
+
+        // Tab switching
+        document.querySelectorAll('.login-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Update active tab
+                document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Show/hide forms
+                const tabType = tab.dataset.tab;
+                if (tabType === 'license') {
+                    document.getElementById('licenseGroup').style.display = 'flex';
+                    document.getElementById('accountGroup').style.display = 'none';
+                } else {
+                    document.getElementById('licenseGroup').style.display = 'none';
+                    document.getElementById('accountGroup').style.display = 'flex';
+                }
+                
+                // Clear messages
+                clearMessages();
+            });
+        });
+
+        // Set placeholder password for license login
+        document.getElementById('passwordPlaceholder').addEventListener('click', (e) => {
+            e.preventDefault();
+            return false;
+        });
+
+        document.getElementById('passwordPlaceholder').addEventListener('keydown', (e) => {
+            e.preventDefault();
+            return false;
+        });
+
+        // Clear error/success messages
+        function clearMessages() {
+            document.getElementById('errorMsg').textContent = '';
+            document.getElementById('successMsg').textContent = '';
+        }
+
+        // Show loading
+        function showLoading() {
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('form').style.opacity = '0.5';
+            document.getElementById('loginBtn').disabled = true;
+            document.getElementById('loginBtn').textContent = 'Logging in...';
+        }
+
+        // Hide loading
+        function hideLoading() {
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('form').style.opacity = '1';
+            document.getElementById('loginBtn').disabled = false;
+            document.getElementById('loginBtn').textContent = 'Login';
+        }
+
+        // Login function
+        async function performLogin() {
+            const activeTab = document.querySelector('.login-tab.active').dataset.tab;
+            let loginData = {};
+            let endpoint = '';
+            
+            clearMessages();
+            showLoading();
+            
+            if (activeTab === 'license') {
+                const licenseKey = document.getElementById('licenseInput').value.trim();
+                if (!licenseKey) {
+                    document.getElementById('errorMsg').textContent = 'Please enter your license key';
+                    hideLoading();
+                    return;
+                }
+                
+                // For license login, we use the old endpoint for backward compatibility
+                loginData = { key: licenseKey, hwid: 'web-login' };
+                endpoint = '/api/validate';
+            } else {
+                const username = document.getElementById('usernameInput').value.trim();
+                const password = document.getElementById('passwordInput').value;
+                
+                if (!username || !password) {
+                    document.getElementById('errorMsg').textContent = 'Please enter both username and password';
+                    hideLoading();
+                    return;
+                }
+                
+                // For username/password login
+                loginData = { username: username, password: password };
+                endpoint = '/api/user-login';
+            }
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(loginData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.valid || data.success) {
+                    document.getElementById('successMsg').textContent = data.message || 'Login successful!';
+                    
+                    // Redirect to config page
+                    setTimeout(() => {
+                        if (data.license_key) {
+                            window.location.href = `/config/${data.license_key}`;
+                        } else if (activeTab === 'license') {
+                            const licenseKey = document.getElementById('licenseInput').value.trim();
+                            window.location.href = `/config/${licenseKey}`;
+                        }
+                    }, 1000);
+                } else {
+                    document.getElementById('errorMsg').textContent = data.error || 'Login failed';
+                    hideLoading();
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                document.getElementById('errorMsg').textContent = 'Connection error. Please try again.';
+                hideLoading();
+            }
+        }
+
+        // Event listeners
+        document.getElementById('loginBtn').addEventListener('click', performLogin);
+        
+        // Allow Enter key to submit
+        document.getElementById('licenseInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performLogin();
+        });
+        
+        document.getElementById('usernameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performLogin();
+        });
+        
+        document.getElementById('passwordInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performLogin();
+        });
+
+        // Initialize
+        createParticles();
+        
+        // Auto-focus license input
+        setTimeout(() => {
+            document.getElementById('licenseInput').focus();
+        }, 100);
+    </script>
+""" + ENHANCED_ANTI_DEVTOOLS_JS + """
+</body>
+</html>
+"""
+
+@app.get("/", response_class=HTMLResponse)
+def serve_home():
+    """Redirect to login"""
+    response = HTMLResponse(content=ENHANCED_LOGIN_HTML)
+    return response
+
+@app.get("/menu", response_class=HTMLResponse)
+def serve_menu_login():
+    """Login page"""
+    return ENHANCED_LOGIN_HTML
+
+# Community page remains the same as before
 @app.get("/community", response_class=HTMLResponse)
 def serve_community():
     """Community configs page with popup login"""
@@ -1721,297 +2614,6 @@ if (pendingConfigId) {
 </html>"""
     
     return HTMLResponse(content=html_content + ENHANCED_ANTI_DEVTOOLS_JS)
-
-MENU_LOGIN_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login • Axion</title>
-    <meta name="theme-color" content="#0c0c0c">
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            overflow: hidden;
-            background: rgb(12,12,12);
-            color: rgb(180,180,180);
-            font-family: Arial, Helvetica, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            position: relative;
-        }
-
-        .particles {
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            z-index: 1;
-        }
-
-        .particle {
-            position: absolute;
-            background: rgba(140,140,140, 0.35);
-            border-radius: 50%;
-            pointer-events: none;
-            will-change: transform;
-            animation: fall linear infinite;
-        }
-
-        @keyframes fall {
-            0% {
-                transform: translateY(-10vh) translateX(0) rotate(0deg);
-                opacity: 0;
-            }
-            10% { opacity: 0.6; }
-            90% { opacity: 0.6; }
-            100% {
-                transform: translateY(110vh) translateX(var(--drift)) rotate(720deg);
-                opacity: 0;
-            }
-        }
-
-        .container {
-            width: 380px;
-            max-width: 90%;
-            background: rgb(12,12,12);
-            background-image:
-                radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
-            background-size: 6px 6px;
-            padding: 30px 30px;
-            box-sizing: border-box;
-            border-radius: 4px;
-            border: 1px solid rgb(28,28,28);
-            position: relative;
-            z-index: 10;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 280px;
-        }
-
-        .loader {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 40px;
-            height: 40px;
-            z-index: 20;
-        }
-
-        .arc-spinner {
-            width: 40px;
-            height: 40px;
-            position: relative;
-        }
-
-        .arc-spinner::before,
-        .arc-spinner::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border: 4px solid transparent;
-            border-radius: 50%;
-            border-right-color: transparent;
-            border-bottom-color: transparent;
-            border-left-color: transparent;
-            animation: spin-clockwise 1.2s linear infinite;
-        }
-
-        .arc-spinner::before,
-        .arc-spinner::after {
-            border-top-color: #888888;
-        }
-
-        .arc-spinner::after {
-            animation-delay: 0.2s;
-        }
-
-        @keyframes spin-clockwise {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        .form-content {
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .logo-container {
-            margin-bottom: 16px;
-            text-align: center;
-        }
-
-        .logo-image {
-            width: 100px;
-            height: 100px;
-            object-fit: contain;
-            filter: brightness(1.1) contrast(1.1);
-        }
-
-        .input-field {
-            width: 78%;
-            max-width: 290px;
-            padding: 10px 12px;
-            margin: 0 auto 14px auto;
-            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
-            border: 1px solid rgba(40,40,40,0.8);
-            color: rgb(200,200,200);
-            font-size: 14px;
-            outline: none;
-            box-sizing: border-box;
-            border-radius: 4px;
-            transition: border-color 0.4s ease, box-shadow 0.4s ease;
-        }
-
-        .input-field::placeholder {
-            color: rgb(120,120,120);
-        }
-
-        .input-field:focus {
-            border-color: #888888;
-            box-shadow: 0 0 10px rgba(136,136,136,0.25);
-        }
-
-        .login-btn {
-            width: 78%;
-            max-width: 290px;
-            padding: 10px;
-            margin: 0 auto;
-            background: linear-gradient(90deg, rgb(14,14,14), rgb(20,20,20));
-            border: 1px solid rgba(40,40,40,0.8);
-            color: rgb(200,200,200);
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            border-radius: 4px;
-            transition: background 0.3s ease, border-color 0.3s ease;
-            box-shadow: 0 0 8px rgba(0,0,0,0.5);
-        }
-
-        .login-btn:hover {
-            background: linear-gradient(90deg, rgb(18,18,18), rgb(28,28,28));
-            border-color: rgba(40,40,40,1);
-        }
-    </style>
-</head>
-<body>
-    <div class="particles" id="particles"></div>
-
-    <div class="container" id="container">
-        <div class="loader" id="loader">
-            <div class="arc-spinner"></div>
-        </div>
-        <div class="form-content" id="form" style="display: none;">
-            <div class="logo-container">
-                <img src="https://image2url.com/r2/default/images/1770423268822-32a09791-acb6-41e0-b8f9-1b159be9dc14.blob" alt="Axion" class="logo-image">
-            </div>
-            <input type="text" class="input-field" id="licenseInput" placeholder="license">
-            <input type="password" class="input-field" id="passwordInput" placeholder="password" readonly onfocus="this.blur()">
-            <button class="login-btn" id="loginBtn">Login</button>
-        </div>
-    </div>
-
-    <script>
-        setTimeout(() => {
-            document.getElementById('loader').style.display = 'none';
-            document.getElementById('form').style.display = 'flex';
-        }, 3000);
-
-        function createParticles() {
-            const particlesContainer = document.getElementById('particles');
-            const count = 70;
-
-            for (let i = 0; i < count; i++) {
-                const particle = document.createElement('div');
-                particle.className = 'particle';
-
-                const size = Math.random() * 1.6 + 0.6;
-                const duration = Math.random() * 80 + 65;
-                const delay = Math.random() * -90;
-                const left = Math.random() * 100;
-                const drift = (Math.random() - 0.5) * 50 + 'vw';
-
-                particle.style.width = size + 'px';
-                particle.style.height = size + 'px';
-                particle.style.left = left + 'vw';
-                particle.style.setProperty('--drift', drift);
-                particle.style.animationDuration = duration + 's';
-                particle.style.animationDelay = delay + 's';
-
-                particlesContainer.appendChild(particle);
-            }
-        }
-
-        document.getElementById('passwordInput').addEventListener('click', (e) => {
-            e.preventDefault();
-            return false;
-        });
-
-        document.getElementById('passwordInput').addEventListener('keydown', (e) => {
-            e.preventDefault();
-            return false;
-        });
-
-        document.getElementById('passwordInput').value = '••••••••';
-
-        document.getElementById('loginBtn').addEventListener('click', async () => {
-            const licenseKey = document.getElementById('licenseInput').value.trim();
-            
-            if (!licenseKey) {
-                alert('Please enter your license key');
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/validate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key: licenseKey, hwid: 'web-login' })
-                });
-
-                const data = await res.json();
-                
-                if (data.valid) {
-                    window.location.href = `/config/${licenseKey}`;
-                } else {
-                    alert('Invalid license key');
-                }
-            } catch (e) {
-                alert('Connection error. Please check your internet connection.');
-                console.error('Login error:', e);
-            }
-        });
-
-        document.getElementById('licenseInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                document.getElementById('loginBtn').click();
-            }
-        });
-
-        createParticles();
-    </script>
-""" + ENHANCED_ANTI_DEVTOOLS_JS + """
-</body>
-</html>
-"""
-
-@app.get("/", response_class=HTMLResponse)
-def serve_home():
-    """Redirect to login"""
-    response = HTMLResponse(content=MENU_LOGIN_HTML)
-    return response
-
-@app.get("/menu", response_class=HTMLResponse)
-def serve_menu_login():
-    """Login page"""
-    return MENU_LOGIN_HTML
 
 @app.get("/config/{license_key}", response_class=HTMLResponse)
 def serve_config_dashboard(license_key: str):
@@ -2813,9 +3415,9 @@ button:hover{{background:#444}}
 </head>
 <body>
 <div class="container">
-<h1sumting bad bout hhappenn tto meh</h1>
+<h1>Server Error</h1>
 <p>{str(e)}</p>
-<button onclick="window.location.href='/menu'">rearlly error GOOOO BACKKKK</button>
+<button onclick="window.location.href='/menu'">Return to Login</button>
 </div>
 {ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
