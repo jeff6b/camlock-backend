@@ -1321,279 +1321,412 @@ def test_license(request: Request, license_key: str):
 
 # ========== HTML PAGES ==========
 
-FIXED_LOGIN_HTML = """<!DOCTYPE html>
+# EXACT LOGIN PAGE FROM YOUR EXAMPLE - with particles and dark theme
+LOGIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login • Axion</title>
+    <meta name="theme-color" content="#0c0c0c">
     <style>
-        * {
+        html, body {
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            background: #0a0a0c;
-            color: #e5e5ea;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             height: 100vh;
+            overflow: hidden;
+            background: rgb(12,12,12);
+            color: rgb(180,180,180);
+            font-family: Arial, Helvetica, sans-serif;
             display: flex;
-            align-items: center;
             justify-content: center;
+            align-items: center;
             position: relative;
         }
-        
-        .login-box {
-            width: 340px;
-            padding: 32px 28px;
-            background: #111113;
-            border: 1px solid #222228;
-            border-radius: 8px;
-        }
-        
-        .logo {
-            margin-bottom: 24px;
-            font-size: 20px;
-            font-weight: 500;
-            letter-spacing: -0.01em;
-            color: white;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .logo-link {
-            font-size: 12px;
-            color: #6a5acd;
-            text-decoration: none;
-        }
-        
-        .logo-link:hover {
-            color: #8a7ad9;
-        }
-        
-        .input-group {
-            margin-bottom: 16px;
-        }
-        
-        .input-group label {
-            display: block;
-            margin-bottom: 6px;
-            font-size: 13px;
-            color: #8c8c94;
-            font-weight: 500;
-        }
-        
-        .input-group input {
-            width: 100%;
-            padding: 10px 12px;
-            background: #0a0a0c;
-            border: 1px solid #222228;
-            border-radius: 6px;
-            color: #fff;
-            font-size: 14px;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-        
-        .input-group input:focus {
-            border-color: #6a5acd;
-        }
-        
-        .login-btn {
-            width: 100%;
-            padding: 10px;
-            background: #6a5acd;
-            border: 1px solid #7a6ad9;
-            border-radius: 6px;
-            color: white;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-            margin-top: 8px;
-        }
-        
-        .login-btn:hover {
-            background: #7a6ad9;
-            border-color: #8a7ad9;
-        }
-        
-        .login-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            background: #5a4ab9;
-        }
-        
-        .error-message {
-            color: #ff6b6b;
-            font-size: 13px;
-            margin-top: 12px;
-            text-align: center;
-            min-height: 18px;
-        }
-        
-        .success-message {
-            color: #51cf66;
-            font-size: 13px;
-            margin-top: 12px;
-            text-align: center;
-            min-height: 18px;
-        }
-        
-        .back-link {
-            display: block;
-            text-align: center;
-            margin-top: 20px;
-            font-size: 13px;
-            color: #5a5a66;
-            text-decoration: none;
-        }
-        
-        .back-link:hover {
-            color: #8c8c94;
-        }
-        
-        .loader {
-            display: inline-block;
-            width: 14px;
-            height: 14px;
-            border: 2px solid rgba(255,255,255,0.3);
-            border-top-color: #fff;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            margin-right: 8px;
-            vertical-align: middle;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .grid-overlay {
+
+        .particles {
             position: fixed;
             inset: 0;
             pointer-events: none;
-            background-image: 
-                linear-gradient(to right, rgba(180,180,200,0.035) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(180,180,200,0.035) 1px, transparent 1px);
-            background-size: 28px 28px;
-            z-index: -1;
+            z-index: 1;
+        }
+
+        .particle {
+            position: absolute;
+            background: rgba(140,140,140, 0.35);
+            border-radius: 50%;
+            pointer-events: none;
+            will-change: transform;
+            animation: fall linear infinite;
+        }
+
+        @keyframes fall {
+            0% {
+                transform: translateY(-10vh) translateX(0) rotate(0deg);
+                opacity: 0;
+            }
+            10% { opacity: 0.6; }
+            90% { opacity: 0.6; }
+            100% {
+                transform: translateY(110vh) translateX(var(--drift)) rotate(720deg);
+                opacity: 0;
+            }
+        }
+
+        .container {
+            width: 380px;
+            max-width: 90%;
+            background: rgb(12,12,12);
+            background-image:
+                radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
+            background-size: 6px 6px;
+            padding: 30px 30px;
+            box-sizing: border-box;
+            border-radius: 4px;
+            border: 1px solid rgb(28,28,28);
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 280px;
+        }
+
+        .loader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            z-index: 20;
+            display: none;
+        }
+
+        .arc-spinner {
+            width: 40px;
+            height: 40px;
+            position: relative;
+        }
+
+        .arc-spinner::before,
+        .arc-spinner::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border: 4px solid transparent;
+            border-radius: 50%;
+            border-right-color: transparent;
+            border-bottom-color: transparent;
+            border-left-color: transparent;
+            animation: spin-clockwise 1.2s linear infinite;
+        }
+
+        .arc-spinner::before,
+        .arc-spinner::after {
+            border-top-color: #888888;
+        }
+
+        .arc-spinner::after {
+            animation-delay: 0.2s;
+        }
+
+        @keyframes spin-clockwise {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .form-content {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .logo-container {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .logo-image {
+            width: 100px;
+            height: 100px;
+            object-fit: contain;
+            filter: brightness(1.1) contrast(1.1);
+        }
+
+        .login-form {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .input-group {
+            width: 100%;
+            max-width: 320px;
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-label {
+            font-size: 12px;
+            color: rgb(120,120,120);
+            margin-bottom: 5px;
+            margin-left: 2px;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 12px 14px;
+            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
+            border: 1px solid rgba(40,40,40,0.8);
+            color: rgb(200,200,200);
+            font-size: 14px;
+            outline: none;
+            box-sizing: border-box;
+            border-radius: 4px;
+            transition: border-color 0.4s ease, box-shadow 0.4s ease;
+        }
+
+        .input-field::placeholder {
+            color: rgb(120,120,120);
+        }
+
+        .input-field:focus {
+            border-color: #888888;
+            box-shadow: 0 0 10px rgba(136,136,136,0.25);
+        }
+
+        .login-btn {
+            width: 100%;
+            max-width: 320px;
+            padding: 12px;
+            margin-top: 10px;
+            background: linear-gradient(90deg, rgb(14,14,14), rgb(20,20,20));
+            border: 1px solid rgba(40,40,40,0.8);
+            color: rgb(200,200,200);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.3s ease, border-color 0.3s ease;
+            box-shadow: 0 0 8px rgba(0,0,0,0.5);
+        }
+
+        .login-btn:hover {
+            background: linear-gradient(90deg, rgb(18,18,18), rgb(28,28,28));
+            border-color: rgba(40,40,40,1);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            color: rgb(255, 80, 80);
+            font-size: 12px;
+            margin-top: 10px;
+            text-align: center;
+            min-height: 20px;
+            max-width: 320px;
+            word-wrap: break-word;
+        }
+
+        .success-message {
+            color: rgb(80, 255, 80);
+            font-size: 12px;
+            margin-top: 10px;
+            text-align: center;
+            min-height: 20px;
+        }
+
+        .forgot-link {
+            font-size: 12px;
+            color: rgb(120,120,120);
+            margin-top: 15px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .forgot-link:hover {
+            color: rgb(180,180,180);
+            text-decoration: underline;
         }
         
         .info-note {
             font-size: 11px;
-            color: #6a5acd;
-            margin-top: 16px;
+            color: rgb(120,120,120);
+            margin-top: 15px;
             text-align: center;
-            padding-top: 16px;
-            border-top: 1px solid #222228;
+            line-height: 1.4;
+        }
+        
+        .back-link {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: #666;
+            font-size: 12px;
+            text-decoration: none;
+        }
+        
+        .back-link:hover {
+            color: #888;
         }
     </style>
 </head>
 <body>
-    <div class="grid-overlay"></div>
-    
-    <div class="login-box">
-        <div class="logo">
-            AXION
-            <a href="/community" class="logo-link">Community →</a>
+    <div class="particles" id="particles"></div>
+
+    <div class="container" id="container">
+        <div class="loader" id="loader">
+            <div class="arc-spinner"></div>
         </div>
         
-        <form id="loginForm">
-            <div class="input-group">
-                <label>Username</label>
-                <input type="text" id="username" placeholder="Enter your username" autocomplete="off" autofocus>
+        <div class="form-content" id="form">
+            <a href="/community" class="back-link">← Community</a>
+            
+            <div class="logo-container">
+                <img src="https://image2url.com/r2/default/images/1770423268822-32a09791-acb6-41e0-b8f9-1b159be9dc14.blob" alt="Axion" class="logo-image">
             </div>
             
-            <div class="input-group">
-                <label>Password</label>
-                <input type="password" id="password" placeholder="Enter your password">
+            <div class="login-form" id="loginForm">
+                <div class="input-group">
+                    <div class="input-label">Username</div>
+                    <input type="text" class="input-field" id="usernameInput" placeholder="Your username">
+                    <div class="input-label" style="margin-top: 10px;">Password</div>
+                    <input type="password" class="input-field" id="passwordInput" placeholder="Your password">
+                </div>
+                
+                <button class="login-btn" id="loginBtn">Login</button>
+                
+                <div class="error-message" id="errorMsg"></div>
+                <div class="success-message" id="successMsg"></div>
+                
+                <div class="info-note">
+                    Login with the username and password you created<br>when redeeming your license key.
+                </div>
+                
+                <a class="forgot-link" href="https://discord.gg/axion" target="_blank">
+                    Need help? Join our Discord
+                </a>
             </div>
-            
-            <button type="submit" class="login-btn" id="loginBtn">
-                Login
-            </button>
-        </form>
-        
-        <div class="error-message" id="errorMsg"></div>
-        <div class="success-message" id="successMsg"></div>
-        
-        <div class="info-note">
-            Login with your username & password created when redeeming your license key
         </div>
-        
-        <a href="https://discord.gg/axion" target="_blank" class="back-link">
-            Need help? Join Discord
-        </a>
     </div>
-    
+
     <script>
-        const form = document.getElementById('loginForm');
-        const username = document.getElementById('username');
-        const password = document.getElementById('password');
-        const loginBtn = document.getElementById('loginBtn');
-        const errorMsg = document.getElementById('errorMsg');
-        const successMsg = document.getElementById('successMsg');
-        
-        async function handleLogin(e) {
-            e.preventDefault();
+        // Create particles
+        function createParticles() {
+            const particlesContainer = document.getElementById('particles');
+            const count = 70;
+
+            for (let i = 0; i < count; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+
+                const size = Math.random() * 1.6 + 0.6;
+                const duration = Math.random() * 80 + 65;
+                const delay = Math.random() * -90;
+                const left = Math.random() * 100;
+                const drift = (Math.random() - 0.5) * 50 + 'vw';
+
+                particle.style.width = size + 'px';
+                particle.style.height = size + 'px';
+                particle.style.left = left + 'vw';
+                particle.style.setProperty('--drift', drift);
+                particle.style.animationDuration = duration + 's';
+                particle.style.animationDelay = delay + 's';
+
+                particlesContainer.appendChild(particle);
+            }
+        }
+
+        // Clear error/success messages
+        function clearMessages() {
+            document.getElementById('errorMsg').textContent = '';
+            document.getElementById('successMsg').textContent = '';
+        }
+
+        // Show loading
+        function showLoading() {
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('form').style.opacity = '0.5';
+            document.getElementById('loginBtn').disabled = true;
+            document.getElementById('loginBtn').textContent = 'Logging in...';
+        }
+
+        // Hide loading
+        function hideLoading() {
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('form').style.opacity = '1';
+            document.getElementById('loginBtn').disabled = false;
+            document.getElementById('loginBtn').textContent = 'Login';
+        }
+
+        // Login function
+        async function performLogin() {
+            const username = document.getElementById('usernameInput').value.trim();
+            const password = document.getElementById('passwordInput').value;
             
-            const usernameVal = username.value.trim();
-            const passwordVal = password.value;
-            
-            if (!usernameVal || !passwordVal) {
-                errorMsg.textContent = 'Please enter both username and password';
+            if (!username || !password) {
+                document.getElementById('errorMsg').textContent = 'Please enter both username and password';
                 return;
             }
             
-            errorMsg.textContent = '';
-            successMsg.textContent = '';
-            loginBtn.disabled = true;
-            loginBtn.innerHTML = '<span class="loader"></span> Logging in...';
+            clearMessages();
+            showLoading();
             
             try {
                 const response = await fetch('/api/user-login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: usernameVal, password: passwordVal })
+                    body: JSON.stringify({ username: username, password: password })
                 });
                 
                 const data = await response.json();
                 
                 if (data.valid) {
-                    successMsg.textContent = 'Login successful! Redirecting...';
+                    document.getElementById('successMsg').textContent = data.message || 'Login successful!';
                     
                     setTimeout(() => {
                         if (data.license_key) {
                             window.location.href = `/config/${data.license_key}`;
+                        } else {
+                            document.getElementById('errorMsg').textContent = 'No license key found';
+                            hideLoading();
                         }
-                    }, 800);
+                    }, 1000);
                 } else {
-                    errorMsg.textContent = data.error || 'Invalid username or password';
-                    loginBtn.disabled = false;
-                    loginBtn.textContent = 'Login';
+                    document.getElementById('errorMsg').textContent = data.error || 'Login failed';
+                    hideLoading();
                 }
             } catch (error) {
-                errorMsg.textContent = 'Connection error. Please try again.';
-                loginBtn.disabled = false;
-                loginBtn.textContent = 'Login';
+                console.error('Login error:', error);
+                document.getElementById('errorMsg').textContent = 'Connection error. Please try again.';
+                hideLoading();
             }
         }
+
+        // Event listeners
+        document.getElementById('loginBtn').addEventListener('click', performLogin);
         
-        form.addEventListener('submit', handleLogin);
-        
-        username.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') handleLogin(e);
+        document.getElementById('usernameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performLogin();
         });
         
-        password.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') handleLogin(e);
+        document.getElementById('passwordInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performLogin();
         });
-        
-        username.focus();
+
+        // Initialize
+        createParticles();
+        setTimeout(() => {
+            document.getElementById('usernameInput').focus();
+        }, 100);
     </script>
 """ + ENHANCED_ANTI_DEVTOOLS_JS + """
 </body>
@@ -1606,20 +1739,8 @@ COMMUNITY_HTML = """<!DOCTYPE html>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Community • Axion</title>
+    <meta name="theme-color" content="#0c0c0c">
     <style>
-        :root {
-            --bg:           #0a0a0c;
-            --surface:      #111113;
-            --surface-2:    #18181c;
-            --border:       #222228;
-            --text:         #e5e5ea;
-            --text-dim:     #8c8c94;
-            --accent:       #6a5acd;
-            --accent-hover: #7a6ad9;
-            --grid:         rgba(180, 180, 200, 0.035);
-            --radius:       8px;
-        }
-
         * {
             margin: 0;
             padding: 0;
@@ -1627,173 +1748,129 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         }
 
         body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            min-height: 100dvh;
-            padding: 2.5rem 1.25rem 6rem;
-            line-height: 1.5;
-            position: relative;
-        }
-
-        .grid-overlay {
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            background-image:
-                linear-gradient(to right,  var(--grid) 1px, transparent 1px),
-                linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
-            background-size: 28px 28px;
-            z-index: -1;
-            opacity: 0.65;
+            background: rgb(12,12,12);
+            background-image: radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
+            background-size: 6px 6px;
+            color: rgb(180,180,180);
+            font-family: Arial, Helvetica, sans-serif;
+            min-height: 100vh;
+            padding: 2rem;
         }
 
         .container {
-            max-width: 960px;
+            max-width: 1200px;
             margin: 0 auto;
-            position: relative;
-            z-index: 1;
         }
 
         header {
-            margin-bottom: 2rem;
             display: flex;
             justify-content: space-between;
-            align-items: flex-end;
-        }
-
-        .title-section {
-            flex: 1;
+            align-items: center;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid rgb(28,28,28);
+            padding-bottom: 1rem;
         }
 
         h1 {
-            font-size: 1.85rem;
-            font-weight: 600;
-            letter-spacing: -0.02em;
-            color: white;
-        }
-
-        .subtitle {
-            color: var(--text-dim);
-            font-size: 0.9rem;
-            margin-top: 0.3rem;
+            color: rgb(200,200,200);
+            font-weight: 500;
+            font-size: 24px;
         }
 
         .nav-link {
-            color: var(--accent);
+            color: rgb(120,120,120);
             text-decoration: none;
-            font-size: 0.9rem;
             padding: 8px 16px;
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            transition: all 0.2s;
+            border: 1px solid rgb(28,28,28);
+            border-radius: 4px;
+            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
         }
 
         .nav-link:hover {
-            background: var(--surface-2);
-            border-color: var(--accent);
-        }
-
-        .search {
-            width: 100%;
-            max-width: 380px;
-            padding: 0.7rem 1rem;
-            font-size: 0.9rem;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            color: var(--text);
-            outline: none;
-            transition: border-color 0.18s;
-        }
-
-        .search:focus {
-            border-color: var(--accent);
-        }
-
-        .search::placeholder {
-            color: #5a5a66;
+            color: rgb(200,200,200);
+            border-color: rgba(80,80,80,0.8);
         }
 
         .stats {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            overflow: hidden;
-            margin: 1.8rem 0 2.4rem;
-            width: 100%;
+            gap: 1rem;
+            margin-bottom: 2rem;
         }
 
         .stat {
-            padding: 1.4rem 1rem;
+            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
+            border: 1px solid rgb(28,28,28);
+            border-radius: 4px;
+            padding: 1.5rem;
             text-align: center;
-            border-right: 1px solid var(--border);
-        }
-
-        .stat:last-child {
-            border-right: none;
         }
 
         .stat-value {
             font-size: 2rem;
-            font-weight: 700;
-            line-height: 1;
-            color: var(--accent);
-            min-width: 70px;
-            display: inline-block;
+            color: rgb(200,200,200);
+            margin-bottom: 0.5rem;
         }
 
         .stat-label {
-            margin-top: 0.4rem;
-            font-size: 0.8rem;
-            font-weight: 500;
-            color: var(--text-dim);
+            color: rgb(120,120,120);
+            font-size: 12px;
             text-transform: uppercase;
-            letter-spacing: 0.03em;
+        }
+
+        .search {
+            width: 100%;
+            max-width: 400px;
+            padding: 12px 14px;
+            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
+            border: 1px solid rgba(40,40,40,0.8);
+            color: rgb(200,200,200);
+            font-size: 14px;
+            outline: none;
+            border-radius: 4px;
+            margin-bottom: 2rem;
+        }
+
+        .search:focus {
+            border-color: #888888;
+            box-shadow: 0 0 10px rgba(136,136,136,0.25);
         }
 
         .config-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 1.5rem;
-            margin-top: 1.8rem;
         }
 
         .config-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
+            border: 1px solid rgb(28,28,28);
+            border-radius: 4px;
             padding: 1.5rem;
-            transition: border-color 0.2s;
         }
 
         .config-card:hover {
-            border-color: var(--accent);
+            border-color: #888888;
         }
 
         .config-name {
-            font-size: 1.1rem;
-            font-weight: 500;
-            color: white;
-            margin-bottom: 0.4rem;
+            color: rgb(200,200,200);
+            font-size: 18px;
+            margin-bottom: 0.5rem;
         }
 
         .config-game {
-            display: inline-block;
-            font-size: 0.75rem;
-            color: var(--accent);
-            margin-bottom: 0.8rem;
-            padding-bottom: 0.8rem;
-            border-bottom: 1px solid var(--border);
-            width: 100%;
+            color: rgb(120,120,120);
+            font-size: 12px;
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgb(28,28,28);
         }
 
         .config-description {
-            font-size: 0.85rem;
-            color: #b0b0b8;
-            margin-bottom: 1.2rem;
+            color: rgb(160,160,160);
+            font-size: 14px;
+            margin-bottom: 1rem;
             line-height: 1.5;
             min-height: 60px;
         }
@@ -1801,54 +1878,128 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         .config-footer {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            color: rgb(120,120,120);
+            font-size: 12px;
             margin-bottom: 1rem;
-            font-size: 0.8rem;
-            color: var(--text-dim);
         }
 
         .load-btn {
             width: 100%;
-            padding: 0.7rem;
-            background: var(--surface-2);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            color: var(--text);
-            font-size: 0.85rem;
-            font-weight: 500;
+            padding: 10px;
+            background: linear-gradient(90deg, rgb(14,14,14), rgb(20,20,20));
+            border: 1px solid rgba(40,40,40,0.8);
+            color: rgb(200,200,200);
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .load-btn:hover {
+            background: linear-gradient(90deg, rgb(18,18,18), rgb(28,28,28));
+            border-color: rgba(40,40,40,1);
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(12,12,12,0.95);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            width: 340px;
+            background: rgb(12,12,12);
+            background-image: radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
+            background-size: 6px 6px;
+            border: 1px solid rgb(28,28,28);
+            border-radius: 4px;
+            padding: 30px;
+        }
+
+        .modal-title {
+            color: rgb(200,200,200);
+            font-size: 18px;
+            margin-bottom: 20px;
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 12px 14px;
+            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
+            border: 1px solid rgba(40,40,40,0.8);
+            color: rgb(200,200,200);
+            font-size: 14px;
+            outline: none;
+            border-radius: 4px;
+            margin-bottom: 16px;
+        }
+
+        .modal-input:focus {
+            border-color: #888888;
+        }
+
+        .modal-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(90deg, rgb(14,14,14), rgb(20,20,20));
+            border: 1px solid rgba(40,40,40,0.8);
+            color: rgb(200,200,200);
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .modal-btn:hover {
+            background: linear-gradient(90deg, rgb(18,18,18), rgb(28,28,28));
+        }
+
+        .fab {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 52px;
+            height: 52px;
+            background: linear-gradient(145deg, rgb(28,28,28), rgb(20,20,20));
+            border: 1px solid rgb(40,40,40);
+            border-radius: 50%;
+            color: rgb(200,200,200);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             cursor: pointer;
             transition: all 0.2s;
         }
 
-        .load-btn:hover {
-            background: var(--accent);
-            border-color: var(--accent-hover);
-            color: white;
+        .fab:hover {
+            background: linear-gradient(145deg, rgb(32,32,32), rgb(24,24,24));
+            border-color: #888888;
         }
 
-        .empty {
+        .loading, .empty {
             text-align: center;
-            padding: 5rem 1rem;
-            color: var(--text-dim);
-            font-size: 1rem;
-            grid-column: 1 / -1;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 5rem 1rem;
-            color: var(--text-dim);
-            font-size: 1rem;
+            padding: 3rem;
+            color: rgb(120,120,120);
             grid-column: 1 / -1;
         }
 
         .loading:after {
             content: '';
             display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid var(--border);
-            border-top-color: var(--accent);
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgb(40,40,40);
+            border-top-color: #888888;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-left: 10px;
@@ -1859,158 +2010,29 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             to { transform: rotate(360deg); }
         }
 
-        .fab {
-            position: fixed;
-            bottom: 1.8rem;
-            right: 1.8rem;
-            background: var(--accent);
-            color: white;
-            font-size: 1.6rem;
-            font-weight: 300;
-            width: 52px;
-            height: 52px;
-            line-height: 52px;
-            text-align: center;
-            border: 1px solid var(--accent-hover);
-            border-radius: var(--radius);
-            cursor: pointer;
-            transition: all 0.22s ease;
-            z-index: 10;
-            box-shadow: 0 4px 12px rgba(106, 90, 205, 0.3);
-        }
-
-        .fab:hover {
-            background: var(--accent-hover);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(106, 90, 205, 0.4);
-        }
-
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.9);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            backdrop-filter: blur(4px);
-        }
-
-        .modal-overlay.active {
-            display: flex;
-        }
-
-        .modal-content {
-            width: 340px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 28px;
-            position: relative;
-        }
-
-        .modal-title {
-            font-size: 1.1rem;
-            font-weight: 500;
-            color: white;
-            margin-bottom: 20px;
-        }
-
-        .modal-input {
-            width: 100%;
-            padding: 10px 12px;
-            margin-bottom: 16px;
-            background: #0a0a0c;
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            color: var(--text);
-            font-size: 14px;
-            outline: none;
-        }
-
-        .modal-input:focus {
-            border-color: var(--accent);
-        }
-
-        .modal-btn {
-            width: 100%;
-            padding: 10px;
-            background: var(--accent);
-            border: 1px solid var(--accent-hover);
-            border-radius: var(--radius);
-            color: white;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .modal-btn:hover {
-            background: var(--accent-hover);
-        }
-
-        .modal-error {
-            color: #ff6b6b;
-            font-size: 13px;
-            margin-top: 12px;
-            text-align: center;
-        }
-
-        .modal-success {
-            color: #51cf66;
-            font-size: 13px;
-            margin-top: 12px;
-            text-align: center;
-        }
-
         .close-modal {
             position: absolute;
-            top: 16px;
+            top: 20px;
             right: 20px;
             background: none;
             border: none;
-            color: #5a5a66;
+            color: rgb(120,120,120);
             font-size: 24px;
             cursor: pointer;
-            line-height: 1;
-        }
-
-        .close-modal:hover {
-            color: white;
-        }
-
-        @media (min-width: 640px) {
-            .search { max-width: 420px; }
-            .fab { bottom: 2.2rem; right: 2.2rem; }
-            .config-grid { grid-template-columns: repeat(2, 1fr); }
-        }
-
-        @media (min-width: 1024px) {
-            .config-grid { grid-template-columns: repeat(3, 1fr); }
         }
     </style>
 </head>
 <body>
-
-    <div class="grid-overlay"></div>
-
     <div class="container">
         <header>
-            <div class="title-section">
-                <h1>Community</h1>
-                <div class="subtitle">Shared configurations</div>
-            </div>
-            <a href="/menu" class="nav-link">Login →</a>
+            <h1>Community</h1>
+            <a href="/menu" class="nav-link">← Login</a>
         </header>
-
-        <input type="search" class="search" id="searchInput" placeholder="Search configs..." />
 
         <div class="stats" id="statsBar">
             <div class="stat">
                 <div class="stat-value" id="totalConfigs">0</div>
-                <div class="stat-label">Total</div>
+                <div class="stat-label">Total Configs</div>
             </div>
             <div class="stat">
                 <div class="stat-value" id="totalDownloads">0</div>
@@ -2021,6 +2043,8 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                 <div class="stat-label">Top Game</div>
             </div>
         </div>
+
+        <input type="search" class="search" id="searchInput" placeholder="Search configs...">
 
         <div class="config-grid" id="configsList">
             <div class="loading">Loading configs</div>
@@ -2036,16 +2060,14 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             <input type="text" class="modal-input" id="modalUsername" placeholder="Username">
             <input type="password" class="modal-input" id="modalPassword" placeholder="Password">
             <button class="modal-btn" id="modalLoginBtn" onclick="modalLogin()">Login</button>
-            <div class="modal-error" id="modalError"></div>
-            <div class="modal-success" id="modalSuccess"></div>
+            <div id="modalError" style="color: rgb(255,80,80); font-size: 12px; margin-top: 10px; text-align: center;"></div>
+            <div id="modalSuccess" style="color: rgb(80,255,80); font-size: 12px; margin-top: 10px; text-align: center;"></div>
         </div>
     </div>
 
     <script>
         let allConfigs = [];
         let currentSearch = '';
-        let totalDownloads = 0;
-        let totalConfigs = 0;
         
         const configsList = document.getElementById('configsList');
         const loginModal = document.getElementById('loginModal');
@@ -2105,7 +2127,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                 const data = await res.json();
                 
                 if (data.valid) {
-                    modalSuccess.textContent = 'Login successful! Redirecting...';
+                    modalSuccess.textContent = 'Login successful!';
                     
                     setTimeout(() => {
                         if (data.license_key) {
@@ -2124,29 +2146,6 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             }
         }
         
-        function animateCounter(el, target) {
-            if (!el) return;
-            const duration = 1800;
-            const startTime = performance.now();
-            
-            function update(time) {
-                const elapsed = time - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const eased = 1 - Math.pow(1 - progress, 4);
-                const current = Math.floor(eased * target);
-                
-                el.textContent = current;
-                
-                if (progress < 1) {
-                    requestAnimationFrame(update);
-                } else {
-                    el.textContent = target;
-                }
-            }
-            
-            requestAnimationFrame(update);
-        }
-        
         async function loadConfigs() {
             try {
                 configsList.innerHTML = '<div class="loading">Loading configs</div>';
@@ -2155,11 +2154,9 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                 const data = await res.json();
                 
                 allConfigs = data.configs || [];
-                totalConfigs = allConfigs.length;
-                totalDownloads = data.total_downloads || 0;
                 
-                animateCounter(totalConfigsEl, totalConfigs);
-                animateCounter(totalDownloadsEl, totalDownloads);
+                totalConfigsEl.textContent = allConfigs.length;
+                totalDownloadsEl.textContent = data.total_downloads || 0;
                 
                 const gameCounts = {};
                 allConfigs.forEach(config => {
@@ -2223,9 +2220,9 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                     <div class="config-description">${escapeHtml(config.description || 'No description')}</div>
                     <div class="config-footer">
                         <span>by ${escapeHtml(config.author_name)}</span>
-                        <span>${config.downloads || 0} ⬇️</span>
+                        <span>${config.downloads || 0} downloads</span>
                     </div>
-                    <button class="load-btn" onclick="viewConfig(${config.id})">View Config</button>
+                    <button class="load-btn" onclick="viewConfig(${config.id})">View</button>
                 `;
                 configsList.appendChild(card);
             });
@@ -2263,11 +2260,11 @@ COMMUNITY_HTML = """<!DOCTYPE html>
 
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
-    return HTMLResponse(content=FIXED_LOGIN_HTML)
+    return HTMLResponse(content=LOGIN_HTML)
 
 @app.get("/menu", response_class=HTMLResponse)
 def serve_menu_login():
-    return HTMLResponse(content=FIXED_LOGIN_HTML)
+    return HTMLResponse(content=LOGIN_HTML)
 
 @app.get("/community", response_class=HTMLResponse)
 def serve_community():
@@ -2289,13 +2286,14 @@ def serve_config_dashboard(license_key: str):
 <head>
 <meta charset="UTF-8">
 <title>Invalid • Axion</title>
+<meta name="theme-color" content="#0c0c0c">
 <style>
-body{{background:#0a0a0a;color:#fff;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
-.container{{text-align:center;padding:40px;background:#111113;border:1px solid #222228;border-radius:8px}}
-h1{{color:#ff6b6b;font-size:24px;font-weight:400;margin-bottom:20px}}
-p{{color:#8c8c94;margin-bottom:20px}}
-button{{padding:12px 30px;background:#6a5acd;border:1px solid #7a6ad9;border-radius:6px;color:#fff;cursor:pointer;font-size:14px}}
-button:hover{{background:#7a6ad9}}
+body{{background:rgb(12,12,12);color:rgb(180,180,180);font-family:Arial,Helvetica,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
+.container{{text-align:center;padding:40px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:4px}}
+h1{{color:rgb(255,80,80);font-size:24px;font-weight:400;margin-bottom:20px}}
+p{{color:rgb(120,120,120);margin-bottom:20px}}
+button{{padding:12px 30px;background:linear-gradient(90deg,rgb(14,14,14),rgb(20,20,20));border:1px solid rgba(40,40,40,0.8);color:rgb(200,200,200);cursor:pointer;border-radius:4px}}
+button:hover{{background:linear-gradient(90deg,rgb(18,18,18),rgb(28,28,28));border-color:rgba(40,40,40,1)}}
 </style>
 </head>
 <body>
@@ -2308,86 +2306,69 @@ button:hover{{background:#7a6ad9}}
 </body>
 </html>"""
         
-        # Config dashboard HTML (from second version with modern styling)
-        # (Keeping the config dashboard HTML from the second version - it's long but already included in your code)
+        # Keep the config dashboard HTML from the second version
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<title>Axion Config</title>
+<title>Config • Axion</title>
+<meta name="theme-color" content="#0c0c0c">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box;user-select:none}}
-body{{height:100vh;background:#0a0a0a;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#cfcfcf;display:flex;align-items:center;justify-content:center}}
-.window{{width:760px;height:520px;background:#111113;border:1px solid #222228;border-radius:12px;display:flex;flex-direction:column;overflow:hidden}}
-.topbar{{height:38px;background:#0a0a0c;border-bottom:1px solid #222228;display:flex;align-items:center;padding:0 12px;gap:16px}}
-.title{{font-size:13px;color:#bfbfbf;padding-right:16px;border-right:1px solid #222228}}
+body{{height:100vh;background:rgb(12,12,12);font-family:Arial,Helvetica,sans-serif;color:rgb(180,180,180);display:flex;align-items:center;justify-content:center}}
+.window{{width:760px;height:520px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:4px;display:flex;flex-direction:column;overflow:hidden}}
+.topbar{{height:38px;background:linear-gradient(145deg,rgb(24,24,24),rgb(20,20,20));border-bottom:1px solid rgb(28,28,28);display:flex;align-items:center;padding:0 12px;gap:16px}}
+.title{{font-size:13px;color:rgb(200,200,200);padding-right:16px;border-right:1px solid rgb(28,28,28)}}
 .tabs{{display:flex;gap:18px;font-size:12px}}
-.tab{{color:#9a9a9a;cursor:pointer;transition:color 0.2s}}
-.tab:hover,.tab.active{{color:#ffffff}}
-.topbar-right{{margin-left:auto;display:flex;align-items:center}}
-.search-container{{position:relative;width:180px}}
-.search-bar{{width:100%;height:26px;background:#0a0a0c;border:1px solid #222228;border-radius:6px;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none}}
-.search-bar::placeholder{{color:#666}}
-.search-bar:focus{{border-color:#6a5acd}}
-.content{{flex:1;padding:10px;background:#0a0a0c;display:flex;align-items:center;justify-content:center;position:relative}}
+.tab{{color:rgb(120,120,120);cursor:pointer;transition:color 0.2s}}
+.tab:hover,.tab.active{{color:rgb(200,200,200)}}
+.content{{flex:1;padding:10px;background:rgb(12,12,12);display:flex;align-items:center;justify-content:center;position:relative}}
 .tab-content{{width:100%;height:100%;display:none}}
 .tab-content.active{{display:block}}
-.merged-panel{{width:100%;height:100%;background:#0a0a0c;border:1px solid #222228;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center}}
+.merged-panel{{width:100%;height:100%;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:4px;overflow:hidden;display:flex;align-items:center;justify-content:center}}
 .inner-container{{width:98%;height:96%;display:flex;gap:14px;overflow:hidden}}
-.half-panel{{flex:1;background:#111113;border:1px solid #222228;border-radius:8px;overflow-y:auto;padding:14px 16px;position:relative}}
-.panel-header{{position:absolute;top:10px;left:16px;color:#bfbfbf;font-size:11px;font-weight:normal;pointer-events:none;z-index:1}}
+.half-panel{{flex:1;background:linear-gradient(145deg,rgb(24,24,24),rgb(20,20,20));border:1px solid rgb(28,28,28);border-radius:4px;overflow-y:auto;padding:14px 16px;position:relative}}
+.panel-header{{position:absolute;top:10px;left:16px;color:rgb(200,200,200);font-size:11px;font-weight:normal;pointer-events:none;z-index:1}}
 .toggle-row{{position:absolute;left:16px;display:flex;align-items:center;gap:12px;z-index:1}}
 .toggle-text{{display:flex;align-items:center;gap:12px}}
-.toggle{{width:14px;height:14px;background:transparent;border:1px solid #1a1a1a;border-radius:4px;cursor:pointer;transition:background 0.2s;flex-shrink:0}}
-.toggle.active{{background:#6a5acd;border-color:#7a6ad9}}
-.enable-text{{color:#9a9a9a;font-size:11px;line-height:1;transition:color 0.25s;pointer-events:none}}
-.toggle.active + .enable-text{{color:#e0e0e0}}
-.keybind-picker{{width:80px;height:20px;background:#0a0a0c;border:1px solid #222228;border-radius:6px;color:#cfcfcf;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}}
-.slider-label{{position:absolute;left:16px;color:#bfbfbf;font-size:11px;font-weight:normal;z-index:1}}
-.slider-container{{position:absolute;left:16px;width:210px;height:14px;background:#0a0a0c;border:1px solid #222228;border-radius:7px;overflow:hidden;z-index:10}}
-.slider-track{{position:absolute;top:0;left:0;width:100%;height:100%;background:#0a0a0c}}
-.slider-fill{{position:absolute;top:0;left:0;height:100%;background:#6a5acd;width:50%;transition:width 0.1s}}
+.toggle{{width:14px;height:14px;background:transparent;border:1px solid rgb(40,40,40);border-radius:2px;cursor:pointer;transition:background 0.2s;flex-shrink:0}}
+.toggle.active{{background:#888888}}
+.enable-text{{color:rgb(120,120,120);font-size:11px;line-height:1;transition:color 0.25s;pointer-events:none}}
+.toggle.active + .enable-text{{color:rgb(200,200,200)}}
+.keybind-picker{{width:80px;height:20px;background:linear-gradient(145deg,rgb(20,20,20),rgb(16,16,16));border:1px solid rgb(28,28,28);border-radius:2px;color:rgb(200,200,200);font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}}
+.slider-label{{position:absolute;left:16px;color:rgb(200,200,200);font-size:11px;font-weight:normal;z-index:1}}
+.slider-container{{position:absolute;left:16px;width:210px;height:14px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:2px;overflow:hidden;z-index:10}}
+.slider-track{{position:absolute;top:0;left:0;width:100%;height:100%;background:rgb(12,12,12)}}
+.slider-fill{{position:absolute;top:0;left:0;height:100%;background:#888888;width:50%;transition:width 0.1s}}
 .slider-value{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:9px;font-weight:bold;pointer-events:none;z-index:3}}
-.half-panel::-webkit-scrollbar{{width:5px}}
-.half-panel::-webkit-scrollbar-track{{background:#0a0a0c}}
-.half-panel::-webkit-scrollbar-thumb{{background:#222228;border-radius:5px}}
-.half-panel::-webkit-scrollbar-thumb:hover{{background:#333}}
 .custom-dropdown{{position:absolute;left:16px;width:210px;height:16px;z-index:100}}
-.dropdown-header{{width:100%;height:100%;background:#0a0a0c;border:1px solid #222228;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:pointer;font-size:10px;color:#cfcfcf}}
-.dropdown-list{{position:absolute;top:100%;left:0;width:100%;max-height:160px;background:#0a0a0c;border:1px solid #222228;border-top:none;border-radius:0 0 6px 6px;overflow-y:auto;display:none;z-index:101}}
+.dropdown-header{{width:100%;height:100%;background:linear-gradient(145deg,rgb(20,20,20),rgb(16,16,16));border:1px solid rgb(28,28,28);border-radius:2px;display:flex;align-items:center;padding:0 8px;cursor:pointer;font-size:10px;color:rgb(200,200,200)}}
+.dropdown-list{{position:absolute;top:100%;left:0;width:100%;max-height:160px;background:rgb(20,20,20);border:1px solid rgb(28,28,28);border-top:none;overflow-y:auto;display:none;z-index:101}}
 .dropdown-list.open{{display:block}}
-.dropdown-item{{padding:5px 10px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.15s}}
-.dropdown-item:hover{{background:#18181c}}
-.dropdown-item.selected{{background:#6a5acd;color:#fff}}
+.dropdown-item{{padding:5px 10px;font-size:11px;color:rgb(200,200,200);cursor:pointer}}
+.dropdown-item:hover{{background:rgb(28,28,28)}}
+.dropdown-item.selected{{background:#888888;color:#fff}}
 .config-list{{position:absolute;top:32px;left:16px;right:16px;bottom:16px;overflow-y:auto}}
-.config-list::-webkit-scrollbar{{width:6px}}
-.config-list::-webkit-scrollbar-track{{background:#0a0a0c}}
-.config-list::-webkit-scrollbar-thumb{{background:#333;border-radius:6px}}
-.config-list::-webkit-scrollbar-thumb:hover{{background:#444}}
-.config-item{{background:#0a0a0c;border:1px solid #222228;border-radius:6px;padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:10px;position:relative}}
-.config-item:hover{{background:#111113}}
-.config-name{{flex:1;font-size:10px;color:#fff;font-weight:normal}}
-.config-dots{{width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9a9a9a;font-size:16px;font-weight:bold;transition:color 0.2s;flex-shrink:0}}
-.config-dots:hover{{color:#fff}}
-.config-menu{{position:absolute;right:8px;top:28px;background:#0a0a0c;border:1px solid #222228;border-radius:6px;display:none;z-index:200;min-width:100px}}
+.config-item{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:2px;padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:10px;position:relative}}
+.config-item:hover{{background:rgb(20,20,20)}}
+.config-name{{flex:1;font-size:10px;color:rgb(200,200,200)}}
+.config-dots{{width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgb(120,120,120);font-size:16px}}
+.config-dots:hover{{color:rgb(200,200,200)}}
+.config-menu{{position:absolute;right:8px;top:28px;background:rgb(20,20,20);border:1px solid rgb(28,28,28);display:none;z-index:200;min-width:100px}}
 .config-menu.open{{display:block}}
-.config-menu-item{{padding:6px 12px;font-size:10px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;border-bottom:1px solid #1a1a1a;white-space:nowrap}}
-.config-menu-item:last-child{{border-bottom:none}}
-.config-menu-item:hover{{background:#6a5acd;color:#fff}}
-.input-box{{width:100%;height:24px;background:#0a0a0c;border:1px solid #222228;border-radius:6px;color:#cfcfcf;font-size:11px;padding:0 8px;outline:none}}
-.config-btn{{background:#0a0a0c;border:1px solid #222228;border-radius:6px;padding:6px 12px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;width:100%;margin-top:6px}}
-.config-btn:hover{{background:#6a5acd;border-color:#7a6ad9;color:#fff}}
-.modal-overlay{{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:9999}}
+.config-menu-item{{padding:6px 12px;font-size:10px;color:rgb(200,200,200);cursor:pointer}}
+.config-menu-item:hover{{background:rgb(28,28,28)}}
+.input-box{{width:100%;height:24px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);color:rgb(200,200,200);font-size:11px;padding:0 8px;outline:none}}
+.config-btn{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);padding:6px 12px;font-size:11px;color:rgb(200,200,200);cursor:pointer;width:100%;margin-top:6px}}
+.config-btn:hover{{background:rgb(20,20,20)}}
+.modal-overlay{{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(12,12,12,0.9);display:none;align-items:center;justify-content:center;z-index:9999}}
 .modal-overlay.active{{display:flex}}
-.modal-box{{background:#111113;border:1px solid #222228;border-radius:12px;padding:24px;min-width:300px}}
-.modal-title{{color:#fff;font-size:13px;margin-bottom:16px;font-weight:normal}}
-.modal-input{{width:100%;height:28px;background:#0a0a0c;border:1px solid #222228;border-radius:6px;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none;margin-bottom:12px}}
-.modal-input:focus{{border-color:#6a5acd}}
+.modal-box{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);padding:24px;min-width:300px;border-radius:4px}}
+.modal-title{{color:rgb(200,200,200);font-size:13px;margin-bottom:16px}}
+.modal-input{{width:100%;height:28px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);color:rgb(200,200,200);font-size:11px;padding:0 10px;outline:none;margin-bottom:12px}}
 .modal-buttons{{display:flex;gap:8px}}
-.modal-btn{{flex:1;height:28px;background:#0a0a0c;border:1px solid #222228;border-radius:6px;color:#cfcfcf;font-size:11px;cursor:pointer;transition:background 0.2s}}
-.modal-btn:hover{{background:#6a5acd;color:#fff}}
-.modal-btn.primary{{background:#6a5acd;color:#fff}}
-.modal-btn.primary:hover{{background:#7a6ad9}}
+.modal-btn{{flex:1;height:28px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);color:rgb(200,200,200);font-size:11px;cursor:pointer}}
+.modal-btn:hover{{background:rgb(20,20,20)}}
 </style>
 </head>
 <body>
@@ -2398,11 +2379,6 @@ body{{height:100vh;background:#0a0a0a;font-family:system-ui,-apple-system,BlinkM
             <div class="tab active" data-tab="aimbot">Aimbot</div>
             <div class="tab" data-tab="triggerbot">Triggerbot</div>
             <div class="tab" data-tab="settings">Configs</div>
-        </div>
-        <div class="topbar-right">
-            <div class="search-container">
-                <input type="text" id="searchInput" class="search-bar" placeholder="Search...">
-            </div>
         </div>
     </div>
     <div class="content">
@@ -2613,12 +2589,12 @@ body{{height:100vh;background:#0a0a0a;font-family:system-ui,-apple-system,BlinkM
                         <div class="panel-header">Actions</div>
                         <div style="position:absolute;top:32px;left:16px;right:16px">
                             <div style="margin-bottom:12px">
-                                <div style="font-size:11px;color:#bfbfbf;margin-bottom:4px">Save Current Config</div>
+                                <div style="font-size:11px;color:rgb(200,200,200);margin-bottom:4px">Save Current Config</div>
                                 <input type="text" id="saveConfigInput" class="input-box" placeholder="Config name...">
                                 <button class="config-btn" style="margin-top:4px;width:100%" onclick="saveCurrentConfig()">Save</button>
                             </div>
                             <div style="margin-top:20px">
-                                <div style="font-size:11px;color:#bfbfbf;margin-bottom:4px">Quick Actions</div>
+                                <div style="font-size:11px;color:rgb(200,200,200);margin-bottom:4px">Quick Actions</div>
                                 <button class="config-btn" onclick="loadDefaultConfig()">Load Default</button>
                                 <button class="config-btn" style="margin-top:8px" onclick="window.location.href='/menu'">Logout</button>
                             </div>
@@ -2636,7 +2612,7 @@ body{{height:100vh;background:#0a0a0a;font-family:system-ui,-apple-system,BlinkM
         <input type="text" id="renameInput" class="modal-input" placeholder="Enter new name...">
         <div class="modal-buttons">
             <button class="modal-btn" onclick="closeRenameModal()">Cancel</button>
-            <button class="modal-btn primary" onclick="confirmRename()">Rename</button>
+            <button class="modal-btn" onclick="confirmRename()">Rename</button>
         </div>
     </div>
 </div>
@@ -3061,13 +3037,14 @@ setInterval(loadConfig, 1000);
 <head>
 <meta charset="UTF-8">
 <title>Error • Axion</title>
+<meta name="theme-color" content="#0c0c0c">
 <style>
-body{{background:#0a0a0a;color:#fff;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
-.container{{text-align:center;padding:40px;background:#111113;border:1px solid #222228;border-radius:8px}}
-h1{{color:#ff6b6b;font-size:24px;font-weight:400;margin-bottom:20px}}
-.error-details{{color:#ff8888;font-size:13px;margin-top:20px;padding:15px;background:rgba(255,0,0,0.1);border:1px solid #ff6b6b;border-radius:6px}}
-button{{margin-top:20px;padding:12px 30px;background:#6a5acd;border:1px solid #7a6ad9;border-radius:6px;color:#fff;cursor:pointer;font-size:14px}}
-button:hover{{background:#7a6ad9}}
+body{{background:rgb(12,12,12);color:rgb(180,180,180);font-family:Arial,Helvetica,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
+.container{{text-align:center;padding:40px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:4px}}
+h1{{color:rgb(255,80,80);font-size:24px;font-weight:400;margin-bottom:20px}}
+.error-details{{color:rgb(255,120,120);font-size:13px;margin-top:20px;padding:15px;background:rgba(255,0,0,0.1);border:1px solid rgb(255,80,80);border-radius:4px}}
+button{{padding:12px 30px;background:linear-gradient(90deg,rgb(14,14,14),rgb(20,20,20));border:1px solid rgba(40,40,40,0.8);color:rgb(200,200,200);cursor:pointer;border-radius:4px}}
+button:hover{{background:linear-gradient(90deg,rgb(18,18,18),rgb(28,28,28));border-color:rgba(40,40,40,1)}}
 </style>
 </head>
 <body>
