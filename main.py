@@ -83,21 +83,17 @@ def q(query):
     """Convert PostgreSQL placeholders to SQLite if needed"""
     if USE_POSTGRES:
         return query
-    # For SQLite, replace %s with ?
     import re
-    # Replace %s but not %%s (escaped percent signs)
     return re.sub(r'(?<!%)%s(?!%)', '?', query)
 
 # Password hashing functions
 def hash_password(password: str, salt: str = None) -> tuple:
-    """Hash password with salt"""
     if salt is None:
         salt = secrets.token_hex(16)
     key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
     return f"{salt}:{key.hex()}", salt
 
 def verify_password(stored_hash: str, password: str) -> bool:
-    """Verify password against stored hash"""
     try:
         salt, stored_key = stored_hash.split(':')
         key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
@@ -110,17 +106,8 @@ def init_db():
         db = get_db()
         cur = db.cursor()
         
-        # Create keys table with lifetime support
         if USE_POSTGRES:
-            # Drop tables if they exist to recreate them
-            cur.execute("DROP TABLE IF EXISTS login_sessions CASCADE")
-            cur.execute("DROP TABLE IF EXISTS user_accounts CASCADE")
-            cur.execute("DROP TABLE IF EXISTS user_sessions CASCADE")
-            cur.execute("DROP TABLE IF EXISTS settings CASCADE")
-            cur.execute("DROP TABLE IF EXISTS public_configs CASCADE")
-            cur.execute("DROP TABLE IF EXISTS saved_configs CASCADE")
-            cur.execute("DROP TABLE IF EXISTS keys CASCADE")
-            
+            # Create tables with proper schema
             cur.execute("""CREATE TABLE IF NOT EXISTS keys (
                 key TEXT PRIMARY KEY,
                 duration TEXT NOT NULL,
@@ -167,7 +154,6 @@ def init_db():
                 config TEXT NOT NULL
             )""")
             
-            # Add user accounts table
             cur.execute("""CREATE TABLE IF NOT EXISTS user_accounts (
                 id SERIAL PRIMARY KEY,
                 license_key TEXT UNIQUE NOT NULL,
@@ -189,7 +175,7 @@ def init_db():
             )""")
             
         else:
-            # For SQLite, we need to handle tables differently
+            # SQLite version
             cur.execute("""CREATE TABLE IF NOT EXISTS keys (
                 key TEXT PRIMARY KEY,
                 duration TEXT NOT NULL,
@@ -236,7 +222,6 @@ def init_db():
                 config TEXT NOT NULL
             )""")
             
-            # Add user accounts table
             cur.execute("""CREATE TABLE IF NOT EXISTS user_accounts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 license_key TEXT UNIQUE NOT NULL,
@@ -257,15 +242,64 @@ def init_db():
                 ip_address TEXT
             )""")
         
+        # Insert some sample public configs if none exist
+        cur.execute(q("SELECT COUNT(*) FROM public_configs"))
+        count = cur.fetchone()[0]
+        
+        if count == 0:
+            sample_configs = [
+                {
+                    "config_name": "Competitive Arsenal",
+                    "author_name": "fade",
+                    "game_name": "Arsenal",
+                    "description": "Optimized for competitive play, smooth aim and fast trigger",
+                    "config_data": DEFAULT_CONFIG,
+                    "license_key": "sample",
+                    "created_at": datetime.now().isoformat(),
+                    "downloads": 247
+                },
+                {
+                    "config_name": "BedWars Rush",
+                    "author_name": "nexus",
+                    "game_name": "BedWars",
+                    "description": "Perfect for rushing, high FOV and quick target acquisition",
+                    "config_data": DEFAULT_CONFIG,
+                    "license_key": "sample",
+                    "created_at": datetime.now().isoformat(),
+                    "downloads": 189
+                },
+                {
+                    "config_name": "Murder Mystery",
+                    "author_name": "shadow",
+                    "game_name": "Murder Mystery",
+                    "description": "Low delay triggerbot for knife detection",
+                    "config_data": DEFAULT_CONFIG,
+                    "license_key": "sample",
+                    "created_at": datetime.now().isoformat(),
+                    "downloads": 112
+                }
+            ]
+            
+            for config in sample_configs:
+                cur.execute(q("""
+                    INSERT INTO public_configs 
+                    (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """), (
+                    config["config_name"],
+                    config["author_name"],
+                    config["game_name"],
+                    config["description"],
+                    json.dumps(config["config_data"]),
+                    config["license_key"],
+                    config["created_at"],
+                    config["downloads"]
+                ))
+            db.commit()
+            print("Added sample public configs")
+        
         db.commit()
         print(f"Database initialized successfully. Using: {'PostgreSQL' if USE_POSTGRES else 'SQLite'}")
-        
-        # Test the tables
-        cur.execute("SELECT * FROM keys LIMIT 1")
-        print("Keys table: OK")
-        
-        cur.execute("SELECT * FROM user_accounts LIMIT 1")
-        print("User accounts table: OK")
         
     except Exception as e:
         print(f"Database initialization error: {e}")
@@ -277,15 +311,12 @@ def init_db():
         except:
             pass
 
-# Initialize database on startup
 init_db()
 
 # Helper function to create web sessions
 def create_web_session(license_key):
-    """Create a web session record when user logs in via website"""
     db = get_db()
     cur = db.cursor()
-    
     session_id = secrets.token_hex(16)
     created_at = datetime.now().isoformat()
     expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
@@ -308,16 +339,12 @@ def create_web_session(license_key):
     
     db.commit()
     db.close()
-    
     return session_id
 
+# Pydantic models
 class KeyValidate(BaseModel):
     key: str
     hwid: str
-
-class ConfigData(BaseModel):
-    name: str
-    data: dict
 
 class KeyCreate(BaseModel):
     duration: str
@@ -330,17 +357,13 @@ class PublicConfig(BaseModel):
     description: str
     config_data: dict
 
-class SaveConfig(BaseModel):
-    name: str
-    data: dict
+class SavedConfigRequest(BaseModel):
+    config_name: str
+    config_data: dict
 
 class RedeemRequest(BaseModel):
     key: str
     discord_id: str
-
-class SavedConfigRequest(BaseModel):
-    config_name: str
-    config_data: dict
 
 class CreateAccount(BaseModel):
     license_key: str
@@ -450,7 +473,6 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
 @app.post("/api/validate")
 @limiter.limit("10/minute")
 async def validate_user(request: Request, data: KeyValidate):
-    """Validate license key"""
     db = get_db()
     cur = db.cursor()
     
@@ -468,7 +490,6 @@ async def validate_user(request: Request, data: KeyValidate):
             db.close()
             return {"valid": False, "error": "License inactive"}
         
-        # Check if license is lifetime (no expiration) or expired
         if expires_at:
             try:
                 if datetime.now() > datetime.fromisoformat(expires_at):
@@ -490,7 +511,6 @@ async def validate_user(request: Request, data: KeyValidate):
                 db.close()
                 return {"valid": False, "error": "HWID mismatch"}
         
-        # Web login - create session
         db.close()
         create_web_session(data.key)
         return {"valid": True, "message": "Web login successful", "license_key": data.key}
@@ -499,76 +519,13 @@ async def validate_user(request: Request, data: KeyValidate):
         db.close()
         return {"valid": False, "error": f"Server error: {str(e)}"}
 
-@app.post("/api/create-account")
-@limiter.limit("5/minute")
-async def create_account(request: Request, data: CreateAccount):
-    """Create username/password account for license"""
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        # Check if license exists and is active
-        cur.execute(q("SELECT key, active, expires_at FROM keys WHERE key=%s"), (data.license_key,))
-        license_result = cur.fetchone()
-        
-        if not license_result:
-            db.close()
-            return {"success": False, "error": "Invalid license key"}
-        
-        key, active, expires_at = license_result
-        
-        if active == 0:
-            db.close()
-            return {"success": False, "error": "License inactive"}
-        
-        # Check if license is expired (except lifetime)
-        if expires_at:
-            try:
-                if datetime.now() > datetime.fromisoformat(expires_at):
-                    db.close()
-                    return {"success": False, "error": "License expired"}
-            except:
-                pass
-        
-        # Check if username already exists
-        cur.execute(q("SELECT username FROM user_accounts WHERE username=%s"), (data.username,))
-        if cur.fetchone():
-            db.close()
-            return {"success": False, "error": "Username already exists"}
-        
-        # Check if license already has an account
-        cur.execute(q("SELECT license_key FROM user_accounts WHERE license_key=%s"), (data.license_key,))
-        if cur.fetchone():
-            db.close()
-            return {"success": False, "error": "Account already exists for this license"}
-        
-        # Hash password
-        password_hash, salt = hash_password(data.password)
-        
-        # Create account
-        cur.execute(q("""
-            INSERT INTO user_accounts (license_key, username, password_hash, email, created_at)
-            VALUES (%s, %s, %s, %s, %s)
-        """), (data.license_key, data.username, password_hash, data.email, datetime.now().isoformat()))
-        
-        db.commit()
-        db.close()
-        
-        return {"success": True, "message": "Account created successfully"}
-        
-    except Exception as e:
-        db.close()
-        return {"success": False, "error": f"Server error: {str(e)}"}
-
 @app.post("/api/user-login")
 @limiter.limit("10/minute")
 async def user_login(request: Request, data: UserLogin):
-    """Login with username/password"""
     db = get_db()
     cur = db.cursor()
     
     try:
-        # Get user account
         cur.execute(q("""
             SELECT ua.username, ua.password_hash, ua.license_key, k.active, k.expires_at
             FROM user_accounts ua
@@ -584,12 +541,10 @@ async def user_login(request: Request, data: UserLogin):
         
         username, password_hash, license_key, active, expires_at = result
         
-        # Check license status
         if active == 0:
             db.close()
             return {"valid": False, "error": "License inactive"}
         
-        # Check if license is expired (except lifetime)
         if expires_at:
             try:
                 if datetime.now() > datetime.fromisoformat(expires_at):
@@ -598,16 +553,13 @@ async def user_login(request: Request, data: UserLogin):
             except:
                 pass
         
-        # Verify password
         if not verify_password(password_hash, data.password):
             db.close()
             return {"valid": False, "error": "Invalid username or password"}
         
-        # Update last login
         cur.execute(q("UPDATE user_accounts SET last_login=%s WHERE username=%s"),
                    (datetime.now().isoformat(), username))
         
-        # Create session
         session_id = secrets.token_hex(16)
         created_at = datetime.now().isoformat()
         expires_at_session = (datetime.now() + timedelta(days=30)).isoformat()
@@ -619,8 +571,6 @@ async def user_login(request: Request, data: UserLogin):
         
         db.commit()
         db.close()
-        
-        # Also create web session for backward compatibility
         create_web_session(license_key)
         
         return {
@@ -635,161 +585,63 @@ async def user_login(request: Request, data: UserLogin):
         db.close()
         return {"valid": False, "error": f"Server error: {str(e)}"}
 
-@app.get("/api/account-info/{license_key}")
-@limiter.limit("30/minute")
-def get_account_info(request: Request, license_key: str):
-    """Get account info for a license key"""
+@app.post("/api/create-account")
+@limiter.limit("5/minute")
+async def create_account(request: Request, data: CreateAccount):
     db = get_db()
     cur = db.cursor()
     
     try:
-        cur.execute(q("""
-            SELECT username, email, created_at, last_login 
-            FROM user_accounts 
-            WHERE license_key=%s
-        """), (license_key,))
+        cur.execute(q("SELECT key, active, expires_at FROM keys WHERE key=%s"), (data.license_key,))
+        license_result = cur.fetchone()
         
-        result = cur.fetchone()
-        db.close()
-        
-        if not result:
-            return {"exists": False}
-        
-        username, email, created_at, last_login = result
-        
-        return {
-            "exists": True,
-            "username": username,
-            "email": email,
-            "created_at": created_at,
-            "last_login": last_login
-        }
-        
-    except Exception as e:
-        db.close()
-        return {"exists": False, "error": str(e)}
-
-@app.get("/api/config/{key}")
-@limiter.limit("30/minute")
-def get_config(request: Request, key: str):
-    """Get config for a license key"""
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        cur.execute(q("SELECT config FROM settings WHERE key=%s"), (key,))
-        result = cur.fetchone()
-        
-        if not result:
-            if USE_POSTGRES:
-                cur.execute(
-                    "INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING",
-                    (key, json.dumps(DEFAULT_CONFIG))
-                )
-            else:
-                cur.execute(
-                    "INSERT OR IGNORE INTO settings (key, config) VALUES (?, ?)",
-                    (key, json.dumps(DEFAULT_CONFIG))
-                )
-            db.commit()
+        if not license_result:
             db.close()
-            return DEFAULT_CONFIG
+            return {"success": False, "error": "Invalid license key"}
         
-        db.close()
-        return json.loads(result[0])
+        key, active, expires_at = license_result
         
-    except Exception as e:
-        db.close()
-        return DEFAULT_CONFIG
-
-@app.post("/api/config/{key}")
-@limiter.limit("20/minute")
-async def set_config(request: Request, key: str, data: dict):
-    """Save config for a license key"""
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        if USE_POSTGRES:
-            cur.execute(
-                """INSERT INTO settings (key, config) VALUES (%s, %s)
-                   ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
-                (key, json.dumps(data))
-            )
-        else:
-            cur.execute(
-                """INSERT INTO settings (key, config) VALUES (?, ?)
-                   ON CONFLICT (key) DO UPDATE SET config = excluded.config""",
-                (key, json.dumps(data))
-            )
+        if active == 0:
+            db.close()
+            return {"success": False, "error": "License inactive"}
         
-        db.commit()
-        db.close()
-        return {"status": "ok"}
+        if expires_at:
+            try:
+                if datetime.now() > datetime.fromisoformat(expires_at):
+                    db.close()
+                    return {"success": False, "error": "License expired"}
+            except:
+                pass
         
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-
-@app.get("/api/configs/{license_key}/list")
-@limiter.limit("30/minute")
-def list_configs(request: Request, license_key: str):
-    """List saved configs"""
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(q("SELECT config_name, created_at FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC"), (license_key,))
-    rows = cur.fetchall()
-    db.close()
-    
-    configs = [{"name": row[0], "created_at": row[1]} for row in rows]
-    return {"configs": configs}
-
-@app.post("/api/configs/{license_key}/save")
-@limiter.limit("20/minute")
-async def save_config(request: Request, license_key: str, data: SavedConfigRequest):
-    """Save a config"""
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        cur.execute(q("SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, data.config_name))
-        existing = cur.fetchone()
+        cur.execute(q("SELECT username FROM user_accounts WHERE username=%s"), (data.username,))
+        if cur.fetchone():
+            db.close()
+            return {"success": False, "error": "Username already exists"}
         
-        if existing:
-            cur.execute(q("UPDATE saved_configs SET config_data=%s WHERE license_key=%s AND config_name=%s"),
-                       (json.dumps(data.config_data), license_key, data.config_name))
-        else:
-            cur.execute(q("INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (%s, %s, %s, %s)"),
-                       (license_key, data.config_name, json.dumps(data.config_data), datetime.now().isoformat()))
+        cur.execute(q("SELECT license_key FROM user_accounts WHERE license_key=%s"), (data.license_key,))
+        if cur.fetchone():
+            db.close()
+            return {"success": False, "error": "Account already exists for this license"}
+        
+        password_hash, salt = hash_password(data.password)
+        
+        cur.execute(q("""
+            INSERT INTO user_accounts (license_key, username, password_hash, email, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+        """), (data.license_key, data.username, password_hash, data.email, datetime.now().isoformat()))
         
         db.commit()
         db.close()
-        return {"success": True, "message": "Config saved"}
+        return {"success": True, "message": "Account created successfully"}
+        
     except Exception as e:
         db.close()
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-
-@app.get("/api/configs/{license_key}/load/{config_name}")
-@limiter.limit("30/minute")
-def load_config(request: Request, license_key: str, config_name: str):
-    """Load a saved config"""
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(q("SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
-    row = cur.fetchone()
-    db.close()
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Config not found")
-    
-    return json.loads(row[0])
+        return {"success": False, "error": f"Server error: {str(e)}"}
 
 @app.post("/api/keys/create")
 @limiter.limit("5/minute")
 async def create_key(request: Request, data: KeyCreate):
-    """Create a license key"""
     key = f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}"
-    
     db = get_db()
     cur = db.cursor()
     
@@ -816,7 +668,6 @@ async def create_key(request: Request, data: KeyCreate):
 @app.post("/api/redeem")
 @limiter.limit("5/minute")
 async def redeem_key(request: Request, data: RedeemRequest):
-    """Redeem a key"""
     db = get_db()
     cur = db.cursor()
     
@@ -837,7 +688,7 @@ async def redeem_key(request: Request, data: RedeemRequest):
         now = datetime.now()
         expires_at = existing_expires
         
-        if not expires_at:
+        if not expires_at and duration != "lifetime":
             if duration == "monthly":
                 expires_at = (now + timedelta(days=30)).isoformat()
             elif duration == "weekly":
@@ -858,7 +709,6 @@ async def redeem_key(request: Request, data: RedeemRequest):
 @app.get("/api/users/{user_id}/license")
 @limiter.limit("30/minute")
 def get_user_license(request: Request, user_id: str):
-    """Get user's license by Discord ID"""
     db = get_db()
     cur = db.cursor()
     
@@ -892,27 +742,248 @@ def get_user_license(request: Request, user_id: str):
         db.close()
         return {"active": False, "error": f"Server error: {str(e)}"}
 
-@app.get("/api/test/{license_key}")
+@app.get("/api/config/{key}")
 @limiter.limit("30/minute")
-def test_license(request: Request, license_key: str):
-    """Test if license key exists"""
+def get_config(request: Request, key: str):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT config FROM settings WHERE key=%s"), (key,))
+        result = cur.fetchone()
+        
+        if not result:
+            if USE_POSTGRES:
+                cur.execute(
+                    "INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING",
+                    (key, json.dumps(DEFAULT_CONFIG))
+                )
+            else:
+                cur.execute(
+                    "INSERT OR IGNORE INTO settings (key, config) VALUES (?, ?)",
+                    (key, json.dumps(DEFAULT_CONFIG))
+                )
+            db.commit()
+            db.close()
+            return DEFAULT_CONFIG
+        
+        db.close()
+        return json.loads(result[0])
+    except:
+        db.close()
+        return DEFAULT_CONFIG
+
+@app.post("/api/config/{key}")
+@limiter.limit("20/minute")
+async def set_config(request: Request, key: str, data: dict):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        if USE_POSTGRES:
+            cur.execute(
+                """INSERT INTO settings (key, config) VALUES (%s, %s)
+                   ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
+                (key, json.dumps(data))
+            )
+        else:
+            cur.execute(
+                """INSERT INTO settings (key, config) VALUES (?, ?)
+                   ON CONFLICT (key) DO UPDATE SET config = excluded.config""",
+                (key, json.dumps(data))
+            )
+        db.commit()
+        db.close()
+        return {"status": "ok"}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@app.get("/api/configs/{license_key}/list")
+@limiter.limit("30/minute")
+def list_configs(request: Request, license_key: str):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT config_name, created_at FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC"), (license_key,))
+    rows = cur.fetchall()
+    db.close()
+    configs = [{"name": row[0], "created_at": row[1]} for row in rows]
+    return {"configs": configs}
+
+@app.post("/api/configs/{license_key}/save")
+@limiter.limit("20/minute")
+async def save_config(request: Request, license_key: str, data: SavedConfigRequest):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, data.config_name))
+        existing = cur.fetchone()
+        
+        if existing:
+            cur.execute(q("UPDATE saved_configs SET config_data=%s WHERE license_key=%s AND config_name=%s"),
+                       (json.dumps(data.config_data), license_key, data.config_name))
+        else:
+            cur.execute(q("INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (%s, %s, %s, %s)"),
+                       (license_key, data.config_name, json.dumps(data.config_data), datetime.now().isoformat()))
+        db.commit()
+        db.close()
+        return {"success": True}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@app.get("/api/configs/{license_key}/load/{config_name}")
+@limiter.limit("30/minute")
+def load_config(request: Request, license_key: str, config_name: str):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
+    row = cur.fetchone()
+    db.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Config not found")
+    return json.loads(row[0])
+
+@app.post("/api/configs/{license_key}/rename")
+@limiter.limit("20/minute")
+async def rename_config(request: Request, license_key: str, data: dict):
+    old_name = data.get("old_name")
+    new_name = data.get("new_name")
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("UPDATE saved_configs SET config_name=%s WHERE license_key=%s AND config_name=%s"),
+               (new_name, license_key, old_name))
+    db.commit()
+    db.close()
+    return {"success": True}
+
+@app.delete("/api/configs/{license_key}/delete/{config_name}")
+@limiter.limit("20/minute")
+async def delete_config(request: Request, license_key: str, config_name: str):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("DELETE FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
+    db.commit()
+    db.close()
+    return {"success": True}
+
+@app.get("/api/public-configs")
+@limiter.limit("60/minute")
+def get_public_configs(request: Request):
     try:
         db = get_db()
         cur = db.cursor()
+        cur.execute(q("""
+            SELECT id, config_name, author_name, game_name, description, downloads, created_at 
+            FROM public_configs 
+            ORDER BY downloads DESC, created_at DESC
+        """))
+        rows = cur.fetchall()
+        db.close()
         
+        configs = []
+        total_downloads = 0
+        
+        for row in rows:
+            downloads = row[5] if row[5] else 0
+            total_downloads += downloads
+            configs.append({
+                "id": row[0],
+                "config_name": row[1],
+                "author_name": row[2],
+                "game_name": row[3],
+                "description": row[4],
+                "downloads": downloads,
+                "created_at": row[6]
+            })
+        
+        return {
+            "configs": configs,
+            "total_configs": len(configs),
+            "total_downloads": total_downloads
+        }
+    except Exception as e:
+        print(f"Error in get_public_configs: {e}")
+        return {"configs": [], "total_configs": 0, "total_downloads": 0}
+
+@app.post("/api/public-configs/create")
+@limiter.limit("10/minute")
+async def create_public_config(request: Request, data: PublicConfig):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("""
+            INSERT INTO public_configs 
+            (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 0)
+        """), (
+            data.config_name, 
+            data.author_name, 
+            data.game_name, 
+            data.description, 
+            json.dumps(data.config_data), 
+            data.license_key, 
+            datetime.now().isoformat()
+        ))
+        db.commit()
+        db.close()
+        return {"success": True}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@app.get("/api/public-configs/{config_id}")
+@limiter.limit("30/minute")
+def get_public_config(request: Request, config_id: int):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("""
+        SELECT id, config_name, author_name, game_name, description, config_data, downloads 
+        FROM public_configs WHERE id=%s
+    """), (config_id,))
+    row = cur.fetchone()
+    db.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    return {
+        "id": row[0],
+        "config_name": row[1],
+        "author_name": row[2],
+        "game_name": row[3],
+        "description": row[4],
+        "config_data": json.loads(row[5]) if row[5] else {},
+        "downloads": row[6] if row[6] else 0
+    }
+
+@app.post("/api/public-configs/{config_id}/download")
+@limiter.limit("30/minute")
+async def download_config(request: Request, config_id: int):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("UPDATE public_configs SET downloads = downloads + 1 WHERE id=%s"), (config_id,))
+    db.commit()
+    db.close()
+    return {"success": True}
+
+@app.get("/api/test/{license_key}")
+@limiter.limit("30/minute")
+def test_license(request: Request, license_key: str):
+    try:
+        db = get_db()
+        cur = db.cursor()
         query = q("SELECT key, duration, expires_at, active FROM keys WHERE key=%s")
         cur.execute(query, (license_key,))
         result = cur.fetchone()
         db.close()
         
         if not result:
-            return {
-                "exists": False,
-                "key_provided": license_key
-            }
+            return {"exists": False, "key_provided": license_key}
         
         key, duration, expires_at, active = result
-        
         return {
             "exists": True,
             "key": key,
@@ -927,44 +998,11 @@ def test_license(request: Request, license_key: str):
 @app.get("/api/keepalive")
 @limiter.limit("60/minute")
 def keepalive(request: Request):
-    """Keep server awake"""
     return {"status": "alive", "timestamp": datetime.now().isoformat()}
-
-@app.get("/api/debug/db")
-@limiter.limit("10/minute")
-def debug_db(request: Request):
-    """Debug database connection"""
-    try:
-        db = get_db()
-        cur = db.cursor()
-        
-        if USE_POSTGRES:
-            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
-        else:
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        
-        tables = cur.fetchall()
-        
-        cur.execute(q("SELECT COUNT(*) FROM keys"))
-        count = cur.fetchone()
-        
-        cur.execute(q("SELECT COUNT(*) FROM user_accounts"))
-        account_count = cur.fetchone()
-        
-        db.close()
-        
-        return {
-            "database_type": "PostgreSQL" if USE_POSTGRES else "SQLite",
-            "tables_found": [t[0] for t in tables],
-            "keys_count": count[0] if count else 0,
-            "accounts_count": account_count[0] if account_count else 0,
-        }
-    except Exception as e:
-        return {"error": str(e), "type": type(e).__name__}
 
 # ========== HTML PAGES ==========
 
-MINIMAL_LOGIN_HTML = """<!DOCTYPE html>
+LOGIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -978,34 +1016,32 @@ MINIMAL_LOGIN_HTML = """<!DOCTYPE html>
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
             background: #0a0a0a;
             color: #fff;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            position: relative;
+            background-image: linear-gradient(to right, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.02) 40px, rgba(255,255,255,0.01) 100px, transparent 280px);
+            background-position: left center;
+            background-repeat: no-repeat;
         }
         
-        .login-container {
+        .login-box {
             width: 360px;
-            padding: 40px 30px;
-            background: #111;
-            border-radius: 8px;
-            border: 1px solid #222;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            padding: 40px 32px;
+            background: #111113;
+            border: 1px solid #222228;
         }
         
         .logo {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        
-        .logo h1 {
-            font-size: 24px;
-            font-weight: 300;
-            color: #fff;
-            letter-spacing: 1px;
+            margin-bottom: 32px;
+            font-size: 20px;
+            font-weight: 500;
+            letter-spacing: -0.01em;
+            color: white;
         }
         
         .input-group {
@@ -1016,42 +1052,42 @@ MINIMAL_LOGIN_HTML = """<!DOCTYPE html>
             display: block;
             margin-bottom: 6px;
             font-size: 13px;
-            color: #999;
+            color: #8c8c94;
             font-weight: 500;
         }
         
         .input-group input {
             width: 100%;
             padding: 12px 14px;
-            background: #0a0a0a;
-            border: 1px solid #333;
-            border-radius: 4px;
+            background: #0a0a0c;
+            border: 1px solid #222228;
             color: #fff;
             font-size: 14px;
+            outline: none;
             transition: border-color 0.2s;
         }
         
         .input-group input:focus {
-            outline: none;
-            border-color: #666;
+            border-color: #44444a;
         }
         
         .login-btn {
             width: 100%;
             padding: 12px;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            color: #fff;
+            background: #18181c;
+            border: 1px solid #222228;
+            color: #e5e5ea;
             font-size: 14px;
             font-weight: 500;
-            border-radius: 4px;
             cursor: pointer;
-            transition: background 0.2s;
-            margin-top: 10px;
+            transition: all 0.2s;
+            margin-top: 12px;
         }
         
         .login-btn:hover {
-            background: #222;
+            background: #202028;
+            border-color: #2a2a32;
+            color: white;
         }
         
         .login-btn:disabled {
@@ -1062,7 +1098,7 @@ MINIMAL_LOGIN_HTML = """<!DOCTYPE html>
         .error-message {
             color: #ff4444;
             font-size: 13px;
-            margin-top: 10px;
+            margin-top: 16px;
             text-align: center;
             min-height: 18px;
         }
@@ -1070,7 +1106,7 @@ MINIMAL_LOGIN_HTML = """<!DOCTYPE html>
         .success-message {
             color: #44ff44;
             font-size: 13px;
-            margin-top: 10px;
+            margin-top: 16px;
             text-align: center;
             min-height: 18px;
         }
@@ -1078,43 +1114,53 @@ MINIMAL_LOGIN_HTML = """<!DOCTYPE html>
         .back-link {
             display: block;
             text-align: center;
-            margin-top: 20px;
+            margin-top: 24px;
             font-size: 13px;
-            color: #666;
+            color: #5a5a66;
             text-decoration: none;
         }
         
         .back-link:hover {
-            color: #999;
+            color: #8c8c94;
         }
         
         .loader {
             display: inline-block;
-            width: 16px;
-            height: 16px;
+            width: 14px;
+            height: 14px;
             border: 2px solid #333;
             border-top-color: #fff;
             border-radius: 50%;
-            animation: spin 1s linear infinite;
-            vertical-align: middle;
+            animation: spin 0.8s linear infinite;
             margin-right: 8px;
+            vertical-align: middle;
         }
         
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        
+        .grid-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image: linear-gradient(to right, rgba(180,180,200,0.035) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(180,180,200,0.035) 1px, transparent 1px);
+            background-size: 28px 28px;
+            z-index: -1;
+        }
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <div class="logo">
-            <h1>AXION</h1>
-        </div>
+    <div class="grid-overlay"></div>
+    
+    <div class="login-box">
+        <div class="logo">AXION</div>
         
         <form id="loginForm">
             <div class="input-group">
                 <label>Username</label>
-                <input type="text" id="username" placeholder="Enter username" autofocus>
+                <input type="text" id="username" placeholder="Enter username" autocomplete="off" autofocus>
             </div>
             
             <div class="input-group">
@@ -1132,7 +1178,7 @@ MINIMAL_LOGIN_HTML = """<!DOCTYPE html>
         
         <a href="/community" class="back-link">← Community</a>
     </div>
-
+    
     <script>
         const form = document.getElementById('loginForm');
         const username = document.getElementById('username');
@@ -1140,7 +1186,7 @@ MINIMAL_LOGIN_HTML = """<!DOCTYPE html>
         const loginBtn = document.getElementById('loginBtn');
         const errorMsg = document.getElementById('errorMsg');
         const successMsg = document.getElementById('successMsg');
-
+        
         async function handleLogin(e) {
             e.preventDefault();
             
@@ -1161,10 +1207,7 @@ MINIMAL_LOGIN_HTML = """<!DOCTYPE html>
                 const response = await fetch('/api/user-login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        username: usernameVal, 
-                        password: passwordVal 
-                    })
+                    body: JSON.stringify({ username: usernameVal, password: passwordVal })
                 });
                 
                 const data = await response.json();
@@ -1188,7 +1231,7 @@ MINIMAL_LOGIN_HTML = """<!DOCTYPE html>
                 loginBtn.textContent = 'Login';
             }
         }
-
+        
         form.addEventListener('submit', handleLogin);
         
         username.addEventListener('keypress', (e) => {
@@ -1198,282 +1241,289 @@ MINIMAL_LOGIN_HTML = """<!DOCTYPE html>
         password.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') handleLogin(e);
         });
+        
+        username.focus();
     </script>
 """ + ENHANCED_ANTI_DEVTOOLS_JS + """
 </body>
 </html>
 """
 
-MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
+COMMUNITY_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Community • Axion</title>
     <style>
+        :root {
+            --bg:           #0a0a0c;
+            --surface:      #111113;
+            --surface-2:    #18181c;
+            --border:       #222228;
+            --text:         #e5e5ea;
+            --text-dim:     #8c8c94;
+            --grid:         rgba(180, 180, 200, 0.035);
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: #0a0a0a;
-            color: #fff;
+            background: var(--bg);
+            background-image: 
+                linear-gradient(to right,  
+                    rgba(255,255,255,0.065) 0px,
+                    rgba(255,255,255,0.055) 40px,
+                    rgba(255,255,255,0.038) 100px,
+                    rgba(255,255,255,0.022) 180px,
+                    rgba(255,255,255,0.010) 280px,
+                    transparent 420px
+                );
+            background-position: left center;
+            background-repeat: no-repeat;
+            background-size: 100% 100%;
+            background-attachment: fixed;
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100dvh;
+            padding: 3rem 1.25rem 7rem;
             line-height: 1.5;
         }
-        
-        .header {
-            background: #111;
-            border-bottom: 1px solid #222;
-            padding: 20px 30px;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-        
-        .header-content {
-            max-width: 1200px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .logo {
-            font-size: 18px;
-            font-weight: 300;
-            letter-spacing: 1px;
-            color: #fff;
-        }
-        
-        .nav {
-            display: flex;
-            gap: 20px;
-        }
-        
-        .nav a {
-            color: #999;
-            text-decoration: none;
-            font-size: 14px;
-            transition: color 0.2s;
-        }
-        
-        .nav a:hover {
-            color: #fff;
-        }
-        
+
         .container {
-            max-width: 1200px;
-            margin: 40px auto;
-            padding: 0 30px;
+            max-width: 960px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
         }
-        
-        .page-header {
-            margin-bottom: 30px;
+
+        header {
+            margin-bottom: 2.2rem;
         }
-        
-        .page-title {
-            font-size: 28px;
-            font-weight: 300;
-            margin-bottom: 10px;
-            color: #fff;
+
+        h1 {
+            font-size: 1.95rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            color: white;
         }
-        
-        .page-subtitle {
-            color: #999;
-            font-size: 14px;
-            font-weight: 400;
+
+        .subtitle {
+            color: var(--text-dim);
+            font-size: 0.92rem;
+            margin-top: 0.35rem;
         }
-        
-        .search-container {
-            margin-bottom: 30px;
-        }
-        
-        .search-input {
+
+        .search {
             width: 100%;
-            max-width: 400px;
-            padding: 12px 16px;
-            background: #0a0a0a;
-            border: 1px solid #333;
-            border-radius: 4px;
-            color: #fff;
-            font-size: 14px;
-        }
-        
-        .search-input:focus {
+            max-width: 380px;
+            padding: 0.72rem 1rem;
+            font-size: 0.92rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0;
+            color: var(--text);
             outline: none;
-            border-color: #666;
+            transition: border-color 0.18s, box-shadow 0.18s;
         }
-        
-        .search-input::placeholder {
-            color: #666;
+
+        .search:focus {
+            border-color: #44444a;
+            box-shadow: 0 0 0 3px rgba(68,68,74,0.15);
         }
-        
-        .stats-bar {
-            display: flex;
-            gap: 30px;
-            margin-bottom: 40px;
-            padding: 20px;
-            background: #111;
-            border: 1px solid #222;
-            border-radius: 8px;
+
+        .search::placeholder {
+            color: #5a5a66;
         }
-        
-        .stat-item {
-            flex: 1;
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0;
+            overflow: hidden;
+            margin: 1.8rem 0 2.4rem;
+            width: 100%;
         }
-        
+
+        .stat {
+            padding: 1.5rem 1.2rem;
+            text-align: center;
+            border-right: 1px solid var(--border);
+        }
+
+        .stat:last-child {
+            border-right: none;
+        }
+
         .stat-value {
-            font-size: 24px;
-            font-weight: 300;
-            color: #fff;
-            margin-bottom: 4px;
+            font-size: 2.1rem;
+            font-weight: 700;
+            line-height: 1;
+            color: white;
+            min-width: 80px;
+            display: inline-block;
         }
-        
+
         .stat-label {
-            color: #999;
-            font-size: 12px;
+            margin-top: 0.45rem;
+            font-size: 0.84rem;
+            font-weight: 500;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
         }
-        
+
         .config-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
         }
-        
+
         .config-card {
-            background: #111;
-            border: 1px solid #222;
-            border-radius: 8px;
-            padding: 24px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 1.5rem;
             transition: border-color 0.2s;
         }
-        
+
         .config-card:hover {
-            border-color: #444;
+            border-color: #44444a;
         }
-        
+
         .config-name {
-            font-size: 16px;
+            font-size: 1.1rem;
             font-weight: 500;
-            color: #fff;
-            margin-bottom: 8px;
+            color: white;
+            margin-bottom: 0.4rem;
         }
-        
+
         .config-game {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 12px;
+            display: inline-block;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 0.8rem;
+            padding-bottom: 0.8rem;
+            border-bottom: 1px solid var(--border);
+            width: 100%;
         }
-        
+
         .config-description {
-            font-size: 13px;
-            color: #999;
-            margin-bottom: 20px;
+            font-size: 0.85rem;
+            color: #b0b0b8;
+            margin-bottom: 1.2rem;
             line-height: 1.5;
             min-height: 60px;
         }
-        
+
         .config-footer {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #222;
+            margin-bottom: 1rem;
+            font-size: 0.8rem;
+            color: var(--text-dim);
         }
-        
-        .config-author {
-            font-size: 12px;
-            color: #999;
-        }
-        
-        .config-downloads {
-            font-size: 12px;
-            color: #999;
-        }
-        
+
         .load-btn {
             width: 100%;
-            padding: 10px;
-            background: #0a0a0a;
-            border: 1px solid #333;
-            color: #fff;
-            font-size: 13px;
-            border-radius: 4px;
+            padding: 0.7rem;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-size: 0.85rem;
+            font-weight: 500;
             cursor: pointer;
-            transition: background 0.2s;
-            margin-top: 16px;
+            transition: all 0.2s;
         }
-        
+
         .load-btn:hover {
-            background: #1a1a1a;
+            background: #202028;
+            border-color: #44444a;
+            color: white;
         }
-        
-        .empty-state {
+
+        .empty {
             text-align: center;
-            padding: 60px 20px;
-            color: #999;
-            font-size: 14px;
+            padding: 6rem 1rem;
+            color: var(--text-dim);
+            font-size: 1.05rem;
+            font-weight: 400;
             grid-column: 1 / -1;
         }
-        
+
         .loading {
             text-align: center;
-            padding: 60px 20px;
-            color: #999;
-            font-size: 14px;
+            padding: 6rem 1rem;
+            color: var(--text-dim);
+            font-size: 1.05rem;
             grid-column: 1 / -1;
         }
-        
+
         .loading:after {
             content: '';
             display: inline-block;
-            width: 14px;
-            height: 14px;
+            width: 16px;
+            height: 16px;
             border: 2px solid #333;
             border-top-color: #fff;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin-left: 8px;
+            margin-left: 10px;
             vertical-align: middle;
         }
-        
+
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        
-        .error-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #ff4444;
-            font-size: 14px;
-            grid-column: 1 / -1;
-        }
-        
-        .create-btn {
+
+        .fab {
             position: fixed;
-            bottom: 30px;
-            right: 30px;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            color: #fff;
-            padding: 12px 24px;
-            border-radius: 30px;
-            font-size: 14px;
+            bottom: 1.8rem;
+            right: 1.8rem;
+            background: transparent;
+            color: #e0e0e0;
+            font-size: 1.6rem;
+            font-weight: 300;
+            width: 54px;
+            height: 54px;
+            line-height: 54px;
+            text-align: center;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
             cursor: pointer;
-            transition: background 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            transition: all 0.22s ease;
+            z-index: 10;
+            opacity: 0.85;
         }
-        
-        .create-btn:hover {
-            background: #222;
+
+        .fab:hover {
+            color: white;
+            opacity: 1;
+            transform: translateY(-2px);
+            text-shadow: 0 0 8px rgba(255,255,255,0.4);
         }
-        
+
+        .grid-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(to right,  var(--grid) 1px, transparent 1px),
+                linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+            background-size: 28px 28px;
+            z-index: -1;
+            opacity: 0.65;
+            mix-blend-mode: screen;
+        }
+
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -1486,174 +1536,148 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
             justify-content: center;
             z-index: 1000;
         }
-        
+
         .modal-overlay.active {
             display: flex;
         }
-        
+
         .modal-content {
-            width: 380px;
-            background: #111;
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 30px;
+            width: 360px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 32px;
         }
-        
+
         .modal-title {
-            font-size: 18px;
-            font-weight: 400;
-            color: #fff;
-            margin-bottom: 20px;
+            font-size: 1.2rem;
+            font-weight: 500;
+            color: white;
+            margin-bottom: 24px;
         }
-        
+
         .modal-input {
             width: 100%;
             padding: 12px;
             margin-bottom: 16px;
-            background: #0a0a0a;
-            border: 1px solid #333;
-            border-radius: 4px;
-            color: #fff;
+            background: #0a0a0c;
+            border: 1px solid var(--border);
+            color: var(--text);
             font-size: 14px;
-        }
-        
-        .modal-input:focus {
             outline: none;
-            border-color: #666;
         }
-        
+
+        .modal-input:focus {
+            border-color: #44444a;
+        }
+
         .modal-btn {
             width: 100%;
             padding: 12px;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            color: #fff;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background 0.2s;
+            background: #18181c;
+            border: 1px solid var(--border);
+            color: var(--text);
             font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
         }
-        
+
         .modal-btn:hover {
-            background: #222;
+            background: #202028;
+            border-color: #44444a;
+            color: white;
         }
-        
+
         .modal-error {
             color: #ff4444;
             font-size: 13px;
-            margin-top: 12px;
+            margin-top: 16px;
             text-align: center;
         }
-        
+
         .modal-success {
             color: #44ff44;
             font-size: 13px;
-            margin-top: 12px;
+            margin-top: 16px;
             text-align: center;
         }
-        
+
         .close-modal {
             position: absolute;
-            top: 15px;
-            right: 15px;
+            top: 20px;
+            right: 20px;
             background: none;
             border: none;
-            color: #666;
-            font-size: 20px;
+            color: #5a5a66;
+            font-size: 24px;
             cursor: pointer;
         }
-        
+
         .close-modal:hover {
-            color: #fff;
+            color: white;
         }
-        
-        @media (max-width: 768px) {
-            .header-content {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .nav {
-                width: 100%;
-                justify-content: center;
-            }
-            
-            .config-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .stats-bar {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .container {
-                padding: 0 20px;
-            }
+
+        @media (min-width: 640px) {
+            .search { max-width: 420px; }
+            .fab { bottom: 2.5rem; right: 2.5rem; }
+            .config-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (min-width: 1024px) {
+            .config-grid { grid-template-columns: repeat(3, 1fr); }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="header-content">
-            <div class="logo">AXION</div>
-            <div class="nav">
-                <a href="/menu">Login</a>
-                <a href="#" onclick="refreshConfigs()">Refresh</a>
-                <a href="#" onclick="showStats()">Stats</a>
-            </div>
-        </div>
-    </div>
-    
+
+    <div class="grid-overlay"></div>
+
     <div class="container">
-        <div class="page-header">
-            <div class="page-title">Community</div>
-            <div class="page-subtitle">Shared configurations</div>
-        </div>
-        
-        <div class="search-container">
-            <input type="text" class="search-input" id="searchInput" placeholder="Search configs...">
-        </div>
-        
-        <div class="stats-bar" id="statsBar" style="display: none;">
-            <div class="stat-item">
+        <header>
+            <h1>Community</h1>
+            <div class="subtitle">Shared configurations</div>
+        </header>
+
+        <input type="search" class="search" id="searchInput" placeholder="Search configs..." />
+
+        <div class="stats" id="statsBar">
+            <div class="stat">
                 <div class="stat-value" id="totalConfigs">0</div>
                 <div class="stat-label">Total</div>
             </div>
-            <div class="stat-item">
+            <div class="stat">
                 <div class="stat-value" id="totalDownloads">0</div>
                 <div class="stat-label">Downloads</div>
             </div>
-            <div class="stat-item">
+            <div class="stat">
                 <div class="stat-value" id="topGame">-</div>
                 <div class="stat-label">Top Game</div>
             </div>
         </div>
-        
+
         <div class="config-grid" id="configsList">
-            <div class="loading">Loading</div>
+            <div class="loading">Loading configs</div>
         </div>
     </div>
-    
-    <button class="create-btn" onclick="showLoginModal()">
-        + Share Config
-    </button>
-    
+
+    <button class="fab" id="fabButton">+</button>
+
     <div class="modal-overlay" id="loginModal">
         <div class="modal-content">
             <button class="close-modal" onclick="hideLoginModal()">&times;</button>
             <div class="modal-title">Login</div>
             <input type="text" class="modal-input" id="modalUsername" placeholder="Username">
             <input type="password" class="modal-input" id="modalPassword" placeholder="Password">
-            <button class="modal-btn" onclick="modalLogin()">Login</button>
+            <button class="modal-btn" id="modalLoginBtn" onclick="modalLogin()">Login</button>
             <div class="modal-error" id="modalError"></div>
             <div class="modal-success" id="modalSuccess"></div>
         </div>
     </div>
-    
+
     <script>
         let allConfigs = [];
         let currentSearch = '';
+        let totalDownloads = 0;
+        let totalConfigs = 0;
         
         const configsList = document.getElementById('configsList');
         const loginModal = document.getElementById('loginModal');
@@ -1661,11 +1685,12 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
         const modalPassword = document.getElementById('modalPassword');
         const modalError = document.getElementById('modalError');
         const modalSuccess = document.getElementById('modalSuccess');
+        const modalLoginBtn = document.getElementById('modalLoginBtn');
         const searchInput = document.getElementById('searchInput');
-        const statsBar = document.getElementById('statsBar');
-        const totalConfigs = document.getElementById('totalConfigs');
-        const totalDownloads = document.getElementById('totalDownloads');
-        const topGame = document.getElementById('topGame');
+        const totalConfigsEl = document.getElementById('totalConfigs');
+        const totalDownloadsEl = document.getElementById('totalDownloads');
+        const topGameEl = document.getElementById('topGame');
+        const fabButton = document.getElementById('fabButton');
         
         function showLoginModal() {
             loginModal.classList.add('active');
@@ -1679,6 +1704,8 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
             modalUsername.value = '';
             modalPassword.value = '';
         }
+        
+        fabButton.addEventListener('click', showLoginModal);
         
         loginModal.addEventListener('click', function(e) {
             if (e.target === loginModal) {
@@ -1697,10 +1724,8 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
             
             modalError.textContent = '';
             modalSuccess.textContent = '';
-            
-            const btn = document.querySelector('.modal-btn');
-            btn.disabled = true;
-            btn.textContent = 'Logging in...';
+            modalLoginBtn.disabled = true;
+            modalLoginBtn.textContent = 'Logging in...';
             
             try {
                 const res = await fetch('/api/user-login', {
@@ -1712,7 +1737,7 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
                 const data = await res.json();
                 
                 if (data.valid) {
-                    modalSuccess.textContent = 'Success';
+                    modalSuccess.textContent = 'Login successful';
                     
                     setTimeout(() => {
                         if (data.license_key) {
@@ -1721,36 +1746,84 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
                     }, 800);
                 } else {
                     modalError.textContent = data.error || 'Login failed';
-                    btn.disabled = false;
-                    btn.textContent = 'Login';
+                    modalLoginBtn.disabled = false;
+                    modalLoginBtn.textContent = 'Login';
                 }
             } catch (e) {
                 modalError.textContent = 'Connection error';
-                btn.disabled = false;
-                btn.textContent = 'Login';
+                modalLoginBtn.disabled = false;
+                modalLoginBtn.textContent = 'Login';
             }
+        }
+        
+        function animateCounter(el, target) {
+            const duration = 1800;
+            const startTime = performance.now();
+            
+            function update(time) {
+                const elapsed = time - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 4);
+                const current = Math.floor(eased * target);
+                
+                el.textContent = current;
+                
+                if (progress < 1) {
+                    requestAnimationFrame(update);
+                } else {
+                    el.textContent = target;
+                }
+            }
+            
+            requestAnimationFrame(update);
         }
         
         async function loadConfigs() {
             try {
-                configsList.innerHTML = '<div class="loading">Loading</div>';
+                configsList.innerHTML = '<div class="loading">Loading configs</div>';
                 
                 const res = await fetch('/api/public-configs');
                 const data = await res.json();
                 
                 allConfigs = data.configs || [];
+                totalConfigs = allConfigs.length;
+                totalDownloads = data.total_downloads || 0;
+                
+                // Update stats
+                animateCounter(totalConfigsEl, totalConfigs);
+                animateCounter(totalDownloadsEl, totalDownloads);
+                
+                // Calculate top game
+                const gameCounts = {};
+                allConfigs.forEach(config => {
+                    const game = config.game_name || 'Unknown';
+                    gameCounts[game] = (gameCounts[game] || 0) + 1;
+                });
+                
+                let topGameName = '-';
+                let maxCount = 0;
+                for (const [game, count] of Object.entries(gameCounts)) {
+                    if (count > maxCount) {
+                        maxCount = count;
+                        topGameName = game;
+                    }
+                }
+                
+                if (topGameName === '-') {
+                    topGameEl.textContent = '-';
+                } else {
+                    animateCounter(topGameEl, topGameName);
+                }
                 
                 if (allConfigs.length === 0) {
-                    configsList.innerHTML = '<div class="empty-state">No configs yet</div>';
-                    updateStats();
+                    configsList.innerHTML = '<div class="empty">No configs yet</div>';
                     return;
                 }
                 
                 filterConfigs();
-                updateStats();
                 
             } catch(error) {
-                configsList.innerHTML = '<div class="error-state">Failed to load</div>';
+                configsList.innerHTML = '<div class="empty">Failed to load configs</div>';
             }
         }
         
@@ -1762,7 +1835,8 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
                 return (
                     (config.config_name || '').toLowerCase().includes(searchLower) ||
                     (config.game_name || '').toLowerCase().includes(searchLower) ||
-                    (config.author_name || '').toLowerCase().includes(searchLower)
+                    (config.author_name || '').toLowerCase().includes(searchLower) ||
+                    (config.description || '').toLowerCase().includes(searchLower)
                 );
             });
             
@@ -1771,7 +1845,7 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
         
         function displayConfigs(configs) {
             if (configs.length === 0) {
-                configsList.innerHTML = '<div class="empty-state">No matches</div>';
+                configsList.innerHTML = '<div class="empty">No configs found</div>';
                 return;
             }
             
@@ -1785,8 +1859,8 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
                     <div class="config-game">${escapeHtml(config.game_name)}</div>
                     <div class="config-description">${escapeHtml(config.description || 'No description')}</div>
                     <div class="config-footer">
-                        <span class="config-author">${escapeHtml(config.author_name)}</span>
-                        <span class="config-downloads">${config.downloads || 0} downloads</span>
+                        <span>by ${escapeHtml(config.author_name)}</span>
+                        <span>${config.downloads || 0} downloads</span>
                     </div>
                     <button class="load-btn" onclick="viewConfig(${config.id})">View</button>
                 `;
@@ -1794,46 +1868,9 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
             });
         }
         
-        function updateStats() {
-            if (allConfigs.length === 0) {
-                statsBar.style.display = 'none';
-                return;
-            }
-            
-            statsBar.style.display = 'flex';
-            totalConfigs.textContent = allConfigs.length;
-            
-            const downloads = allConfigs.reduce((sum, c) => sum + (c.downloads || 0), 0);
-            totalDownloads.textContent = downloads;
-            
-            const games = {};
-            allConfigs.forEach(c => {
-                const game = c.game_name || 'Unknown';
-                games[game] = (games[game] || 0) + 1;
-            });
-            
-            let topGameName = 'None';
-            let maxCount = 0;
-            for (const [game, count] of Object.entries(games)) {
-                if (count > maxCount) {
-                    maxCount = count;
-                    topGameName = game;
-                }
-            }
-            topGame.textContent = topGameName;
-        }
-        
         function viewConfig(configId) {
             showLoginModal();
             localStorage.setItem('pendingConfigId', configId);
-        }
-        
-        function refreshConfigs() {
-            loadConfigs();
-        }
-        
-        function showStats() {
-            statsBar.style.display = statsBar.style.display === 'none' ? 'flex' : 'none';
         }
         
         function escapeHtml(text) {
@@ -1847,9 +1884,19 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
             filterConfigs();
         });
         
+        // Load configs on page load
         loadConfigs();
+        
+        // Refresh every 60 seconds
         setInterval(loadConfigs, 60000);
+        
+        // Check for pending config
+        const pendingConfigId = localStorage.getItem('pendingConfigId');
+        if (pendingConfigId) {
+            localStorage.removeItem('pendingConfigId');
+        }
     </script>
+
 """ + ENHANCED_ANTI_DEVTOOLS_JS + """
 </body>
 </html>
@@ -1857,23 +1904,21 @@ MINIMAL_COMMUNITY_HTML = """<!DOCTYPE html>
 
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
-    return HTMLResponse(content=MINIMAL_LOGIN_HTML)
+    return HTMLResponse(content=LOGIN_HTML)
 
 @app.get("/menu", response_class=HTMLResponse)
 def serve_menu_login():
-    return HTMLResponse(content=MINIMAL_LOGIN_HTML)
+    return HTMLResponse(content=LOGIN_HTML)
 
 @app.get("/community", response_class=HTMLResponse)
 def serve_community():
-    return HTMLResponse(content=MINIMAL_COMMUNITY_HTML)
+    return HTMLResponse(content=COMMUNITY_HTML)
 
 @app.get("/config/{license_key}", response_class=HTMLResponse)
 def serve_config_dashboard(license_key: str):
-    """Config dashboard page"""
     try:
         db = get_db()
         cur = db.cursor()
-        
         query = q("SELECT * FROM keys WHERE key=%s")
         cur.execute(query, (license_key,))
         result = cur.fetchone()
@@ -1886,12 +1931,12 @@ def serve_config_dashboard(license_key: str):
 <meta charset="UTF-8">
 <title>Invalid • Axion</title>
 <style>
-body{{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
-.container{{text-align:center;padding:40px;background:#111;border-radius:8px;border:1px solid #222}}
+body{{background:#0a0a0a;color:#fff;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
+.container{{text-align:center;padding:40px;background:#111113;border:1px solid #222228}}
 h1{{color:#ff4444;font-size:24px;font-weight:400;margin-bottom:20px}}
-p{{color:#999;margin-bottom:20px}}
-button{{padding:12px 30px;background:#1a1a1a;border:1px solid #333;color:#fff;border-radius:4px;cursor:pointer;font-size:14px}}
-button:hover{{background:#222}}
+p{{color:#8c8c94;margin-bottom:20px}}
+button{{padding:12px 30px;background:#18181c;border:1px solid #222228;color:#fff;cursor:pointer;font-size:14px}}
+button:hover{{background:#202028}}
 </style>
 </head>
 <body>
@@ -1911,24 +1956,24 @@ button:hover{{background:#222}}
 <title>Axion Config</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box;user-select:none}}
-body{{height:100vh;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#cfcfcf;display:flex;align-items:center;justify-content:center}}
-.window{{width:760px;height:520px;background:#111;border:1px solid #222;box-shadow:0 0 40px rgba(0,0,0,0.8);display:flex;flex-direction:column;overflow:hidden}}
-.topbar{{height:38px;background:#0a0a0a;border-bottom:1px solid #222;display:flex;align-items:center;padding:0 12px;gap:16px}}
-.title{{font-size:13px;color:#bfbfbf;padding-right:16px;border-right:1px solid #222}}
+body{{height:100vh;background:#0a0a0a;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#cfcfcf;display:flex;align-items:center;justify-content:center}}
+.window{{width:760px;height:520px;background:#111113;border:1px solid #222228;display:flex;flex-direction:column;overflow:hidden}}
+.topbar{{height:38px;background:#0a0a0c;border-bottom:1px solid #222228;display:flex;align-items:center;padding:0 12px;gap:16px}}
+.title{{font-size:13px;color:#bfbfbf;padding-right:16px;border-right:1px solid #222228}}
 .tabs{{display:flex;gap:18px;font-size:12px}}
 .tab{{color:#9a9a9a;cursor:pointer;transition:color 0.2s}}
 .tab:hover,.tab.active{{color:#ffffff}}
 .topbar-right{{margin-left:auto;display:flex;align-items:center}}
 .search-container{{position:relative;width:180px}}
-.search-bar{{width:100%;height:26px;background:#0a0a0a;border:1px solid #222;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none}}
+.search-bar{{width:100%;height:26px;background:#0a0a0c;border:1px solid #222228;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none}}
 .search-bar::placeholder{{color:#666}}
-.search-bar:focus{{border-color:#444}}
-.content{{flex:1;padding:10px;background:#0a0a0a;display:flex;align-items:center;justify-content:center;position:relative}}
+.search-bar:focus{{border-color:#44444a}}
+.content{{flex:1;padding:10px;background:#0a0a0c;display:flex;align-items:center;justify-content:center;position:relative}}
 .tab-content{{width:100%;height:100%;display:none}}
 .tab-content.active{{display:block}}
-.merged-panel{{width:100%;height:100%;background:#0a0a0a;border:1px solid #222;overflow:hidden;display:flex;align-items:center;justify-content:center}}
+.merged-panel{{width:100%;height:100%;background:#0a0a0c;border:1px solid #222228;overflow:hidden;display:flex;align-items:center;justify-content:center}}
 .inner-container{{width:98%;height:96%;display:flex;gap:14px;overflow:hidden}}
-.half-panel{{flex:1;background:#111;border:1px solid #222;overflow-y:auto;padding:14px 16px;position:relative}}
+.half-panel{{flex:1;background:#111113;border:1px solid #222228;overflow-y:auto;padding:14px 16px;position:relative}}
 .panel-header{{position:absolute;top:10px;left:16px;color:#bfbfbf;font-size:11px;font-weight:normal;pointer-events:none;z-index:1}}
 .toggle-row{{position:absolute;left:16px;display:flex;align-items:center;gap:12px;z-index:1}}
 .toggle-text{{display:flex;align-items:center;gap:12px}}
@@ -1936,52 +1981,52 @@ body{{height:100vh;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFo
 .toggle.active{{background:#ccc}}
 .enable-text{{color:#9a9a9a;font-size:11px;line-height:1;transition:color 0.25s;pointer-events:none}}
 .toggle.active + .enable-text{{color:#e0e0e0}}
-.keybind-picker{{width:80px;height:20px;background:#0a0a0a;border:1px solid #222;color:#cfcfcf;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}}
+.keybind-picker{{width:80px;height:20px;background:#0a0a0c;border:1px solid #222228;color:#cfcfcf;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}}
 .slider-label{{position:absolute;left:16px;color:#bfbfbf;font-size:11px;font-weight:normal;z-index:1}}
-.slider-container{{position:absolute;left:16px;width:210px;height:14px;background:#0a0a0a;border:1px solid #222;overflow:hidden;z-index:10}}
-.slider-track{{position:absolute;top:0;left:0;width:100%;height:100%;background:#0a0a0a}}
+.slider-container{{position:absolute;left:16px;width:210px;height:14px;background:#0a0a0c;border:1px solid #222228;overflow:hidden;z-index:10}}
+.slider-track{{position:absolute;top:0;left:0;width:100%;height:100%;background:#0a0a0c}}
 .slider-fill{{position:absolute;top:0;left:0;height:100%;background:#ccc;width:50%;transition:width 0.1s}}
 .slider-value{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:9px;font-weight:bold;pointer-events:none;z-index:3}}
 .half-panel::-webkit-scrollbar{{width:5px}}
-.half-panel::-webkit-scrollbar-track{{background:#0a0a0a}}
-.half-panel::-webkit-scrollbar-thumb{{background:#222}}
+.half-panel::-webkit-scrollbar-track{{background:#0a0a0c}}
+.half-panel::-webkit-scrollbar-thumb{{background:#222228}}
 .half-panel::-webkit-scrollbar-thumb:hover{{background:#333}}
 .custom-dropdown{{position:absolute;left:16px;width:210px;height:16px;z-index:100}}
-.dropdown-header{{width:100%;height:100%;background:#0a0a0a;border:1px solid #222;display:flex;align-items:center;padding:0 8px;cursor:pointer;font-size:10px;color:#cfcfcf}}
-.dropdown-list{{position:absolute;top:100%;left:0;width:100%;max-height:160px;background:#0a0a0a;border:1px solid #222;border-top:none;overflow-y:auto;display:none;z-index:101}}
+.dropdown-header{{width:100%;height:100%;background:#0a0a0c;border:1px solid #222228;display:flex;align-items:center;padding:0 8px;cursor:pointer;font-size:10px;color:#cfcfcf}}
+.dropdown-list{{position:absolute;top:100%;left:0;width:100%;max-height:160px;background:#0a0a0c;border:1px solid #222228;border-top:none;overflow-y:auto;display:none;z-index:101}}
 .dropdown-list.open{{display:block}}
 .dropdown-item{{padding:5px 10px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.15s}}
-.dropdown-item:hover{{background:#1a1a1a}}
+.dropdown-item:hover{{background:#18181c}}
 .dropdown-item.selected{{background:#222;color:#fff}}
 .config-list{{position:absolute;top:32px;left:16px;right:16px;bottom:16px;overflow-y:auto}}
 .config-list::-webkit-scrollbar{{width:6px}}
-.config-list::-webkit-scrollbar-track{{background:#0a0a0a}}
+.config-list::-webkit-scrollbar-track{{background:#0a0a0c}}
 .config-list::-webkit-scrollbar-thumb{{background:#333;border-radius:3px}}
 .config-list::-webkit-scrollbar-thumb:hover{{background:#444}}
-.config-item{{background:#0a0a0a;border:1px solid #222;padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:10px;position:relative}}
-.config-item:hover{{background:#111}}
+.config-item{{background:#0a0a0c;border:1px solid #222228;padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:10px;position:relative}}
+.config-item:hover{{background:#111113}}
 .config-name{{flex:1;font-size:10px;color:#fff;font-weight:normal}}
 .config-dots{{width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9a9a9a;font-size:16px;font-weight:bold;transition:color 0.2s;flex-shrink:0}}
 .config-dots:hover{{color:#fff}}
-.config-menu{{position:absolute;right:8px;top:28px;background:#0a0a0a;border:1px solid #222;display:none;z-index:200;min-width:100px}}
+.config-menu{{position:absolute;right:8px;top:28px;background:#0a0a0c;border:1px solid #222228;display:none;z-index:200;min-width:100px}}
 .config-menu.open{{display:block}}
 .config-menu-item{{padding:6px 12px;font-size:10px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;border-bottom:1px solid #1a1a1a;white-space:nowrap}}
 .config-menu-item:last-child{{border-bottom:none}}
-.config-menu-item:hover{{background:#1a1a1a;color:#fff}}
-.input-box{{width:100%;height:24px;background:#0a0a0a;border:1px solid #222;color:#cfcfcf;font-size:11px;padding:0 8px;outline:none}}
-.config-btn{{background:#0a0a0a;border:1px solid #222;padding:6px 12px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;width:100%;margin-top:6px}}
-.config-btn:hover{{background:#111}}
+.config-menu-item:hover{{background:#18181c;color:#fff}}
+.input-box{{width:100%;height:24px;background:#0a0a0c;border:1px solid #222228;color:#cfcfcf;font-size:11px;padding:0 8px;outline:none}}
+.config-btn{{background:#0a0a0c;border:1px solid #222228;padding:6px 12px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;width:100%;margin-top:6px}}
+.config-btn:hover{{background:#18181c}}
 .modal-overlay{{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:9999}}
 .modal-overlay.active{{display:flex}}
-.modal-box{{background:#111;border:1px solid #222;padding:24px;min-width:300px}}
+.modal-box{{background:#111113;border:1px solid #222228;padding:24px;min-width:300px}}
 .modal-title{{color:#fff;font-size:13px;margin-bottom:16px;font-weight:normal}}
-.modal-input{{width:100%;height:28px;background:#0a0a0a;border:1px solid #222;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none;margin-bottom:12px}}
-.modal-input:focus{{border-color:#444}}
+.modal-input{{width:100%;height:28px;background:#0a0a0c;border:1px solid #222228;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none;margin-bottom:12px}}
+.modal-input:focus{{border-color:#44444a}}
 .modal-buttons{{display:flex;gap:8px}}
-.modal-btn{{flex:1;height:28px;background:#0a0a0a;border:1px solid #222;color:#cfcfcf;font-size:11px;cursor:pointer;transition:background 0.2s}}
-.modal-btn:hover{{background:#111}}
-.modal-btn.primary{{background:#1a1a1a}}
-.modal-btn.primary:hover{{background:#252525}}
+.modal-btn{{flex:1;height:28px;background:#0a0a0c;border:1px solid #222228;color:#cfcfcf;font-size:11px;cursor:pointer;transition:background 0.2s}}
+.modal-btn:hover{{background:#18181c}}
+.modal-btn.primary{{background:#18181c}}
+.modal-btn.primary:hover{{background:#202028}}
 </style>
 </head>
 <body>
@@ -2648,12 +2693,12 @@ setInterval(loadConfig, 1000);
 <meta charset="UTF-8">
 <title>Error • Axion</title>
 <style>
-body{{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
-.container{{text-align:center;padding:40px;background:#111;border-radius:8px;border:1px solid #222}}
+body{{background:#0a0a0a;color:#fff;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
+.container{{text-align:center;padding:40px;background:#111113;border:1px solid #222228}}
 h1{{color:#ff4444;font-size:24px;font-weight:400;margin-bottom:20px}}
-.error-details{{color:#ff8888;font-size:13px;margin-top:20px;padding:15px;background:rgba(255,0,0,0.1);border-radius:4px}}
-button{{margin-top:20px;padding:12px 30px;background:#1a1a1a;border:1px solid #333;color:#fff;border-radius:4px;cursor:pointer;font-size:14px}}
-button:hover{{background:#222}}
+.error-details{{color:#ff8888;font-size:13px;margin-top:20px;padding:15px;background:rgba(255,0,0,0.1);border:1px solid #ff4444}}
+button{{margin-top:20px;padding:12px 30px;background:#18181c;border:1px solid #222228;color:#fff;cursor:pointer;font-size:14px}}
+button:hover{{background:#202028}}
 </style>
 </head>
 <body>
