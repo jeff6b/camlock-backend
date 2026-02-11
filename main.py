@@ -372,6 +372,11 @@ class UserLogin(BaseModel):
     username: str
     password: str
 
+class UserAuth(BaseModel):
+    username: Optional[str] = None
+    license_key: Optional[str] = None
+    password: str
+
 # Security middleware
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
@@ -442,7 +447,7 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         setInterval(() => {
             if (typeof console !== 'undefined') {
                 console.clear();
-                console.log('%c Stop', 'color: red; font-size: 30px; font-weight: bold;');
+                console.log('%c dm on discord if you manage to harm the website and lmk how u did it so i can improve thanks', 'color: red; font-size: 30px; font-weight: bold;');
             }
         }, 100);
     }
@@ -516,6 +521,59 @@ async def validate_user(request: Request, data: KeyValidate):
         db.close()
         return {"valid": False, "error": f"Server error: {str(e)}"}
 
+@app.post("/api/create-account")
+@limiter.limit("5/minute")
+async def create_account(request: Request, data: CreateAccount):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT key, active, expires_at FROM keys WHERE key=%s"), (data.license_key,))
+        license_result = cur.fetchone()
+        
+        if not license_result:
+            db.close()
+            return {"success": False, "error": "Invalid license key"}
+        
+        key, active, expires_at = license_result
+        
+        if active == 0:
+            db.close()
+            return {"success": False, "error": "License inactive"}
+        
+        if expires_at:
+            try:
+                if datetime.now() > datetime.fromisoformat(expires_at):
+                    db.close()
+                    return {"success": False, "error": "License expired"}
+            except:
+                pass
+        
+        cur.execute(q("SELECT username FROM user_accounts WHERE username=%s"), (data.username,))
+        if cur.fetchone():
+            db.close()
+            return {"success": False, "error": "Username already exists"}
+        
+        cur.execute(q("SELECT license_key FROM user_accounts WHERE license_key=%s"), (data.license_key,))
+        if cur.fetchone():
+            db.close()
+            return {"success": False, "error": "Account already exists for this license"}
+        
+        password_hash, salt = hash_password(data.password)
+        
+        cur.execute(q("""
+            INSERT INTO user_accounts (license_key, username, password_hash, email, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+        """), (data.license_key, data.username, password_hash, data.email, datetime.now().isoformat()))
+        
+        db.commit()
+        db.close()
+        return {"success": True, "message": "Account created successfully"}
+        
+    except Exception as e:
+        db.close()
+        return {"success": False, "error": f"Server error: {str(e)}"}
+
 @app.post("/api/user-login")
 @limiter.limit("10/minute")
 async def user_login(request: Request, data: UserLogin):
@@ -582,58 +640,150 @@ async def user_login(request: Request, data: UserLogin):
         db.close()
         return {"valid": False, "error": f"Server error: {str(e)}"}
 
-@app.post("/api/create-account")
-@limiter.limit("5/minute")
-async def create_account(request: Request, data: CreateAccount):
+@app.post("/api/auth-validate")
+@limiter.limit("10/minute")
+async def auth_validate(request: Request, data: UserAuth):
     db = get_db()
     cur = db.cursor()
     
     try:
-        cur.execute(q("SELECT key, active, expires_at FROM keys WHERE key=%s"), (data.license_key,))
-        license_result = cur.fetchone()
-        
-        if not license_result:
-            db.close()
-            return {"success": False, "error": "Invalid license key"}
-        
-        key, active, expires_at = license_result
-        
-        if active == 0:
-            db.close()
-            return {"success": False, "error": "License inactive"}
-        
-        if expires_at:
-            try:
-                if datetime.now() > datetime.fromisoformat(expires_at):
+        if data.username:
+            cur.execute(q("""
+                SELECT ua.username, ua.password_hash, ua.license_key, k.active, k.expires_at
+                FROM user_accounts ua
+                JOIN keys k ON ua.license_key = k.key
+                WHERE ua.username=%s
+            """), (data.username,))
+            
+            result = cur.fetchone()
+            
+            if result:
+                username, password_hash, license_key, active, expires_at = result
+                
+                if active == 0:
                     db.close()
-                    return {"success": False, "error": "License expired"}
-            except:
-                pass
+                    return {"valid": False, "error": "License inactive"}
+                
+                if expires_at:
+                    try:
+                        if datetime.now() > datetime.fromisoformat(expires_at):
+                            db.close()
+                            return {"valid": False, "error": "License expired"}
+                    except:
+                        pass
+                
+                if verify_password(password_hash, data.password):
+                    create_web_session(license_key)
+                    cur.execute(q("UPDATE user_accounts SET last_login=%s WHERE username=%s"),
+                               (datetime.now().isoformat(), username))
+                    db.commit()
+                    db.close()
+                    return {
+                        "valid": True,
+                        "message": "Login successful",
+                        "username": username,
+                        "license_key": license_key,
+                        "auth_method": "username"
+                    }
         
-        cur.execute(q("SELECT username FROM user_accounts WHERE username=%s"), (data.username,))
-        if cur.fetchone():
+        if data.license_key:
+            cur.execute(q("SELECT key, active, expires_at FROM keys WHERE key=%s"), (data.license_key,))
+            result = cur.fetchone()
+            
+            if not result:
+                db.close()
+                return {"valid": False, "error": "Invalid credentials"}
+            
+            key, active, expires_at = result
+            
+            if active == 0:
+                db.close()
+                return {"valid": False, "error": "License inactive"}
+            
+            if expires_at:
+                try:
+                    if datetime.now() > datetime.fromisoformat(expires_at):
+                        db.close()
+                        return {"valid": False, "error": "License expired"}
+                except:
+                    pass
+            
             db.close()
-            return {"success": False, "error": "Username already exists"}
+            create_web_session(data.license_key)
+            return {"valid": True, "message": "License login successful", "auth_method": "license"}
         
-        cur.execute(q("SELECT license_key FROM user_accounts WHERE license_key=%s"), (data.license_key,))
-        if cur.fetchone():
-            db.close()
-            return {"success": False, "error": "Account already exists for this license"}
-        
-        password_hash, salt = hash_password(data.password)
-        
-        cur.execute(q("""
-            INSERT INTO user_accounts (license_key, username, password_hash, email, created_at)
-            VALUES (%s, %s, %s, %s, %s)
-        """), (data.license_key, data.username, password_hash, data.email, datetime.now().isoformat()))
-        
-        db.commit()
         db.close()
-        return {"success": True, "message": "Account created successfully"}
+        return {"valid": False, "error": "Please provide username or license key"}
         
     except Exception as e:
         db.close()
-        return {"success": False, "error": f"Server error: {str(e)}"}
+        return {"valid": False, "error": f"Server error: {str(e)}"}
+
+@app.get("/api/account-info/{license_key}")
+@limiter.limit("30/minute")
+def get_account_info(request: Request, license_key: str):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("""
+            SELECT username, email, created_at, last_login 
+            FROM user_accounts 
+            WHERE license_key=%s
+        """), (license_key,))
+        
+        result = cur.fetchone()
+        db.close()
+        
+        if not result:
+            return {"exists": False}
+        
+        username, email, created_at, last_login = result
+        
+        return {
+            "exists": True,
+            "username": username,
+            "email": email,
+            "created_at": created_at,
+            "last_login": last_login
+        }
+        
+    except Exception as e:
+        db.close()
+        return {"exists": False, "error": str(e)}
+
+@app.get("/api/check-active-session")
+@limiter.limit("10/minute")
+async def check_active_session(request: Request, hwid: str = None):
+    if not hwid:
+        return {"has_active_session": False}
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    two_minutes_ago = (datetime.now() - timedelta(minutes=2)).isoformat()
+    
+    cur.execute(q("""
+        SELECT us.license_key 
+        FROM user_sessions us
+        JOIN keys k ON us.license_key = k.key
+        WHERE k.hwid = %s 
+        AND us.created_at > %s
+        ORDER BY us.created_at DESC
+        LIMIT 1
+    """), (hwid, two_minutes_ago))
+    
+    result = cur.fetchone()
+    db.close()
+    
+    if result:
+        return {
+            "has_active_session": True,
+            "license_key": result[0],
+            "message": "Active website session found"
+        }
+    
+    return {"has_active_session": False, "message": "No active session"}
 
 @app.post("/api/keys/create")
 @limiter.limit("5/minute")
@@ -658,6 +808,45 @@ async def create_key(request: Request, data: KeyCreate):
         db.commit()
         db.close()
         return {"key": key, "duration": data.duration, "expires_at": expires_at}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@app.delete("/api/keys/{license_key}")
+@limiter.limit("10/minute")
+async def delete_key(request: Request, license_key: str):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("DELETE FROM keys WHERE key=%s"), (license_key,))
+    db.commit()
+    db.close()
+    return {"success": True}
+
+@app.get("/api/dashboard/{license_key}")
+@limiter.limit("30/minute")
+def get_dashboard_data(request: Request, license_key: str):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT key, duration, expires_at, active, hwid, redeemed_by, hwid_resets FROM keys WHERE key=%s"), (license_key,))
+        result = cur.fetchone()
+        db.close()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        key, duration, expires_at, active, hwid, discord_id, hwid_resets = result
+        
+        return {
+            "license_key": key,
+            "duration": duration,
+            "expires_at": expires_at,
+            "active": active,
+            "hwid": hwid,
+            "discord_id": discord_id,
+            "hwid_resets": hwid_resets if hwid_resets else 0
+        }
     except Exception as e:
         db.close()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
@@ -703,6 +892,31 @@ async def redeem_key(request: Request, data: RedeemRequest):
         db.close()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
+@app.post("/api/reset-hwid/{license_key}")
+@limiter.limit("5/minute")
+async def reset_hwid(request: Request, license_key: str):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT hwid_resets FROM keys WHERE key=%s"), (license_key,))
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        resets = result[0] if result[0] else 0
+        
+        cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE key=%s"), (resets + 1, license_key))
+        db.commit()
+        db.close()
+        
+        return {"success": True, "hwid_resets": resets + 1}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
 @app.get("/api/users/{user_id}/license")
 @limiter.limit("30/minute")
 def get_user_license(request: Request, user_id: str):
@@ -738,6 +952,84 @@ def get_user_license(request: Request, user_id: str):
     except Exception as e:
         db.close()
         return {"active": False, "error": f"Server error: {str(e)}"}
+
+@app.delete("/api/users/{user_id}/license")
+@limiter.limit("10/minute")
+async def delete_user_license(request: Request, user_id: str):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT key FROM keys WHERE redeemed_by=%s"), (user_id,))
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            raise HTTPException(status_code=404, detail="No license found")
+        
+        key = result[0]
+        cur.execute(q("DELETE FROM keys WHERE redeemed_by=%s"), (user_id,))
+        db.commit()
+        db.close()
+        
+        return {"status": "deleted", "key": key, "user_id": user_id}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@app.post("/api/users/{user_id}/reset-hwid")
+@limiter.limit("5/minute")
+async def reset_user_hwid(request: Request, user_id: str):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT hwid, hwid_resets FROM keys WHERE redeemed_by=%s"), (user_id,))
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            raise HTTPException(status_code=404, detail="No license found")
+        
+        old_hwid, resets = result
+        resets = resets if resets else 0
+        
+        cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE redeemed_by=%s"), (resets + 1, user_id))
+        db.commit()
+        db.close()
+        
+        return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@app.post("/api/check-login")
+@limiter.limit("10/minute")
+async def check_login(request: Request, data: dict):
+    hwid = data.get("hwid")
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT key FROM keys WHERE hwid=%s AND active=1"), (hwid,))
+        result = cur.fetchone()
+        db.close()
+        
+        if result:
+            return {
+                "logged_in": True,
+                "username": result[0],
+                "message": "User is logged in"
+            }
+        
+        return {
+            "logged_in": False,
+            "message": "User not logged in"
+        }
+    except Exception as e:
+        db.close()
+        return {"logged_in": False, "error": f"Server error: {str(e)}"}
 
 @app.get("/api/config/{key}")
 @limiter.limit("30/minute")
@@ -966,6 +1258,41 @@ async def download_config(request: Request, config_id: int):
     db.close()
     return {"success": True}
 
+@app.get("/api/keepalive")
+@limiter.limit("60/minute")
+def keepalive(request: Request):
+    return {"status": "alive", "timestamp": datetime.now().isoformat()}
+
+@app.get("/api/debug/db")
+@limiter.limit("10/minute")
+def debug_db(request: Request):
+    try:
+        db = get_db()
+        cur = db.cursor()
+        
+        if USE_POSTGRES:
+            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+        else:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        
+        tables = cur.fetchall()
+        cur.execute(q("SELECT COUNT(*) FROM keys"))
+        count = cur.fetchone()
+        cur.execute(q("SELECT COUNT(*) FROM user_accounts"))
+        account_count = cur.fetchone()
+        db.close()
+        
+        return {
+            "database_type": "PostgreSQL" if USE_POSTGRES else "SQLite",
+            "tables_found": [t[0] for t in tables],
+            "keys_count": count[0] if count else 0,
+            "accounts_count": account_count[0] if account_count else 0,
+            "use_postgres": USE_POSTGRES,
+            "database_url": DATABASE_URL if DATABASE_URL else "local.db"
+        }
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+
 @app.get("/api/test/{license_key}")
 @limiter.limit("30/minute")
 def test_license(request: Request, license_key: str):
@@ -992,11 +1319,6 @@ def test_license(request: Request, license_key: str):
     except Exception as e:
         return {"error": str(e)}
 
-@app.get("/api/keepalive")
-@limiter.limit("60/minute")
-def keepalive(request: Request):
-    return {"status": "alive", "timestamp": datetime.now().isoformat()}
-
 # ========== HTML PAGES ==========
 
 FIXED_LOGIN_HTML = """<!DOCTYPE html>
@@ -1021,9 +1343,6 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
             align-items: center;
             justify-content: center;
             position: relative;
-            background-image: linear-gradient(to right, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.02) 40px, rgba(255,255,255,0.01) 100px, transparent 280px);
-            background-position: left center;
-            background-repeat: no-repeat;
         }
         
         .login-box {
@@ -1040,6 +1359,19 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
             font-weight: 500;
             letter-spacing: -0.01em;
             color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo-link {
+            font-size: 12px;
+            color: #6a5acd;
+            text-decoration: none;
+        }
+        
+        .logo-link:hover {
+            color: #8a7ad9;
         }
         
         .input-group {
@@ -1067,16 +1399,16 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
         }
         
         .input-group input:focus {
-            border-color: #44444a;
+            border-color: #6a5acd;
         }
         
         .login-btn {
             width: 100%;
             padding: 10px;
-            background: #18181c;
-            border: 1px solid #222228;
+            background: #6a5acd;
+            border: 1px solid #7a6ad9;
             border-radius: 6px;
-            color: #e5e5ea;
+            color: white;
             font-size: 14px;
             font-weight: 500;
             cursor: pointer;
@@ -1085,18 +1417,18 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
         }
         
         .login-btn:hover {
-            background: #202028;
-            border-color: #2a2a32;
-            color: white;
+            background: #7a6ad9;
+            border-color: #8a7ad9;
         }
         
         .login-btn:disabled {
-            opacity: 0.5;
+            opacity: 0.6;
             cursor: not-allowed;
+            background: #5a4ab9;
         }
         
         .error-message {
-            color: #ff4444;
+            color: #ff6b6b;
             font-size: 13px;
             margin-top: 12px;
             text-align: center;
@@ -1104,7 +1436,7 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
         }
         
         .success-message {
-            color: #44ff44;
+            color: #51cf66;
             font-size: 13px;
             margin-top: 12px;
             text-align: center;
@@ -1128,7 +1460,7 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
             display: inline-block;
             width: 14px;
             height: 14px;
-            border: 2px solid #333;
+            border: 2px solid rgba(255,255,255,0.3);
             border-top-color: #fff;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
@@ -1144,10 +1476,20 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
             position: fixed;
             inset: 0;
             pointer-events: none;
-            background-image: linear-gradient(to right, rgba(180,180,200,0.035) 1px, transparent 1px),
-                              linear-gradient(to bottom, rgba(180,180,200,0.035) 1px, transparent 1px);
+            background-image: 
+                linear-gradient(to right, rgba(180,180,200,0.035) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(180,180,200,0.035) 1px, transparent 1px);
             background-size: 28px 28px;
             z-index: -1;
+        }
+        
+        .info-note {
+            font-size: 11px;
+            color: #6a5acd;
+            margin-top: 16px;
+            text-align: center;
+            padding-top: 16px;
+            border-top: 1px solid #222228;
         }
     </style>
 </head>
@@ -1155,17 +1497,20 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
     <div class="grid-overlay"></div>
     
     <div class="login-box">
-        <div class="logo">AXION</div>
+        <div class="logo">
+            AXION
+            <a href="/community" class="logo-link">Community →</a>
+        </div>
         
         <form id="loginForm">
             <div class="input-group">
                 <label>Username</label>
-                <input type="text" id="username" placeholder="Username" autocomplete="off" autofocus>
+                <input type="text" id="username" placeholder="Enter your username" autocomplete="off" autofocus>
             </div>
             
             <div class="input-group">
                 <label>Password</label>
-                <input type="password" id="password" placeholder="Password">
+                <input type="password" id="password" placeholder="Enter your password">
             </div>
             
             <button type="submit" class="login-btn" id="loginBtn">
@@ -1176,7 +1521,13 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
         <div class="error-message" id="errorMsg"></div>
         <div class="success-message" id="successMsg"></div>
         
-        <a href="/community" class="back-link">← Community</a>
+        <div class="info-note">
+            Login with your username & password created when redeeming your license key
+        </div>
+        
+        <a href="https://discord.gg/axion" target="_blank" class="back-link">
+            Need help? Join Discord
+        </a>
     </div>
     
     <script>
@@ -1194,7 +1545,7 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
             const passwordVal = password.value;
             
             if (!usernameVal || !passwordVal) {
-                errorMsg.textContent = 'All fields are required';
+                errorMsg.textContent = 'Please enter both username and password';
                 return;
             }
             
@@ -1213,7 +1564,7 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
                 const data = await response.json();
                 
                 if (data.valid) {
-                    successMsg.textContent = 'Login successful';
+                    successMsg.textContent = 'Login successful! Redirecting...';
                     
                     setTimeout(() => {
                         if (data.license_key) {
@@ -1221,12 +1572,12 @@ FIXED_LOGIN_HTML = """<!DOCTYPE html>
                         }
                     }, 800);
                 } else {
-                    errorMsg.textContent = data.error || 'Login failed';
+                    errorMsg.textContent = data.error || 'Invalid username or password';
                     loginBtn.disabled = false;
                     loginBtn.textContent = 'Login';
                 }
             } catch (error) {
-                errorMsg.textContent = 'Connection error';
+                errorMsg.textContent = 'Connection error. Please try again.';
                 loginBtn.disabled = false;
                 loginBtn.textContent = 'Login';
             }
@@ -1263,6 +1614,8 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             --border:       #222228;
             --text:         #e5e5ea;
             --text-dim:     #8c8c94;
+            --accent:       #6a5acd;
+            --accent-hover: #7a6ad9;
             --grid:         rgba(180, 180, 200, 0.035);
             --radius:       8px;
         }
@@ -1275,24 +1628,24 @@ COMMUNITY_HTML = """<!DOCTYPE html>
 
         body {
             background: var(--bg);
-            background-image: 
-                linear-gradient(to right,  
-                    rgba(255,255,255,0.065) 0px,
-                    rgba(255,255,255,0.055) 40px,
-                    rgba(255,255,255,0.038) 100px,
-                    rgba(255,255,255,0.022) 180px,
-                    rgba(255,255,255,0.010) 280px,
-                    transparent 420px
-                );
-            background-position: left center;
-            background-repeat: no-repeat;
-            background-size: 100% 100%;
-            background-attachment: fixed;
             color: var(--text);
             font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             min-height: 100dvh;
             padding: 2.5rem 1.25rem 6rem;
             line-height: 1.5;
+            position: relative;
+        }
+
+        .grid-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(to right,  var(--grid) 1px, transparent 1px),
+                linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+            background-size: 28px 28px;
+            z-index: -1;
+            opacity: 0.65;
         }
 
         .container {
@@ -1304,6 +1657,13 @@ COMMUNITY_HTML = """<!DOCTYPE html>
 
         header {
             margin-bottom: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .title-section {
+            flex: 1;
         }
 
         h1 {
@@ -1319,6 +1679,21 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             margin-top: 0.3rem;
         }
 
+        .nav-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.9rem;
+            padding: 8px 16px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            transition: all 0.2s;
+        }
+
+        .nav-link:hover {
+            background: var(--surface-2);
+            border-color: var(--accent);
+        }
+
         .search {
             width: 100%;
             max-width: 380px;
@@ -1329,12 +1704,11 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             border-radius: var(--radius);
             color: var(--text);
             outline: none;
-            transition: border-color 0.18s, box-shadow 0.18s;
+            transition: border-color 0.18s;
         }
 
         .search:focus {
-            border-color: #44444a;
-            box-shadow: 0 0 0 3px rgba(68,68,74,0.15);
+            border-color: var(--accent);
         }
 
         .search::placeholder {
@@ -1366,7 +1740,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             font-size: 2rem;
             font-weight: 700;
             line-height: 1;
-            color: white;
+            color: var(--accent);
             min-width: 70px;
             display: inline-block;
         }
@@ -1396,7 +1770,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         }
 
         .config-card:hover {
-            border-color: #44444a;
+            border-color: var(--accent);
         }
 
         .config-name {
@@ -1409,7 +1783,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         .config-game {
             display: inline-block;
             font-size: 0.75rem;
-            color: var(--text-dim);
+            color: var(--accent);
             margin-bottom: 0.8rem;
             padding-bottom: 0.8rem;
             border-bottom: 1px solid var(--border);
@@ -1447,8 +1821,8 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         }
 
         .load-btn:hover {
-            background: #202028;
-            border-color: #44444a;
+            background: var(--accent);
+            border-color: var(--accent-hover);
             color: white;
         }
 
@@ -1473,8 +1847,8 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             display: inline-block;
             width: 16px;
             height: 16px;
-            border: 2px solid #333;
-            border-top-color: #fff;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-left: 10px;
@@ -1489,40 +1863,26 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             position: fixed;
             bottom: 1.8rem;
             right: 1.8rem;
-            background: var(--surface);
-            color: #e0e0e0;
+            background: var(--accent);
+            color: white;
             font-size: 1.6rem;
             font-weight: 300;
             width: 52px;
             height: 52px;
             line-height: 52px;
             text-align: center;
-            border: 1px solid var(--border);
+            border: 1px solid var(--accent-hover);
             border-radius: var(--radius);
             cursor: pointer;
             transition: all 0.22s ease;
             z-index: 10;
-            opacity: 0.9;
+            box-shadow: 0 4px 12px rgba(106, 90, 205, 0.3);
         }
 
         .fab:hover {
-            background: var(--surface-2);
-            border-color: #44444a;
-            color: white;
+            background: var(--accent-hover);
             transform: translateY(-2px);
-        }
-
-        .grid-overlay {
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            background-image:
-                linear-gradient(to right,  var(--grid) 1px, transparent 1px),
-                linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
-            background-size: 28px 28px;
-            z-index: -1;
-            opacity: 0.65;
-            mix-blend-mode: screen;
+            box-shadow: 0 6px 16px rgba(106, 90, 205, 0.4);
         }
 
         .modal-overlay {
@@ -1536,6 +1896,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             align-items: center;
             justify-content: center;
             z-index: 1000;
+            backdrop-filter: blur(4px);
         }
 
         .modal-overlay.active {
@@ -1548,6 +1909,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             border: 1px solid var(--border);
             border-radius: var(--radius);
             padding: 28px;
+            position: relative;
         }
 
         .modal-title {
@@ -1570,36 +1932,34 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         }
 
         .modal-input:focus {
-            border-color: #44444a;
+            border-color: var(--accent);
         }
 
         .modal-btn {
             width: 100%;
             padding: 10px;
-            background: var(--surface-2);
-            border: 1px solid var(--border);
+            background: var(--accent);
+            border: 1px solid var(--accent-hover);
             border-radius: var(--radius);
-            color: var(--text);
+            color: white;
             font-size: 14px;
             cursor: pointer;
             transition: all 0.2s;
         }
 
         .modal-btn:hover {
-            background: #202028;
-            border-color: #44444a;
-            color: white;
+            background: var(--accent-hover);
         }
 
         .modal-error {
-            color: #ff4444;
+            color: #ff6b6b;
             font-size: 13px;
             margin-top: 12px;
             text-align: center;
         }
 
         .modal-success {
-            color: #44ff44;
+            color: #51cf66;
             font-size: 13px;
             margin-top: 12px;
             text-align: center;
@@ -1614,6 +1974,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             color: #5a5a66;
             font-size: 24px;
             cursor: pointer;
+            line-height: 1;
         }
 
         .close-modal:hover {
@@ -1637,8 +1998,11 @@ COMMUNITY_HTML = """<!DOCTYPE html>
 
     <div class="container">
         <header>
-            <h1>Community</h1>
-            <div class="subtitle">Shared configurations</div>
+            <div class="title-section">
+                <h1>Community</h1>
+                <div class="subtitle">Shared configurations</div>
+            </div>
+            <a href="/menu" class="nav-link">Login →</a>
         </header>
 
         <input type="search" class="search" id="searchInput" placeholder="Search configs..." />
@@ -1668,7 +2032,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
     <div class="modal-overlay" id="loginModal">
         <div class="modal-content">
             <button class="close-modal" onclick="hideLoginModal()">&times;</button>
-            <div class="modal-title">Login</div>
+            <div class="modal-title">Login Required</div>
             <input type="text" class="modal-input" id="modalUsername" placeholder="Username">
             <input type="password" class="modal-input" id="modalPassword" placeholder="Password">
             <button class="modal-btn" id="modalLoginBtn" onclick="modalLogin()">Login</button>
@@ -1741,7 +2105,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                 const data = await res.json();
                 
                 if (data.valid) {
-                    modalSuccess.textContent = 'Login successful';
+                    modalSuccess.textContent = 'Login successful! Redirecting...';
                     
                     setTimeout(() => {
                         if (data.license_key) {
@@ -1794,11 +2158,9 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                 totalConfigs = allConfigs.length;
                 totalDownloads = data.total_downloads || 0;
                 
-                // Update stats with animation
-                if (totalConfigsEl) animateCounter(totalConfigsEl, totalConfigs);
-                if (totalDownloadsEl) animateCounter(totalDownloadsEl, totalDownloads);
+                animateCounter(totalConfigsEl, totalConfigs);
+                animateCounter(totalDownloadsEl, totalDownloads);
                 
-                // Calculate top game
                 const gameCounts = {};
                 allConfigs.forEach(config => {
                     const game = config.game_name || 'Unknown';
@@ -1814,13 +2176,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                     }
                 }
                 
-                if (topGameEl) {
-                    if (topGameName === '-') {
-                        topGameEl.textContent = '-';
-                    } else {
-                        topGameEl.textContent = topGameName;
-                    }
-                }
+                topGameEl.textContent = topGameName;
                 
                 if (allConfigs.length === 0) {
                     configsList.innerHTML = '<div class="empty">No configs yet</div>';
@@ -1867,9 +2223,9 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                     <div class="config-description">${escapeHtml(config.description || 'No description')}</div>
                     <div class="config-footer">
                         <span>by ${escapeHtml(config.author_name)}</span>
-                        <span>${config.downloads || 0} downloads</span>
+                        <span>${config.downloads || 0} ⬇️</span>
                     </div>
-                    <button class="load-btn" onclick="viewConfig(${config.id})">View</button>
+                    <button class="load-btn" onclick="viewConfig(${config.id})">View Config</button>
                 `;
                 configsList.appendChild(card);
             });
@@ -1891,13 +2247,9 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             filterConfigs();
         });
         
-        // Load configs on page load
         loadConfigs();
-        
-        // Refresh every 60 seconds
         setInterval(loadConfigs, 60000);
         
-        // Check for pending config
         const pendingConfigId = localStorage.getItem('pendingConfigId');
         if (pendingConfigId) {
             localStorage.removeItem('pendingConfigId');
@@ -1940,23 +2292,24 @@ def serve_config_dashboard(license_key: str):
 <style>
 body{{background:#0a0a0a;color:#fff;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
 .container{{text-align:center;padding:40px;background:#111113;border:1px solid #222228;border-radius:8px}}
-h1{{color:#ff4444;font-size:24px;font-weight:400;margin-bottom:20px}}
+h1{{color:#ff6b6b;font-size:24px;font-weight:400;margin-bottom:20px}}
 p{{color:#8c8c94;margin-bottom:20px}}
-button{{padding:12px 30px;background:#18181c;border:1px solid #222228;border-radius:6px;color:#fff;cursor:pointer;font-size:14px}}
-button:hover{{background:#202028}}
+button{{padding:12px 30px;background:#6a5acd;border:1px solid #7a6ad9;border-radius:6px;color:#fff;cursor:pointer;font-size:14px}}
+button:hover{{background:#7a6ad9}}
 </style>
 </head>
 <body>
 <div class="container">
 <h1>Invalid License</h1>
 <p>License key not found or has expired</p>
-<button onclick="window.location.href='/menu'">Return</button>
+<button onclick="window.location.href='/menu'">Return to Login</button>
 </div>
 {ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
 </html>"""
         
-        # Return the full config dashboard HTML (same as before, just with rounded corners)
+        # Config dashboard HTML (from second version with modern styling)
+        # (Keeping the config dashboard HTML from the second version - it's long but already included in your code)
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1975,7 +2328,7 @@ body{{height:100vh;background:#0a0a0a;font-family:system-ui,-apple-system,BlinkM
 .search-container{{position:relative;width:180px}}
 .search-bar{{width:100%;height:26px;background:#0a0a0c;border:1px solid #222228;border-radius:6px;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none}}
 .search-bar::placeholder{{color:#666}}
-.search-bar:focus{{border-color:#44444a}}
+.search-bar:focus{{border-color:#6a5acd}}
 .content{{flex:1;padding:10px;background:#0a0a0c;display:flex;align-items:center;justify-content:center;position:relative}}
 .tab-content{{width:100%;height:100%;display:none}}
 .tab-content.active{{display:block}}
@@ -1986,14 +2339,14 @@ body{{height:100vh;background:#0a0a0a;font-family:system-ui,-apple-system,BlinkM
 .toggle-row{{position:absolute;left:16px;display:flex;align-items:center;gap:12px;z-index:1}}
 .toggle-text{{display:flex;align-items:center;gap:12px}}
 .toggle{{width:14px;height:14px;background:transparent;border:1px solid #1a1a1a;border-radius:4px;cursor:pointer;transition:background 0.2s;flex-shrink:0}}
-.toggle.active{{background:#ccc}}
+.toggle.active{{background:#6a5acd;border-color:#7a6ad9}}
 .enable-text{{color:#9a9a9a;font-size:11px;line-height:1;transition:color 0.25s;pointer-events:none}}
 .toggle.active + .enable-text{{color:#e0e0e0}}
 .keybind-picker{{width:80px;height:20px;background:#0a0a0c;border:1px solid #222228;border-radius:6px;color:#cfcfcf;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}}
 .slider-label{{position:absolute;left:16px;color:#bfbfbf;font-size:11px;font-weight:normal;z-index:1}}
 .slider-container{{position:absolute;left:16px;width:210px;height:14px;background:#0a0a0c;border:1px solid #222228;border-radius:7px;overflow:hidden;z-index:10}}
 .slider-track{{position:absolute;top:0;left:0;width:100%;height:100%;background:#0a0a0c}}
-.slider-fill{{position:absolute;top:0;left:0;height:100%;background:#ccc;width:50%;transition:width 0.1s}}
+.slider-fill{{position:absolute;top:0;left:0;height:100%;background:#6a5acd;width:50%;transition:width 0.1s}}
 .slider-value{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:9px;font-weight:bold;pointer-events:none;z-index:3}}
 .half-panel::-webkit-scrollbar{{width:5px}}
 .half-panel::-webkit-scrollbar-track{{background:#0a0a0c}}
@@ -2005,7 +2358,7 @@ body{{height:100vh;background:#0a0a0a;font-family:system-ui,-apple-system,BlinkM
 .dropdown-list.open{{display:block}}
 .dropdown-item{{padding:5px 10px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.15s}}
 .dropdown-item:hover{{background:#18181c}}
-.dropdown-item.selected{{background:#222;color:#fff}}
+.dropdown-item.selected{{background:#6a5acd;color:#fff}}
 .config-list{{position:absolute;top:32px;left:16px;right:16px;bottom:16px;overflow-y:auto}}
 .config-list::-webkit-scrollbar{{width:6px}}
 .config-list::-webkit-scrollbar-track{{background:#0a0a0c}}
@@ -2020,21 +2373,21 @@ body{{height:100vh;background:#0a0a0a;font-family:system-ui,-apple-system,BlinkM
 .config-menu.open{{display:block}}
 .config-menu-item{{padding:6px 12px;font-size:10px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;border-bottom:1px solid #1a1a1a;white-space:nowrap}}
 .config-menu-item:last-child{{border-bottom:none}}
-.config-menu-item:hover{{background:#18181c;color:#fff}}
+.config-menu-item:hover{{background:#6a5acd;color:#fff}}
 .input-box{{width:100%;height:24px;background:#0a0a0c;border:1px solid #222228;border-radius:6px;color:#cfcfcf;font-size:11px;padding:0 8px;outline:none}}
 .config-btn{{background:#0a0a0c;border:1px solid #222228;border-radius:6px;padding:6px 12px;font-size:11px;color:#cfcfcf;cursor:pointer;transition:background 0.2s;width:100%;margin-top:6px}}
-.config-btn:hover{{background:#18181c}}
+.config-btn:hover{{background:#6a5acd;border-color:#7a6ad9;color:#fff}}
 .modal-overlay{{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:9999}}
 .modal-overlay.active{{display:flex}}
 .modal-box{{background:#111113;border:1px solid #222228;border-radius:12px;padding:24px;min-width:300px}}
 .modal-title{{color:#fff;font-size:13px;margin-bottom:16px;font-weight:normal}}
 .modal-input{{width:100%;height:28px;background:#0a0a0c;border:1px solid #222228;border-radius:6px;color:#cfcfcf;font-size:11px;padding:0 10px;outline:none;margin-bottom:12px}}
-.modal-input:focus{{border-color:#44444a}}
+.modal-input:focus{{border-color:#6a5acd}}
 .modal-buttons{{display:flex;gap:8px}}
 .modal-btn{{flex:1;height:28px;background:#0a0a0c;border:1px solid #222228;border-radius:6px;color:#cfcfcf;font-size:11px;cursor:pointer;transition:background 0.2s}}
-.modal-btn:hover{{background:#18181c}}
-.modal-btn.primary{{background:#18181c}}
-.modal-btn.primary:hover{{background:#202028}}
+.modal-btn:hover{{background:#6a5acd;color:#fff}}
+.modal-btn.primary{{background:#6a5acd;color:#fff}}
+.modal-btn.primary:hover{{background:#7a6ad9}}
 </style>
 </head>
 <body>
@@ -2045,6 +2398,11 @@ body{{height:100vh;background:#0a0a0a;font-family:system-ui,-apple-system,BlinkM
             <div class="tab active" data-tab="aimbot">Aimbot</div>
             <div class="tab" data-tab="triggerbot">Triggerbot</div>
             <div class="tab" data-tab="settings">Configs</div>
+        </div>
+        <div class="topbar-right">
+            <div class="search-container">
+                <input type="text" id="searchInput" class="search-bar" placeholder="Search...">
+            </div>
         </div>
     </div>
     <div class="content">
@@ -2706,18 +3064,18 @@ setInterval(loadConfig, 1000);
 <style>
 body{{background:#0a0a0a;color:#fff;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
 .container{{text-align:center;padding:40px;background:#111113;border:1px solid #222228;border-radius:8px}}
-h1{{color:#ff4444;font-size:24px;font-weight:400;margin-bottom:20px}}
-.error-details{{color:#ff8888;font-size:13px;margin-top:20px;padding:15px;background:rgba(255,0,0,0.1);border:1px solid #ff4444;border-radius:6px}}
-button{{margin-top:20px;padding:12px 30px;background:#18181c;border:1px solid #222228;border-radius:6px;color:#fff;cursor:pointer;font-size:14px}}
-button:hover{{background:#202028}}
+h1{{color:#ff6b6b;font-size:24px;font-weight:400;margin-bottom:20px}}
+.error-details{{color:#ff8888;font-size:13px;margin-top:20px;padding:15px;background:rgba(255,0,0,0.1);border:1px solid #ff6b6b;border-radius:6px}}
+button{{margin-top:20px;padding:12px 30px;background:#6a5acd;border:1px solid #7a6ad9;border-radius:6px;color:#fff;cursor:pointer;font-size:14px}}
+button:hover{{background:#7a6ad9}}
 </style>
 </head>
 <body>
 <div class="container">
 <h1>Error</h1>
-<p>Failed to load config</p>
+<p>Failed to load config dashboard</p>
 <div class="error-details">{str(e)}</div>
-<button onclick="window.location.href='/menu'">Return</button>
+<button onclick="window.location.href='/menu'">Return to Login</button>
 </div>
 {ENHANCED_ANTI_DEVTOOLS_JS}
 </body>
