@@ -483,7 +483,9 @@ async def validate_user(request: Request, data: KeyValidate):
     except Exception as e:
         db.close()
         print(f"Error in validate_user: {e}")
-        return {"valid": False, "error": "Server error"}
+        import traceback
+        traceback.print_exc()
+        return {"valid": False, "error": f"Server error: {str(e)}"}
 
 @app.post("/api/create-account")
 @limiter.limit("5/minute")
@@ -545,7 +547,9 @@ async def create_account(request: Request, data: CreateAccount):
     except Exception as e:
         db.close()
         print(f"Error in create_account: {e}")
-        return {"success": False, "error": str(e)}
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": f"Server error: {str(e)}"}
 
 @app.post("/api/user-login")
 @limiter.limit("10/minute")
@@ -621,7 +625,9 @@ async def user_login(request: Request, data: UserLogin):
     except Exception as e:
         db.close()
         print(f"Error in user_login: {e}")
-        return {"valid": False, "error": "Server error"}
+        import traceback
+        traceback.print_exc()
+        return {"valid": False, "error": f"Server error: {str(e)}"}
 
 @app.post("/api/auth-validate")
 @limiter.limit("10/minute")
@@ -712,7 +718,9 @@ async def auth_validate(request: Request, data: UserAuth):
     except Exception as e:
         db.close()
         print(f"Error in auth_validate: {e}")
-        return {"valid": False, "error": "Server error"}
+        import traceback
+        traceback.print_exc()
+        return {"valid": False, "error": f"Server error: {str(e)}"}
 
 @app.get("/api/account-info/{license_key}")
 @limiter.limit("30/minute")
@@ -747,6 +755,8 @@ def get_account_info(request: Request, license_key: str):
     except Exception as e:
         db.close()
         print(f"Error in get_account_info: {e}")
+        import traceback
+        traceback.print_exc()
         return {"exists": False, "error": str(e)}
 
 @app.get("/api/check-active-session")
@@ -817,6 +827,8 @@ def get_config(request: Request, key: str):
     except Exception as e:
         db.close()
         print(f"Error in get_config: {e}")
+        import traceback
+        traceback.print_exc()
         return DEFAULT_CONFIG
 
 @app.post("/api/config/{key}")
@@ -847,7 +859,9 @@ async def set_config(request: Request, key: str, data: dict):
     except Exception as e:
         db.close()
         print(f"Error in set_config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.get("/api/configs/{license_key}/list")
 @limiter.limit("30/minute")
@@ -885,7 +899,10 @@ async def save_config(request: Request, license_key: str, data: SavedConfigReque
         return {"success": True, "message": "Config saved"}
     except Exception as e:
         db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error in save_config: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.get("/api/configs/{license_key}/load/{config_name}")
 @limiter.limit("30/minute")
@@ -955,7 +972,9 @@ def get_public_configs(request: Request):
         
         return {"configs": configs}
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error in get_public_configs: {e}")
+        import traceback
+        traceback.print_exc()
         return {"configs": []}
 
 @app.post("/api/public-configs/create")
@@ -973,7 +992,10 @@ async def create_public_config(request: Request, data: PublicConfig):
         return {"success": True}
     except Exception as e:
         db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error in create_public_config: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.get("/api/public-configs/{config_id}")
 @limiter.limit("30/minute")
@@ -1039,7 +1061,9 @@ async def create_key(request: Request, data: KeyCreate):
     except Exception as e:
         db.close()
         print(f"Error in create_key: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.delete("/api/keys/{license_key}")
 @limiter.limit("10/minute")
@@ -1059,25 +1083,32 @@ def get_dashboard_data(request: Request, license_key: str):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT key, duration, expires_at, active, hwid, redeemed_by, hwid_resets FROM keys WHERE key=%s"), (license_key,))
-    result = cur.fetchone()
-    
-    db.close()
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    key, duration, expires_at, active, hwid, discord_id, hwid_resets = result
-    
-    return {
-        "license_key": key,
-        "duration": duration,
-        "expires_at": expires_at,
-        "active": active,
-        "hwid": hwid,
-        "discord_id": discord_id,
-        "hwid_resets": hwid_resets if hwid_resets else 0
-    }
+    try:
+        cur.execute(q("SELECT key, duration, expires_at, active, hwid, redeemed_by, hwid_resets FROM keys WHERE key=%s"), (license_key,))
+        result = cur.fetchone()
+        
+        db.close()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        key, duration, expires_at, active, hwid, discord_id, hwid_resets = result
+        
+        return {
+            "license_key": key,
+            "duration": duration,
+            "expires_at": expires_at,
+            "active": active,
+            "hwid": hwid,
+            "discord_id": discord_id,
+            "hwid_resets": hwid_resets if hwid_resets else 0
+        }
+    except Exception as e:
+        db.close()
+        print(f"Error in get_dashboard_data: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.post("/api/redeem")
 @limiter.limit("5/minute")
@@ -1086,38 +1117,45 @@ async def redeem_key(request: Request, data: RedeemRequest):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT key, duration, redeemed_at, expires_at FROM keys WHERE key=%s"), (data.key,))
-    result = cur.fetchone()
-    
-    if not result:
+    try:
+        cur.execute(q("SELECT key, duration, redeemed_at, expires_at FROM keys WHERE key=%s"), (data.key,))
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            raise HTTPException(status_code=404, detail="Invalid key")
+        
+        key, duration, redeemed_at, existing_expires = result
+        
+        if redeemed_at:
+            db.close()
+            raise HTTPException(status_code=400, detail="Already redeemed")
+        
+        now = datetime.now()
+        expires_at = existing_expires  # Use existing expires_at (for lifetime keys it will be None)
+        
+        # Only calculate expires_at if not already set (for lifetime keys)
+        if not expires_at:
+            if duration == "monthly":
+                expires_at = (now + timedelta(days=30)).isoformat()
+            elif duration == "weekly":
+                expires_at = (now + timedelta(days=7)).isoformat()
+            elif duration == "3monthly":
+                expires_at = (now + timedelta(days=90)).isoformat()
+            # For lifetime keys, expires_at remains None
+        
+        cur.execute(q("UPDATE keys SET redeemed_at=%s, redeemed_by=%s, expires_at=%s, active=1 WHERE key=%s"),
+                   (now.isoformat(), data.discord_id, expires_at, data.key))
+        db.commit()
         db.close()
-        raise HTTPException(status_code=404, detail="Invalid key")
-    
-    key, duration, redeemed_at, existing_expires = result
-    
-    if redeemed_at:
+        
+        return {"success": True, "duration": duration, "expires_at": expires_at, "message": "Key redeemed successfully"}
+    except Exception as e:
         db.close()
-        raise HTTPException(status_code=400, detail="Already redeemed")
-    
-    now = datetime.now()
-    expires_at = existing_expires  # Use existing expires_at (for lifetime keys it will be None)
-    
-    # Only calculate expires_at if not already set (for lifetime keys)
-    if not expires_at:
-        if duration == "monthly":
-            expires_at = (now + timedelta(days=30)).isoformat()
-        elif duration == "weekly":
-            expires_at = (now + timedelta(days=7)).isoformat()
-        elif duration == "3monthly":
-            expires_at = (now + timedelta(days=90)).isoformat()
-        # For lifetime keys, expires_at remains None
-    
-    cur.execute(q("UPDATE keys SET redeemed_at=%s, redeemed_by=%s, expires_at=%s, active=1 WHERE key=%s"),
-               (now.isoformat(), data.discord_id, expires_at, data.key))
-    db.commit()
-    db.close()
-    
-    return {"success": True, "duration": duration, "expires_at": expires_at, "message": "Key redeemed successfully"}
+        print(f"Error in redeem_key: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.post("/api/reset-hwid/{license_key}")
 @limiter.limit("5/minute")
@@ -1126,20 +1164,27 @@ async def reset_hwid(request: Request, license_key: str):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT hwid_resets FROM keys WHERE key=%s"), (license_key,))
-    result = cur.fetchone()
-    
-    if not result:
+    try:
+        cur.execute(q("SELECT hwid_resets FROM keys WHERE key=%s"), (license_key,))
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        resets = result[0] if result[0] else 0
+        
+        cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE key=%s"), (resets + 1, license_key))
+        db.commit()
         db.close()
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    resets = result[0] if result[0] else 0
-    
-    cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE key=%s"), (resets + 1, license_key))
-    db.commit()
-    db.close()
-    
-    return {"success": True, "hwid_resets": resets + 1}
+        
+        return {"success": True, "hwid_resets": resets + 1}
+    except Exception as e:
+        db.close()
+        print(f"Error in reset_hwid: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.get("/api/users/{user_id}/license")
 @limiter.limit("30/minute")
@@ -1148,31 +1193,38 @@ def get_user_license(request: Request, user_id: str):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT key, duration, expires_at, redeemed_at, hwid, active FROM keys WHERE redeemed_by=%s"), (user_id,))
-    result = cur.fetchone()
-    db.close()
-    
-    if not result:
-        return {"active": False, "message": "No license found"}
-    
-    key, duration, expires_at, redeemed_at, hwid, active = result
-    
-    if active == 0:
-        return {"active": False, "message": "License inactive"}
-    
-    if expires_at:
-        is_expired = datetime.now() > datetime.fromisoformat(expires_at)
-        if is_expired:
-            return {"active": False, "expired": True, "key": key}
-    
-    return {
-        "active": True,
-        "key": key,
-        "duration": duration,
-        "expires_at": expires_at,
-        "redeemed_at": redeemed_at,
-        "hwid": hwid
-    }
+    try:
+        cur.execute(q("SELECT key, duration, expires_at, redeemed_at, hwid, active FROM keys WHERE redeemed_by=%s"), (user_id,))
+        result = cur.fetchone()
+        db.close()
+        
+        if not result:
+            return {"active": False, "message": "No license found"}
+        
+        key, duration, expires_at, redeemed_at, hwid, active = result
+        
+        if active == 0:
+            return {"active": False, "message": "License inactive"}
+        
+        if expires_at:
+            is_expired = datetime.now() > datetime.fromisoformat(expires_at)
+            if is_expired:
+                return {"active": False, "expired": True, "key": key}
+        
+        return {
+            "active": True,
+            "key": key,
+            "duration": duration,
+            "expires_at": expires_at,
+            "redeemed_at": redeemed_at,
+            "hwid": hwid
+        }
+    except Exception as e:
+        db.close()
+        print(f"Error in get_user_license: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"active": False, "error": f"Server error: {str(e)}"}
 
 @app.delete("/api/users/{user_id}/license")
 @limiter.limit("10/minute")
@@ -1181,19 +1233,26 @@ async def delete_user_license(request: Request, user_id: str):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT key FROM keys WHERE redeemed_by=%s"), (user_id,))
-    result = cur.fetchone()
-    
-    if not result:
+    try:
+        cur.execute(q("SELECT key FROM keys WHERE redeemed_by=%s"), (user_id,))
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            raise HTTPException(status_code=404, detail="No license found")
+        
+        key = result[0]
+        cur.execute(q("DELETE FROM keys WHERE redeemed_by=%s"), (user_id,))
+        db.commit()
         db.close()
-        raise HTTPException(status_code=404, detail="No license found")
-    
-    key = result[0]
-    cur.execute(q("DELETE FROM keys WHERE redeemed_by=%s"), (user_id,))
-    db.commit()
-    db.close()
-    
-    return {"status": "deleted", "key": key, "user_id": user_id}
+        
+        return {"status": "deleted", "key": key, "user_id": user_id}
+    except Exception as e:
+        db.close()
+        print(f"Error in delete_user_license: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.post("/api/users/{user_id}/reset-hwid")
 @limiter.limit("5/minute")
@@ -1202,21 +1261,28 @@ async def reset_user_hwid(request: Request, user_id: str):
     db = get_db()
     cur = db.cursor()
     
-    cur.execute(q("SELECT hwid, hwid_resets FROM keys WHERE redeemed_by=%s"), (user_id,))
-    result = cur.fetchone()
-    
-    if not result:
+    try:
+        cur.execute(q("SELECT hwid, hwid_resets FROM keys WHERE redeemed_by=%s"), (user_id,))
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            raise HTTPException(status_code=404, detail="No license found")
+        
+        old_hwid, resets = result
+        resets = resets if resets else 0
+        
+        cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE redeemed_by=%s"), (resets + 1, user_id))
+        db.commit()
         db.close()
-        raise HTTPException(status_code=404, detail="No license found")
-    
-    old_hwid, resets = result
-    resets = resets if resets else 0
-    
-    cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE redeemed_by=%s"), (resets + 1, user_id))
-    db.commit()
-    db.close()
-    
-    return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
+        
+        return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
+    except Exception as e:
+        db.close()
+        print(f"Error in reset_user_hwid: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.post("/api/check-login")
 @limiter.limit("10/minute")
@@ -1227,22 +1293,29 @@ async def check_login(request: Request, data: dict):
     db = get_db()
     cur = db.cursor()
     
-    # Find if any key is bound to this HWID
-    cur.execute(q("SELECT key FROM keys WHERE hwid=%s AND active=1"), (hwid,))
-    result = cur.fetchone()
-    db.close()
-    
-    if result:
+    try:
+        # Find if any key is bound to this HWID
+        cur.execute(q("SELECT key FROM keys WHERE hwid=%s AND active=1"), (hwid,))
+        result = cur.fetchone()
+        db.close()
+        
+        if result:
+            return {
+                "logged_in": True,
+                "username": result[0],
+                "message": "User is logged in"
+            }
+        
         return {
-            "logged_in": True,
-            "username": result[0],
-            "message": "User is logged in"
+            "logged_in": False,
+            "message": "User not logged in"
         }
-    
-    return {
-        "logged_in": False,
-        "message": "User not logged in"
-    }
+    except Exception as e:
+        db.close()
+        print(f"Error in check_login: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"logged_in": False, "error": f"Server error: {str(e)}"}
 
 @app.get("/api/keepalive")
 @limiter.limit("60/minute")
@@ -1286,6 +1359,9 @@ def debug_db(request: Request):
             "database_url": DATABASE_URL if DATABASE_URL else "local.db"
         }
     except Exception as e:
+        print(f"Error in debug_db: {e}")
+        import traceback
+        traceback.print_exc()
         return {"error": str(e), "type": type(e).__name__}
 
 @app.get("/api/test/{license_key}")
@@ -1318,6 +1394,9 @@ def test_license(request: Request, license_key: str):
             "is_lifetime": expires_at is None
         }
     except Exception as e:
+        print(f"Error in test_license: {e}")
+        import traceback
+        traceback.print_exc()
         return {"error": str(e)}
 
 # ========== HTML PAGES ==========
@@ -1374,7 +1453,7 @@ ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
         }
 
         .container {
-            width: 420px;
+            width: 380px;
             max-width: 90%;
             background: rgb(12,12,12);
             background-image:
@@ -1390,7 +1469,7 @@ ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 320px;
+            min-height: 280px;
         }
 
         .loader {
@@ -1454,31 +1533,6 @@ ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
             height: 100px;
             object-fit: contain;
             filter: brightness(1.1) contrast(1.1);
-        }
-
-        .login-tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            width: 100%;
-            justify-content: center;
-        }
-
-        .login-tab {
-            padding: 8px 20px;
-            background: rgb(20,20,20);
-            border: 1px solid rgb(40,40,40);
-            color: rgb(150,150,150);
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.3s ease;
-            border-radius: 4px;
-        }
-
-        .login-tab.active {
-            background: rgb(30,30,30);
-            border-color: rgb(80,80,80);
-            color: rgb(220,220,220);
         }
 
         .login-form {
@@ -1557,6 +1611,8 @@ ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
             margin-top: 10px;
             text-align: center;
             min-height: 20px;
+            max-width: 320px;
+            word-wrap: break-word;
         }
 
         .success-message {
@@ -1587,6 +1643,19 @@ ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
             text-align: center;
             line-height: 1.4;
         }
+        
+        .back-link {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: #666;
+            font-size: 12px;
+            text-decoration: none;
+        }
+        
+        .back-link:hover {
+            color: #888;
+        }
     </style>
 </head>
 <body>
@@ -1598,26 +1667,14 @@ ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
         </div>
         
         <div class="form-content" id="form">
+            <a href="/community" class="back-link">← Community</a>
+            
             <div class="logo-container">
                 <img src="https://image2url.com/r2/default/images/1770423268822-32a09791-acb6-41e0-b8f9-1b159be9dc14.blob" alt="Axion" class="logo-image">
             </div>
             
-            <div class="login-tabs">
-                <div class="login-tab active" data-tab="license">License Key</div>
-                <div class="login-tab" data-tab="account">Username</div>
-            </div>
-            
             <div class="login-form" id="loginForm">
-                <!-- License Login Form -->
-                <div class="input-group" id="licenseGroup">
-                    <div class="input-label">License Key</div>
-                    <input type="text" class="input-field" id="licenseInput" placeholder="XXXX-XXXX-XXXX-XXXX">
-                    <div class="input-label" style="margin-top: 10px;">Password (Placeholder)</div>
-                    <input type="password" class="input-field" id="passwordPlaceholder" placeholder="Enter any value" value="••••••••" readonly>
-                </div>
-                
-                <!-- Account Login Form (hidden by default) -->
-                <div class="input-group" id="accountGroup" style="display: none;">
+                <div class="input-group">
                     <div class="input-label">Username</div>
                     <input type="text" class="input-field" id="usernameInput" placeholder="Your username">
                     <div class="input-label" style="margin-top: 10px;">Password</div>
@@ -1630,7 +1687,7 @@ ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
                 <div class="success-message" id="successMsg"></div>
                 
                 <div class="info-note">
-                    If you created an account when redeeming,<br>use the "Username" tab to login.
+                    Login with the username and password you created<br>when redeeming your license key.
                 </div>
                 
                 <a class="forgot-link" href="https://discord.gg/axion" target="_blank">
@@ -1667,39 +1724,6 @@ ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
             }
         }
 
-        // Tab switching
-        document.querySelectorAll('.login-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                // Update active tab
-                document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                
-                // Show/hide forms
-                const tabType = tab.dataset.tab;
-                if (tabType === 'license') {
-                    document.getElementById('licenseGroup').style.display = 'flex';
-                    document.getElementById('accountGroup').style.display = 'none';
-                } else {
-                    document.getElementById('licenseGroup').style.display = 'none';
-                    document.getElementById('accountGroup').style.display = 'flex';
-                }
-                
-                // Clear messages
-                clearMessages();
-            });
-        });
-
-        // Set placeholder password for license login
-        document.getElementById('passwordPlaceholder').addEventListener('click', (e) => {
-            e.preventDefault();
-            return false;
-        });
-
-        document.getElementById('passwordPlaceholder').addEventListener('keydown', (e) => {
-            e.preventDefault();
-            return false;
-        });
-
         // Clear error/success messages
         function clearMessages() {
             document.getElementById('errorMsg').textContent = '';
@@ -1724,58 +1748,36 @@ ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
 
         // Login function
         async function performLogin() {
-            const activeTab = document.querySelector('.login-tab.active').dataset.tab;
-            let loginData = {};
-            let endpoint = '';
+            const username = document.getElementById('usernameInput').value.trim();
+            const password = document.getElementById('passwordInput').value;
+            
+            if (!username || !password) {
+                document.getElementById('errorMsg').textContent = 'Please enter both username and password';
+                return;
+            }
             
             clearMessages();
             showLoading();
             
-            if (activeTab === 'license') {
-                const licenseKey = document.getElementById('licenseInput').value.trim();
-                if (!licenseKey) {
-                    document.getElementById('errorMsg').textContent = 'Please enter your license key';
-                    hideLoading();
-                    return;
-                }
-                
-                // For license login, we use the old endpoint for backward compatibility
-                loginData = { key: licenseKey, hwid: 'web-login' };
-                endpoint = '/api/validate';
-            } else {
-                const username = document.getElementById('usernameInput').value.trim();
-                const password = document.getElementById('passwordInput').value;
-                
-                if (!username || !password) {
-                    document.getElementById('errorMsg').textContent = 'Please enter both username and password';
-                    hideLoading();
-                    return;
-                }
-                
-                // For username/password login
-                loginData = { username: username, password: password };
-                endpoint = '/api/user-login';
-            }
-            
             try {
-                const response = await fetch(endpoint, {
+                const response = await fetch('/api/user-login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(loginData)
+                    body: JSON.stringify({ username: username, password: password })
                 });
                 
                 const data = await response.json();
                 
-                if (data.valid || data.success) {
+                if (data.valid) {
                     document.getElementById('successMsg').textContent = data.message || 'Login successful!';
                     
                     // Redirect to config page
                     setTimeout(() => {
                         if (data.license_key) {
                             window.location.href = `/config/${data.license_key}`;
-                        } else if (activeTab === 'license') {
-                            const licenseKey = document.getElementById('licenseInput').value.trim();
-                            window.location.href = `/config/${licenseKey}`;
+                        } else {
+                            document.getElementById('errorMsg').textContent = 'No license key found';
+                            hideLoading();
                         }
                     }, 1000);
                 } else {
@@ -1793,10 +1795,6 @@ ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
         document.getElementById('loginBtn').addEventListener('click', performLogin);
         
         // Allow Enter key to submit
-        document.getElementById('licenseInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') performLogin();
-        });
-        
         document.getElementById('usernameInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') performLogin();
         });
@@ -1808,9 +1806,9 @@ ENHANCED_LOGIN_HTML = """<!DOCTYPE html>
         // Initialize
         createParticles();
         
-        // Auto-focus license input
+        // Auto-focus username input
         setTimeout(() => {
-            document.getElementById('licenseInput').focus();
+            document.getElementById('usernameInput').focus();
         }, 100);
     </script>
 """ + ENHANCED_ANTI_DEVTOOLS_JS + """
@@ -2366,8 +2364,8 @@ body {
         <p style="color: #aaa; margin-bottom: 25px; line-height: 1.6;">
             Please login to download or share configurations. If you don't have an account, contact the administrator.
         </p>
-        <input type="text" class="modal-input" id="modalLicenseInput" placeholder="Enter your license key">
-        <input type="password" class="modal-input" id="modalPasswordInput" placeholder="Password (enter any value)" readonly onfocus="this.blur()">
+        <input type="text" class="modal-input" id="modalUsernameInput" placeholder="Enter your username">
+        <input type="password" class="modal-input" id="modalPasswordInput" placeholder="Enter your password">
         <button class="modal-button" id="modalLoginBtn" onclick="modalLogin()">
             <i class="fas fa-sign-in-alt"></i> Login
         </button>
@@ -2389,7 +2387,7 @@ let currentSearch = '';
 // DOM Elements
 const configsList = document.getElementById('configsList');
 const loginModal = document.getElementById('loginModal');
-const modalLicenseInput = document.getElementById('modalLicenseInput');
+const modalUsernameInput = document.getElementById('modalUsernameInput');
 const modalPasswordInput = document.getElementById('modalPasswordInput');
 const modalLoginBtn = document.getElementById('modalLoginBtn');
 const modalError = document.getElementById('modalError');
@@ -2400,20 +2398,18 @@ const totalConfigs = document.getElementById('totalConfigs');
 const totalDownloads = document.getElementById('totalDownloads');
 const topGame = document.getElementById('topGame');
 
-// Set fake password
-modalPasswordInput.value = '••••••••';
-
 // Show/hide login modal
 function showLoginModal() {
     loginModal.classList.add('active');
-    modalLicenseInput.focus();
+    modalUsernameInput.focus();
 }
 
 function hideLoginModal() {
     loginModal.classList.remove('active');
     modalError.textContent = '';
     modalSuccess.textContent = '';
-    modalLicenseInput.value = '';
+    modalUsernameInput.value = '';
+    modalPasswordInput.value = '';
 }
 
 // Close modal on overlay click
@@ -2425,10 +2421,11 @@ loginModal.addEventListener('click', function(e) {
 
 // Modal login function
 async function modalLogin() {
-    const licenseKey = modalLicenseInput.value.trim();
+    const username = modalUsernameInput.value.trim();
+    const password = modalPasswordInput.value;
     
-    if (!licenseKey) {
-        modalError.textContent = 'Please enter your license key';
+    if (!username || !password) {
+        modalError.textContent = 'Please enter both username and password';
         return;
     }
     
@@ -2438,10 +2435,10 @@ async function modalLogin() {
     modalLoginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in...';
     
     try {
-        const res = await fetch('/api/validate', {
+        const res = await fetch('/api/user-login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: licenseKey, hwid: 'web-login' })
+            body: JSON.stringify({ username: username, password: password })
         });
         
         const data = await res.json();
@@ -2451,14 +2448,16 @@ async function modalLogin() {
             
             // Redirect after short delay
             setTimeout(() => {
-                window.location.href = `/config/${licenseKey}`;
+                if (data.license_key) {
+                    window.location.href = `/config/${data.license_key}`;
+                }
             }, 1000);
         } else {
-            modalError.textContent = data.error || 'Invalid license key';
+            modalError.textContent = data.error || 'Invalid username or password';
         }
     } catch (e) {
-        modalError.textContent = 'Connection error. Please try again.';
         console.error('Login error:', e);
+        modalError.textContent = 'Connection error. Please try again.';
     } finally {
         modalLoginBtn.disabled = false;
         modalLoginBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login';
@@ -3409,6 +3408,7 @@ setInterval(loadConfig, 1000);
 body{{background:rgb(12,12,12);color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
 .container{{text-align:center;padding:40px;background:rgba(0,0,0,0.5);border-radius:10px;border:1px solid rgba(255,255,255,0.1)}}
 h1{{color:rgb(255,68,68);margin-bottom:20px}}
+.error-details{{color:rgb(255,120,120);font-size:14px;margin-top:20px;word-wrap:break-word;max-width:600px;text-align:left;padding:15px;background:rgba(255,0,0,0.1);border-radius:5px;border:1px solid rgba(255,0,0,0.3)}}
 button{{margin-top:20px;padding:12px 30px;background:#333;color:white;border:none;border-radius:5px;cursor:pointer;font-size:16px}}
 button:hover{{background:#444}}
 </style>
@@ -3416,7 +3416,11 @@ button:hover{{background:#444}}
 <body>
 <div class="container">
 <h1>Server Error</h1>
-<p>{str(e)}</p>
+<p>An error occurred while loading the config dashboard.</p>
+<div class="error-details">
+<strong>Error Details:</strong><br>
+{str(e)}
+</div>
 <button onclick="window.location.href='/menu'">Return to Login</button>
 </div>
 {ENHANCED_ANTI_DEVTOOLS_JS}
