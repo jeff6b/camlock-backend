@@ -240,62 +240,6 @@ def init_db():
                 ip_address TEXT
             )""")
         
-        # Insert some sample public configs if none exist
-        cur.execute(q("SELECT COUNT(*) FROM public_configs"))
-        count = cur.fetchone()[0]
-        
-        if count == 0:
-            sample_configs = [
-                {
-                    "config_name": "Competitive Arsenal",
-                    "author_name": "fade",
-                    "game_name": "Arsenal",
-                    "description": "Optimized for competitive play, smooth aim and fast trigger",
-                    "config_data": DEFAULT_CONFIG,
-                    "license_key": "sample",
-                    "created_at": datetime.now().isoformat(),
-                    "downloads": 247
-                },
-                {
-                    "config_name": "BedWars Rush",
-                    "author_name": "nexus",
-                    "game_name": "BedWars",
-                    "description": "Perfect for rushing, high FOV and quick target acquisition",
-                    "config_data": DEFAULT_CONFIG,
-                    "license_key": "sample",
-                    "created_at": datetime.now().isoformat(),
-                    "downloads": 189
-                },
-                {
-                    "config_name": "Murder Mystery",
-                    "author_name": "shadow",
-                    "game_name": "Murder Mystery",
-                    "description": "Low delay triggerbot for knife detection",
-                    "config_data": DEFAULT_CONFIG,
-                    "license_key": "sample",
-                    "created_at": datetime.now().isoformat(),
-                    "downloads": 112
-                }
-            ]
-            
-            for config in sample_configs:
-                cur.execute(q("""
-                    INSERT INTO public_configs 
-                    (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """), (
-                    config["config_name"],
-                    config["author_name"],
-                    config["game_name"],
-                    config["description"],
-                    json.dumps(config["config_data"]),
-                    config["license_key"],
-                    config["created_at"],
-                    config["downloads"]
-                ))
-            db.commit()
-            print("Added sample public configs")
-        
         db.commit()
         print(f"Database initialized successfully. Using: {'PostgreSQL' if USE_POSTGRES else 'SQLite'}")
         
@@ -320,18 +264,14 @@ def create_web_session(license_key):
     expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
     
     if USE_POSTGRES:
+        # FIXED: Remove ON CONFLICT since there's no unique constraint on license_key
         cur.execute("""
             INSERT INTO user_sessions (session_id, license_key, created_at, expires_at)
             VALUES (%s, %s, %s, %s)
-            ON CONFLICT (license_key) DO UPDATE 
-            SET session_id = EXCLUDED.session_id, 
-                created_at = EXCLUDED.created_at, 
-                expires_at = EXCLUDED.expires_at
         """, (session_id, license_key, created_at, expires_at))
     else:
         cur.execute("""
-            INSERT OR REPLACE INTO user_sessions 
-            (session_id, license_key, created_at, expires_at)
+            INSERT INTO user_sessions (session_id, license_key, created_at, expires_at)
             VALUES (?, ?, ?, ?)
         """, (session_id, license_key, created_at, expires_at))
     
@@ -353,6 +293,7 @@ class PublicConfig(BaseModel):
     game_name: str
     description: str
     config_data: dict
+    license_key: str
 
 class SavedConfigRequest(BaseModel):
     config_name: str
@@ -1044,7 +985,7 @@ def get_config(request: Request, key: str):
         if not result:
             if USE_POSTGRES:
                 cur.execute(
-                    "INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING",
+                    "INSERT INTO settings (key, config) VALUES (%s, %s)",
                     (key, json.dumps(DEFAULT_CONFIG))
                 )
             else:
@@ -1071,14 +1012,12 @@ async def set_config(request: Request, key: str, data: dict):
     try:
         if USE_POSTGRES:
             cur.execute(
-                """INSERT INTO settings (key, config) VALUES (%s, %s)
-                   ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
+                "INSERT INTO settings (key, config) VALUES (%s, %s)",
                 (key, json.dumps(data))
             )
         else:
             cur.execute(
-                """INSERT INTO settings (key, config) VALUES (?, ?)
-                   ON CONFLICT (key) DO UPDATE SET config = excluded.config""",
+                "INSERT OR REPLACE INTO settings (key, config) VALUES (?, ?)",
                 (key, json.dumps(data))
             )
         db.commit()
@@ -1164,7 +1103,7 @@ def get_public_configs(request: Request):
         db = get_db()
         cur = db.cursor()
         cur.execute(q("""
-            SELECT id, config_name, author_name, game_name, description, downloads, created_at 
+            SELECT id, config_name, author_name, game_name, description, config_data, downloads, created_at 
             FROM public_configs 
             ORDER BY downloads DESC, created_at DESC
         """))
@@ -1175,7 +1114,7 @@ def get_public_configs(request: Request):
         total_downloads = 0
         
         for row in rows:
-            downloads = row[5] if row[5] else 0
+            downloads = row[6] if row[6] else 0
             total_downloads += downloads
             configs.append({
                 "id": row[0],
@@ -1183,8 +1122,9 @@ def get_public_configs(request: Request):
                 "author_name": row[2],
                 "game_name": row[3],
                 "description": row[4],
+                "config_data": json.loads(row[5]) if row[5] else DEFAULT_CONFIG,
                 "downloads": downloads,
-                "created_at": row[6]
+                "created_at": row[7]
             })
         
         return {
@@ -1194,6 +1134,8 @@ def get_public_configs(request: Request):
         }
     except Exception as e:
         print(f"Error in get_public_configs: {e}")
+        import traceback
+        traceback.print_exc()
         return {"configs": [], "total_configs": 0, "total_downloads": 0}
 
 @app.post("/api/public-configs/create")
@@ -1221,6 +1163,9 @@ async def create_public_config(request: Request, data: PublicConfig):
         return {"success": True}
     except Exception as e:
         db.close()
+        print(f"Error in create_public_config: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.get("/api/public-configs/{config_id}")
@@ -1280,6 +1225,8 @@ def debug_db(request: Request):
         count = cur.fetchone()
         cur.execute(q("SELECT COUNT(*) FROM user_accounts"))
         account_count = cur.fetchone()
+        cur.execute(q("SELECT COUNT(*) FROM public_configs"))
+        public_count = cur.fetchone()
         db.close()
         
         return {
@@ -1287,6 +1234,7 @@ def debug_db(request: Request):
             "tables_found": [t[0] for t in tables],
             "keys_count": count[0] if count else 0,
             "accounts_count": account_count[0] if account_count else 0,
+            "public_configs_count": public_count[0] if public_count else 0,
             "use_postgres": USE_POSTGRES,
             "database_url": DATABASE_URL if DATABASE_URL else "local.db"
         }
@@ -1319,9 +1267,118 @@ def test_license(request: Request, license_key: str):
     except Exception as e:
         return {"error": str(e)}
 
+@app.post("/api/seed-public-configs")
+@limiter.limit("1/minute")
+async def seed_public_configs(request: Request):
+    """Seed the database with sample public configs"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Check if we already have configs
+        cur.execute(q("SELECT COUNT(*) FROM public_configs"))
+        count = cur.fetchone()[0]
+        
+        if count > 0:
+            db.close()
+            return {"success": True, "message": f"Already have {count} configs"}
+        
+        sample_configs = [
+            {
+                "config_name": "Competitive Arsenal",
+                "author_name": "fade",
+                "game_name": "Arsenal",
+                "description": "Optimized for competitive play, smooth aim and fast trigger. High FOV and low smoothing for quick target acquisition.",
+                "config_data": DEFAULT_CONFIG,
+                "license_key": "sample",
+                "created_at": (datetime.now() - timedelta(days=30)).isoformat(),
+                "downloads": 247
+            },
+            {
+                "config_name": "BedWars Rush",
+                "author_name": "nexus",
+                "game_name": "BedWars",
+                "description": "Perfect for rushing. High FOV, quick target switching, and optimized for fast-paced gameplay.",
+                "config_data": DEFAULT_CONFIG,
+                "license_key": "sample",
+                "created_at": (datetime.now() - timedelta(days=25)).isoformat(),
+                "downloads": 189
+            },
+            {
+                "config_name": "Murder Mystery",
+                "author_name": "shadow",
+                "game_name": "Murder Mystery",
+                "description": "Low delay triggerbot optimized for knife detection. Perfect for finding the murderer quickly.",
+                "config_data": DEFAULT_CONFIG,
+                "license_key": "sample",
+                "created_at": (datetime.now() - timedelta(days=20)).isoformat(),
+                "downloads": 112
+            },
+            {
+                "config_name": "Tower Defense Sim",
+                "author_name": "vector",
+                "game_name": "Tower Defense Simulator",
+                "description": "Smooth aimbot for taking down enemies quickly. Optimized for high stud ranges.",
+                "config_data": DEFAULT_CONFIG,
+                "license_key": "sample",
+                "created_at": (datetime.now() - timedelta(days=15)).isoformat(),
+                "downloads": 87
+            },
+            {
+                "config_name": "Prison Life",
+                "author_name": "crimson",
+                "game_name": "Prison Life",
+                "description": "All-around config for prison servers. Balanced aim and trigger settings.",
+                "config_data": DEFAULT_CONFIG,
+                "license_key": "sample",
+                "created_at": (datetime.now() - timedelta(days=10)).isoformat(),
+                "downloads": 156
+            }
+        ]
+        
+        for config in sample_configs:
+            cur.execute(q("""
+                INSERT INTO public_configs 
+                (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """), (
+                config["config_name"],
+                config["author_name"],
+                config["game_name"],
+                config["description"],
+                json.dumps(config["config_data"]),
+                config["license_key"],
+                config["created_at"],
+                config["downloads"]
+            ))
+        
+        db.commit()
+        db.close()
+        return {"success": True, "message": f"Added {len(sample_configs)} sample configs"}
+    except Exception as e:
+        db.close()
+        print(f"Error seeding public configs: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+# Run this on startup
+@app.on_event("startup")
+async def startup_event():
+    try:
+        # Seed public configs
+        import requests
+        # Make internal request to seed endpoint
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        response = client.post("/api/seed-public-configs")
+        print(f"Seeding public configs: {response.json()}")
+    except:
+        print("Could not seed public configs automatically")
+
 # ========== HTML PAGES ==========
 
-# EXACT LOGIN PAGE FROM YOUR EXAMPLE - with particles and dark theme
+# FIXED LOGIN PAGE - LESS VERTICAL SPACE
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1374,13 +1431,13 @@ LOGIN_HTML = """<!DOCTYPE html>
         }
 
         .container {
-            width: 380px;
+            width: 340px;
             max-width: 90%;
             background: rgb(12,12,12);
             background-image:
                 radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
             background-size: 6px 6px;
-            padding: 30px 30px;
+            padding: 20px 25px;
             box-sizing: border-box;
             border-radius: 4px;
             border: 1px solid rgb(28,28,28);
@@ -1389,8 +1446,6 @@ LOGIN_HTML = """<!DOCTYPE html>
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            min-height: 280px;
         }
 
         .loader {
@@ -1398,15 +1453,15 @@ LOGIN_HTML = """<!DOCTYPE html>
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 40px;
-            height: 40px;
+            width: 30px;
+            height: 30px;
             z-index: 20;
             display: none;
         }
 
         .arc-spinner {
-            width: 40px;
-            height: 40px;
+            width: 30px;
+            height: 30px;
             position: relative;
         }
 
@@ -1415,7 +1470,7 @@ LOGIN_HTML = """<!DOCTYPE html>
             content: "";
             position: absolute;
             inset: 0;
-            border: 4px solid transparent;
+            border: 3px solid transparent;
             border-radius: 50%;
             border-right-color: transparent;
             border-bottom-color: transparent;
@@ -1445,13 +1500,13 @@ LOGIN_HTML = """<!DOCTYPE html>
         }
 
         .logo-container {
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             text-align: center;
         }
 
         .logo-image {
-            width: 100px;
-            height: 100px;
+            width: 70px;
+            height: 70px;
             object-fit: contain;
             filter: brightness(1.1) contrast(1.1);
         }
@@ -1465,60 +1520,59 @@ LOGIN_HTML = """<!DOCTYPE html>
 
         .input-group {
             width: 100%;
-            max-width: 320px;
-            margin-bottom: 15px;
+            max-width: 300px;
+            margin-bottom: 12px;
             display: flex;
             flex-direction: column;
         }
 
         .input-label {
-            font-size: 12px;
+            font-size: 11px;
             color: rgb(120,120,120);
-            margin-bottom: 5px;
+            margin-bottom: 3px;
             margin-left: 2px;
         }
 
         .input-field {
             width: 100%;
-            padding: 12px 14px;
-            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
-            border: 1px solid rgba(40,40,40,0.8);
+            padding: 10px 12px;
+            background: rgb(20,20,20);
+            border: 1px solid rgb(35,35,35);
             color: rgb(200,200,200);
-            font-size: 14px;
+            font-size: 13px;
             outline: none;
             box-sizing: border-box;
-            border-radius: 4px;
-            transition: border-color 0.4s ease, box-shadow 0.4s ease;
+            border-radius: 3px;
+            transition: border-color 0.2s ease;
         }
 
         .input-field::placeholder {
-            color: rgb(120,120,120);
+            color: rgb(100,100,100);
+            font-size: 12px;
         }
 
         .input-field:focus {
             border-color: #888888;
-            box-shadow: 0 0 10px rgba(136,136,136,0.25);
         }
 
         .login-btn {
             width: 100%;
-            max-width: 320px;
-            padding: 12px;
-            margin-top: 10px;
-            background: linear-gradient(90deg, rgb(14,14,14), rgb(20,20,20));
-            border: 1px solid rgba(40,40,40,0.8);
+            max-width: 300px;
+            padding: 10px;
+            margin-top: 5px;
+            background: rgb(20,20,20);
+            border: 1px solid rgb(40,40,40);
             color: rgb(200,200,200);
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
             cursor: pointer;
-            border-radius: 4px;
-            transition: background 0.3s ease, border-color 0.3s ease;
-            box-shadow: 0 0 8px rgba(0,0,0,0.5);
+            border-radius: 3px;
+            transition: all 0.2s ease;
         }
 
         .login-btn:hover {
-            background: linear-gradient(90deg, rgb(18,18,18), rgb(28,28,28));
-            border-color: rgba(40,40,40,1);
+            background: rgb(25,25,25);
+            border-color: rgb(60,60,60);
         }
 
         .login-btn:disabled {
@@ -1528,54 +1582,53 @@ LOGIN_HTML = """<!DOCTYPE html>
 
         .error-message {
             color: rgb(255, 80, 80);
-            font-size: 12px;
-            margin-top: 10px;
+            font-size: 11px;
+            margin-top: 8px;
             text-align: center;
-            min-height: 20px;
-            max-width: 320px;
+            min-height: 16px;
+            max-width: 300px;
             word-wrap: break-word;
         }
 
         .success-message {
             color: rgb(80, 255, 80);
-            font-size: 12px;
-            margin-top: 10px;
-            text-align: center;
-            min-height: 20px;
-        }
-
-        .forgot-link {
-            font-size: 12px;
-            color: rgb(120,120,120);
-            margin-top: 15px;
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        .forgot-link:hover {
-            color: rgb(180,180,180);
-            text-decoration: underline;
-        }
-        
-        .info-note {
             font-size: 11px;
-            color: rgb(120,120,120);
-            margin-top: 15px;
+            margin-top: 8px;
             text-align: center;
-            line-height: 1.4;
+            min-height: 16px;
+        }
+
+        .info-note {
+            font-size: 10px;
+            color: rgb(100,100,100);
+            margin-top: 12px;
+            text-align: center;
+            line-height: 1.3;
         }
         
         .back-link {
             position: absolute;
-            top: 15px;
-            left: 15px;
-            color: #666;
-            font-size: 12px;
+            top: 12px;
+            left: 12px;
+            color: rgb(100,100,100);
+            font-size: 11px;
             text-decoration: none;
         }
         
         .back-link:hover {
-            color: #888;
+            color: rgb(180,180,180);
+        }
+        
+        .discord-link {
+            font-size: 11px;
+            color: rgb(100,100,100);
+            margin-top: 10px;
+            text-decoration: none;
+        }
+        
+        .discord-link:hover {
+            color: rgb(180,180,180);
+            text-decoration: underline;
         }
     </style>
 </head>
@@ -1597,9 +1650,11 @@ LOGIN_HTML = """<!DOCTYPE html>
             <div class="login-form" id="loginForm">
                 <div class="input-group">
                     <div class="input-label">Username</div>
-                    <input type="text" class="input-field" id="usernameInput" placeholder="Your username">
-                    <div class="input-label" style="margin-top: 10px;">Password</div>
-                    <input type="password" class="input-field" id="passwordInput" placeholder="Your password">
+                    <input type="text" class="input-field" id="usernameInput" placeholder="Enter username">
+                </div>
+                <div class="input-group">
+                    <div class="input-label">Password</div>
+                    <input type="password" class="input-field" id="passwordInput" placeholder="Enter password">
                 </div>
                 
                 <button class="login-btn" id="loginBtn">Login</button>
@@ -1608,31 +1663,30 @@ LOGIN_HTML = """<!DOCTYPE html>
                 <div class="success-message" id="successMsg"></div>
                 
                 <div class="info-note">
-                    Login with the username and password you created<br>when redeeming your license key.
+                    Login with username/password created when redeeming your license
                 </div>
                 
-                <a class="forgot-link" href="https://discord.gg/axion" target="_blank">
-                    Need help? Join our Discord
+                <a class="discord-link" href="https://discord.gg/axion" target="_blank">
+                    Need help? Join Discord
                 </a>
             </div>
         </div>
     </div>
 
     <script>
-        // Create particles
         function createParticles() {
             const particlesContainer = document.getElementById('particles');
-            const count = 70;
+            const count = 50;
 
             for (let i = 0; i < count; i++) {
                 const particle = document.createElement('div');
                 particle.className = 'particle';
 
-                const size = Math.random() * 1.6 + 0.6;
-                const duration = Math.random() * 80 + 65;
-                const delay = Math.random() * -90;
+                const size = Math.random() * 1.4 + 0.5;
+                const duration = Math.random() * 70 + 60;
+                const delay = Math.random() * -80;
                 const left = Math.random() * 100;
-                const drift = (Math.random() - 0.5) * 50 + 'vw';
+                const drift = (Math.random() - 0.5) * 40 + 'vw';
 
                 particle.style.width = size + 'px';
                 particle.style.height = size + 'px';
@@ -1645,21 +1699,18 @@ LOGIN_HTML = """<!DOCTYPE html>
             }
         }
 
-        // Clear error/success messages
         function clearMessages() {
             document.getElementById('errorMsg').textContent = '';
             document.getElementById('successMsg').textContent = '';
         }
 
-        // Show loading
         function showLoading() {
             document.getElementById('loader').style.display = 'block';
-            document.getElementById('form').style.opacity = '0.5';
+            document.getElementById('form').style.opacity = '0.6';
             document.getElementById('loginBtn').disabled = true;
             document.getElementById('loginBtn').textContent = 'Logging in...';
         }
 
-        // Hide loading
         function hideLoading() {
             document.getElementById('loader').style.display = 'none';
             document.getElementById('form').style.opacity = '1';
@@ -1667,7 +1718,6 @@ LOGIN_HTML = """<!DOCTYPE html>
             document.getElementById('loginBtn').textContent = 'Login';
         }
 
-        // Login function
         async function performLogin() {
             const username = document.getElementById('usernameInput').value.trim();
             const password = document.getElementById('passwordInput').value;
@@ -1690,14 +1740,11 @@ LOGIN_HTML = """<!DOCTYPE html>
                 const data = await response.json();
                 
                 if (data.valid) {
-                    document.getElementById('successMsg').textContent = data.message || 'Login successful!';
+                    document.getElementById('successMsg').textContent = 'Login successful! Redirecting...';
                     
                     setTimeout(() => {
                         if (data.license_key) {
                             window.location.href = `/config/${data.license_key}`;
-                        } else {
-                            document.getElementById('errorMsg').textContent = 'No license key found';
-                            hideLoading();
                         }
                     }, 1000);
                 } else {
@@ -1705,13 +1752,11 @@ LOGIN_HTML = """<!DOCTYPE html>
                     hideLoading();
                 }
             } catch (error) {
-                console.error('Login error:', error);
                 document.getElementById('errorMsg').textContent = 'Connection error. Please try again.';
                 hideLoading();
             }
         }
 
-        // Event listeners
         document.getElementById('loginBtn').addEventListener('click', performLogin);
         
         document.getElementById('usernameInput').addEventListener('keypress', (e) => {
@@ -1722,7 +1767,6 @@ LOGIN_HTML = """<!DOCTYPE html>
             if (e.key === 'Enter') performLogin();
         });
 
-        // Initialize
         createParticles();
         setTimeout(() => {
             document.getElementById('usernameInput').focus();
@@ -1733,6 +1777,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 </html>
 """
 
+# FIXED COMMUNITY PAGE - REAL CONFIGS, NO GRADIENT ON BUTTONS
 COMMUNITY_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1754,7 +1799,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             color: rgb(180,180,180);
             font-family: Arial, Helvetica, sans-serif;
             min-height: 100vh;
-            padding: 2rem;
+            padding: 1.5rem;
         }
 
         .container {
@@ -1766,87 +1811,87 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
             border-bottom: 1px solid rgb(28,28,28);
-            padding-bottom: 1rem;
+            padding-bottom: 0.8rem;
         }
 
         h1 {
             color: rgb(200,200,200);
             font-weight: 500;
-            font-size: 24px;
+            font-size: 22px;
         }
 
         .nav-link {
             color: rgb(120,120,120);
             text-decoration: none;
-            padding: 8px 16px;
-            border: 1px solid rgb(28,28,28);
-            border-radius: 4px;
-            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
+            padding: 6px 14px;
+            border: 1px solid rgb(35,35,35);
+            border-radius: 3px;
+            background: rgb(20,20,20);
+            font-size: 13px;
         }
 
         .nav-link:hover {
             color: rgb(200,200,200);
-            border-color: rgba(80,80,80,0.8);
+            border-color: rgb(80,80,80);
         }
 
         .stats {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 1rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
 
         .stat {
-            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
-            border: 1px solid rgb(28,28,28);
-            border-radius: 4px;
-            padding: 1.5rem;
+            background: rgb(20,20,20);
+            border: 1px solid rgb(35,35,35);
+            border-radius: 3px;
+            padding: 1rem;
             text-align: center;
         }
 
         .stat-value {
-            font-size: 2rem;
+            font-size: 1.8rem;
             color: rgb(200,200,200);
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.3rem;
         }
 
         .stat-label {
             color: rgb(120,120,120);
-            font-size: 12px;
+            font-size: 11px;
             text-transform: uppercase;
         }
 
         .search {
             width: 100%;
             max-width: 400px;
-            padding: 12px 14px;
-            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
-            border: 1px solid rgba(40,40,40,0.8);
+            padding: 10px 12px;
+            background: rgb(20,20,20);
+            border: 1px solid rgb(35,35,35);
             color: rgb(200,200,200);
-            font-size: 14px;
+            font-size: 13px;
             outline: none;
-            border-radius: 4px;
-            margin-bottom: 2rem;
+            border-radius: 3px;
+            margin-bottom: 1.5rem;
         }
 
         .search:focus {
             border-color: #888888;
-            box-shadow: 0 0 10px rgba(136,136,136,0.25);
         }
 
         .config-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 1.5rem;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.2rem;
         }
 
         .config-card {
-            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
-            border: 1px solid rgb(28,28,28);
-            border-radius: 4px;
-            padding: 1.5rem;
+            background: rgb(20,20,20);
+            border: 1px solid rgb(35,35,35);
+            border-radius: 3px;
+            padding: 1.2rem;
         }
 
         .config-card:hover {
@@ -1855,48 +1900,57 @@ COMMUNITY_HTML = """<!DOCTYPE html>
 
         .config-name {
             color: rgb(200,200,200);
-            font-size: 18px;
-            margin-bottom: 0.5rem;
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 0.3rem;
         }
 
         .config-game {
-            color: rgb(120,120,120);
-            font-size: 12px;
-            margin-bottom: 1rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid rgb(28,28,28);
+            color: rgb(140,140,140);
+            font-size: 11px;
+            margin-bottom: 0.8rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgb(35,35,35);
         }
 
         .config-description {
             color: rgb(160,160,160);
-            font-size: 14px;
+            font-size: 12px;
             margin-bottom: 1rem;
-            line-height: 1.5;
-            min-height: 60px;
+            line-height: 1.4;
+            min-height: 50px;
         }
 
         .config-footer {
             display: flex;
             justify-content: space-between;
             color: rgb(120,120,120);
-            font-size: 12px;
-            margin-bottom: 1rem;
+            font-size: 11px;
+            margin-bottom: 0.8rem;
+        }
+
+        .config-author {
+            color: rgb(180,180,180);
+        }
+
+        .config-downloads {
+            color: rgb(140,140,140);
         }
 
         .load-btn {
             width: 100%;
-            padding: 10px;
-            background: linear-gradient(90deg, rgb(14,14,14), rgb(20,20,20));
-            border: 1px solid rgba(40,40,40,0.8);
+            padding: 8px;
+            background: rgb(25,25,25);
+            border: 1px solid rgb(45,45,45);
             color: rgb(200,200,200);
-            font-size: 14px;
+            font-size: 12px;
             cursor: pointer;
-            border-radius: 4px;
+            border-radius: 3px;
         }
 
         .load-btn:hover {
-            background: linear-gradient(90deg, rgb(18,18,18), rgb(28,28,28));
-            border-color: rgba(40,40,40,1);
+            background: rgb(30,30,30);
+            border-color: rgb(80,80,80);
         }
 
         .modal-overlay {
@@ -1917,31 +1971,32 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         }
 
         .modal-content {
-            width: 340px;
+            width: 300px;
             background: rgb(12,12,12);
             background-image: radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
             background-size: 6px 6px;
-            border: 1px solid rgb(28,28,28);
-            border-radius: 4px;
-            padding: 30px;
+            border: 1px solid rgb(35,35,35);
+            border-radius: 3px;
+            padding: 25px;
+            position: relative;
         }
 
         .modal-title {
             color: rgb(200,200,200);
-            font-size: 18px;
-            margin-bottom: 20px;
+            font-size: 16px;
+            margin-bottom: 15px;
         }
 
         .modal-input {
             width: 100%;
-            padding: 12px 14px;
-            background: linear-gradient(145deg, rgb(24,24,24), rgb(20,20,20));
-            border: 1px solid rgba(40,40,40,0.8);
+            padding: 10px 12px;
+            background: rgb(20,20,20);
+            border: 1px solid rgb(35,35,35);
             color: rgb(200,200,200);
-            font-size: 14px;
+            font-size: 13px;
             outline: none;
-            border-radius: 4px;
-            margin-bottom: 16px;
+            border-radius: 3px;
+            margin-bottom: 12px;
         }
 
         .modal-input:focus {
@@ -1950,30 +2005,31 @@ COMMUNITY_HTML = """<!DOCTYPE html>
 
         .modal-btn {
             width: 100%;
-            padding: 12px;
-            background: linear-gradient(90deg, rgb(14,14,14), rgb(20,20,20));
-            border: 1px solid rgba(40,40,40,0.8);
+            padding: 10px;
+            background: rgb(25,25,25);
+            border: 1px solid rgb(45,45,45);
             color: rgb(200,200,200);
-            font-size: 14px;
+            font-size: 13px;
             cursor: pointer;
-            border-radius: 4px;
+            border-radius: 3px;
         }
 
         .modal-btn:hover {
-            background: linear-gradient(90deg, rgb(18,18,18), rgb(28,28,28));
+            background: rgb(30,30,30);
+            border-color: rgb(80,80,80);
         }
 
         .fab {
             position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            width: 52px;
-            height: 52px;
-            background: linear-gradient(145deg, rgb(28,28,28), rgb(20,20,20));
-            border: 1px solid rgb(40,40,40);
-            border-radius: 50%;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            width: 48px;
+            height: 48px;
+            background: rgb(25,25,25);
+            border: 1px solid rgb(45,45,45);
+            border-radius: 3px;
             color: rgb(200,200,200);
-            font-size: 24px;
+            font-size: 22px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1982,27 +2038,28 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         }
 
         .fab:hover {
-            background: linear-gradient(145deg, rgb(32,32,32), rgb(24,24,24));
+            background: rgb(30,30,30);
             border-color: #888888;
         }
 
         .loading, .empty {
             text-align: center;
-            padding: 3rem;
+            padding: 2.5rem;
             color: rgb(120,120,120);
             grid-column: 1 / -1;
+            font-size: 13px;
         }
 
         .loading:after {
             content: '';
             display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 2px solid rgb(40,40,40);
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgb(45,45,45);
             border-top-color: #888888;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin-left: 10px;
+            margin-left: 8px;
             vertical-align: middle;
         }
 
@@ -2012,13 +2069,31 @@ COMMUNITY_HTML = """<!DOCTYPE html>
 
         .close-modal {
             position: absolute;
-            top: 20px;
-            right: 20px;
+            top: 12px;
+            right: 15px;
             background: none;
             border: none;
             color: rgb(120,120,120);
-            font-size: 24px;
+            font-size: 20px;
             cursor: pointer;
+        }
+        
+        .close-modal:hover {
+            color: rgb(200,200,200);
+        }
+        
+        .modal-error {
+            color: rgb(255, 80, 80);
+            font-size: 11px;
+            margin-top: 8px;
+            text-align: center;
+        }
+        
+        .modal-success {
+            color: rgb(80, 255, 80);
+            font-size: 11px;
+            margin-top: 8px;
+            text-align: center;
         }
     </style>
 </head>
@@ -2032,7 +2107,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         <div class="stats" id="statsBar">
             <div class="stat">
                 <div class="stat-value" id="totalConfigs">0</div>
-                <div class="stat-label">Total Configs</div>
+                <div class="stat-label">Configs</div>
             </div>
             <div class="stat">
                 <div class="stat-value" id="totalDownloads">0</div>
@@ -2044,7 +2119,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             </div>
         </div>
 
-        <input type="search" class="search" id="searchInput" placeholder="Search configs...">
+        <input type="search" class="search" id="searchInput" placeholder="Search configs by name, game, author...">
 
         <div class="config-grid" id="configsList">
             <div class="loading">Loading configs</div>
@@ -2060,8 +2135,8 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             <input type="text" class="modal-input" id="modalUsername" placeholder="Username">
             <input type="password" class="modal-input" id="modalPassword" placeholder="Password">
             <button class="modal-btn" id="modalLoginBtn" onclick="modalLogin()">Login</button>
-            <div id="modalError" style="color: rgb(255,80,80); font-size: 12px; margin-top: 10px; text-align: center;"></div>
-            <div id="modalSuccess" style="color: rgb(80,255,80); font-size: 12px; margin-top: 10px; text-align: center;"></div>
+            <div class="modal-error" id="modalError"></div>
+            <div class="modal-success" id="modalSuccess"></div>
         </div>
     </div>
 
@@ -2093,6 +2168,8 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             modalSuccess.textContent = '';
             modalUsername.value = '';
             modalPassword.value = '';
+            modalLoginBtn.disabled = false;
+            modalLoginBtn.textContent = 'Login';
         }
         
         fabButton.addEventListener('click', showLoginModal);
@@ -2127,7 +2204,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                 const data = await res.json();
                 
                 if (data.valid) {
-                    modalSuccess.textContent = 'Login successful!';
+                    modalSuccess.textContent = 'Login successful! Redirecting...';
                     
                     setTimeout(() => {
                         if (data.license_key) {
@@ -2155,9 +2232,11 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                 
                 allConfigs = data.configs || [];
                 
+                // Update stats with real data
                 totalConfigsEl.textContent = allConfigs.length;
                 totalDownloadsEl.textContent = data.total_downloads || 0;
                 
+                // Calculate top game from real data
                 const gameCounts = {};
                 allConfigs.forEach(config => {
                     const game = config.game_name || 'Unknown';
@@ -2176,18 +2255,23 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                 topGameEl.textContent = topGameName;
                 
                 if (allConfigs.length === 0) {
-                    configsList.innerHTML = '<div class="empty">No configs yet</div>';
+                    configsList.innerHTML = '<div class="empty">No configs yet. Be the first to share!</div>';
                     return;
                 }
                 
                 filterConfigs();
                 
             } catch(error) {
-                configsList.innerHTML = '<div class="empty">Failed to load configs</div>';
+                console.error('Error loading configs:', error);
+                configsList.innerHTML = '<div class="empty">Failed to load configs. Please try again.</div>';
             }
         }
         
         function filterConfigs() {
+            if (!allConfigs || allConfigs.length === 0) {
+                return;
+            }
+            
             const filtered = allConfigs.filter(config => {
                 if (!currentSearch) return true;
                 
@@ -2219,10 +2303,10 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                     <div class="config-game">${escapeHtml(config.game_name)}</div>
                     <div class="config-description">${escapeHtml(config.description || 'No description')}</div>
                     <div class="config-footer">
-                        <span>by ${escapeHtml(config.author_name)}</span>
-                        <span>${config.downloads || 0} downloads</span>
+                        <span class="config-author">by ${escapeHtml(config.author_name)}</span>
+                        <span class="config-downloads">${config.downloads || 0} downloads</span>
                     </div>
-                    <button class="load-btn" onclick="viewConfig(${config.id})">View</button>
+                    <button class="load-btn" onclick="viewConfig(${config.id})">View Config</button>
                 `;
                 configsList.appendChild(card);
             });
@@ -2234,6 +2318,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         }
         
         function escapeHtml(text) {
+            if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
@@ -2244,13 +2329,11 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             filterConfigs();
         });
         
+        // Load configs immediately
         loadConfigs();
-        setInterval(loadConfigs, 60000);
         
-        const pendingConfigId = localStorage.getItem('pendingConfigId');
-        if (pendingConfigId) {
-            localStorage.removeItem('pendingConfigId');
-        }
+        // Refresh every 30 seconds
+        setInterval(loadConfigs, 30000);
     </script>
 
 """ + ENHANCED_ANTI_DEVTOOLS_JS + """
@@ -2289,11 +2372,11 @@ def serve_config_dashboard(license_key: str):
 <meta name="theme-color" content="#0c0c0c">
 <style>
 body{{background:rgb(12,12,12);color:rgb(180,180,180);font-family:Arial,Helvetica,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
-.container{{text-align:center;padding:40px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:4px}}
-h1{{color:rgb(255,80,80);font-size:24px;font-weight:400;margin-bottom:20px}}
+.container{{text-align:center;padding:30px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:3px}}
+h1{{color:rgb(255,80,80);font-size:20px;font-weight:400;margin-bottom:15px}}
 p{{color:rgb(120,120,120);margin-bottom:20px}}
-button{{padding:12px 30px;background:linear-gradient(90deg,rgb(14,14,14),rgb(20,20,20));border:1px solid rgba(40,40,40,0.8);color:rgb(200,200,200);cursor:pointer;border-radius:4px}}
-button:hover{{background:linear-gradient(90deg,rgb(18,18,18),rgb(28,28,28));border-color:rgba(40,40,40,1)}}
+button{{padding:10px 25px;background:rgb(20,20,20);border:1px solid rgb(40,40,40);color:rgb(200,200,200);cursor:pointer;border-radius:3px}}
+button:hover{{background:rgb(25,25,25);border-color:rgb(60,60,60)}}
 </style>
 </head>
 <body>
@@ -2306,7 +2389,7 @@ button:hover{{background:linear-gradient(90deg,rgb(18,18,18),rgb(28,28,28));bord
 </body>
 </html>"""
         
-        # Keep the config dashboard HTML from the second version
+        # Return config dashboard HTML (keeping it simple)
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2316,56 +2399,51 @@ button:hover{{background:linear-gradient(90deg,rgb(18,18,18),rgb(28,28,28));bord
 <style>
 *{{margin:0;padding:0;box-sizing:border-box;user-select:none}}
 body{{height:100vh;background:rgb(12,12,12);font-family:Arial,Helvetica,sans-serif;color:rgb(180,180,180);display:flex;align-items:center;justify-content:center}}
-.window{{width:760px;height:520px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:4px;display:flex;flex-direction:column;overflow:hidden}}
-.topbar{{height:38px;background:linear-gradient(145deg,rgb(24,24,24),rgb(20,20,20));border-bottom:1px solid rgb(28,28,28);display:flex;align-items:center;padding:0 12px;gap:16px}}
+.window{{width:760px;height:520px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:3px;display:flex;flex-direction:column;overflow:hidden}}
+.topbar{{height:38px;background:rgb(20,20,20);border-bottom:1px solid rgb(28,28,28);display:flex;align-items:center;padding:0 12px;gap:16px}}
 .title{{font-size:13px;color:rgb(200,200,200);padding-right:16px;border-right:1px solid rgb(28,28,28)}}
 .tabs{{display:flex;gap:18px;font-size:12px}}
 .tab{{color:rgb(120,120,120);cursor:pointer;transition:color 0.2s}}
 .tab:hover,.tab.active{{color:rgb(200,200,200)}}
-.content{{flex:1;padding:10px;background:rgb(12,12,12);display:flex;align-items:center;justify-content:center;position:relative}}
+.content{{flex:1;padding:10px;background:rgb(12,12,12);display:flex;align-items:center;justify-content:center}}
 .tab-content{{width:100%;height:100%;display:none}}
 .tab-content.active{{display:block}}
-.merged-panel{{width:100%;height:100%;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:4px;overflow:hidden;display:flex;align-items:center;justify-content:center}}
+.merged-panel{{width:100%;height:100%;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:3px;display:flex;align-items:center;justify-content:center}}
 .inner-container{{width:98%;height:96%;display:flex;gap:14px;overflow:hidden}}
-.half-panel{{flex:1;background:linear-gradient(145deg,rgb(24,24,24),rgb(20,20,20));border:1px solid rgb(28,28,28);border-radius:4px;overflow-y:auto;padding:14px 16px;position:relative}}
-.panel-header{{position:absolute;top:10px;left:16px;color:rgb(200,200,200);font-size:11px;font-weight:normal;pointer-events:none;z-index:1}}
-.toggle-row{{position:absolute;left:16px;display:flex;align-items:center;gap:12px;z-index:1}}
-.toggle-text{{display:flex;align-items:center;gap:12px}}
-.toggle{{width:14px;height:14px;background:transparent;border:1px solid rgb(40,40,40);border-radius:2px;cursor:pointer;transition:background 0.2s;flex-shrink:0}}
+.half-panel{{flex:1;background:rgb(20,20,20);border:1px solid rgb(28,28,28);border-radius:3px;overflow-y:auto;padding:14px 16px;position:relative}}
+.panel-header{{position:absolute;top:10px;left:16px;color:rgb(200,200,200);font-size:11px}}
+.toggle-row{{position:absolute;left:16px;display:flex;align-items:center;gap:12px}}
+.toggle{{width:14px;height:14px;background:rgb(12,12,12);border:1px solid rgb(40,40,40);border-radius:2px;cursor:pointer}}
 .toggle.active{{background:#888888}}
-.enable-text{{color:rgb(120,120,120);font-size:11px;line-height:1;transition:color 0.25s;pointer-events:none}}
-.toggle.active + .enable-text{{color:rgb(200,200,200)}}
-.keybind-picker{{width:80px;height:20px;background:linear-gradient(145deg,rgb(20,20,20),rgb(16,16,16));border:1px solid rgb(28,28,28);border-radius:2px;color:rgb(200,200,200);font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}}
-.slider-label{{position:absolute;left:16px;color:rgb(200,200,200);font-size:11px;font-weight:normal;z-index:1}}
-.slider-container{{position:absolute;left:16px;width:210px;height:14px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:2px;overflow:hidden;z-index:10}}
-.slider-track{{position:absolute;top:0;left:0;width:100%;height:100%;background:rgb(12,12,12)}}
-.slider-fill{{position:absolute;top:0;left:0;height:100%;background:#888888;width:50%;transition:width 0.1s}}
-.slider-value{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:9px;font-weight:bold;pointer-events:none;z-index:3}}
-.custom-dropdown{{position:absolute;left:16px;width:210px;height:16px;z-index:100}}
-.dropdown-header{{width:100%;height:100%;background:linear-gradient(145deg,rgb(20,20,20),rgb(16,16,16));border:1px solid rgb(28,28,28);border-radius:2px;display:flex;align-items:center;padding:0 8px;cursor:pointer;font-size:10px;color:rgb(200,200,200)}}
-.dropdown-list{{position:absolute;top:100%;left:0;width:100%;max-height:160px;background:rgb(20,20,20);border:1px solid rgb(28,28,28);border-top:none;overflow-y:auto;display:none;z-index:101}}
+.enable-text{{color:rgb(120,120,120);font-size:11px}}
+.keybind-picker{{width:80px;height:20px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:2px;color:rgb(200,200,200);font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}}
+.slider-label{{position:absolute;left:16px;color:rgb(200,200,200);font-size:11px}}
+.slider-container{{position:absolute;left:16px;width:210px;height:14px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:2px;overflow:hidden}}
+.slider-fill{{position:absolute;top:0;left:0;height:100%;background:#888888}}
+.slider-value{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:9px;color:#fff}}
+.custom-dropdown{{position:absolute;left:16px;width:210px;z-index:100}}
+.dropdown-header{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);padding:2px 8px;cursor:pointer;font-size:10px;color:rgb(200,200,200)}}
+.dropdown-list{{position:absolute;top:100%;left:0;width:100%;background:rgb(20,20,20);border:1px solid rgb(28,28,28);display:none;max-height:160px;overflow-y:auto}}
 .dropdown-list.open{{display:block}}
-.dropdown-item{{padding:5px 10px;font-size:11px;color:rgb(200,200,200);cursor:pointer}}
-.dropdown-item:hover{{background:rgb(28,28,28)}}
-.dropdown-item.selected{{background:#888888;color:#fff}}
+.dropdown-item{{padding:4px 8px;font-size:10px;color:rgb(200,200,200);cursor:pointer}}
+.dropdown-item:hover{{background:rgb(30,30,30)}}
+.dropdown-item.selected{{background:#888888}}
 .config-list{{position:absolute;top:32px;left:16px;right:16px;bottom:16px;overflow-y:auto}}
-.config-item{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:2px;padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:10px;position:relative}}
-.config-item:hover{{background:rgb(20,20,20)}}
+.config-item{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);padding:6px 10px;margin-bottom:6px;display:flex;align-items:center}}
 .config-name{{flex:1;font-size:10px;color:rgb(200,200,200)}}
 .config-dots{{width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgb(120,120,120);font-size:16px}}
-.config-dots:hover{{color:rgb(200,200,200)}}
-.config-menu{{position:absolute;right:8px;top:28px;background:rgb(20,20,20);border:1px solid rgb(28,28,28);display:none;z-index:200;min-width:100px}}
+.config-menu{{position:absolute;right:8px;top:28px;background:rgb(20,20,20);border:1px solid rgb(28,28,28);display:none;z-index:200}}
 .config-menu.open{{display:block}}
 .config-menu-item{{padding:6px 12px;font-size:10px;color:rgb(200,200,200);cursor:pointer}}
-.config-menu-item:hover{{background:rgb(28,28,28)}}
-.input-box{{width:100%;height:24px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);color:rgb(200,200,200);font-size:11px;padding:0 8px;outline:none}}
+.config-menu-item:hover{{background:rgb(30,30,30)}}
+.input-box{{width:100%;height:24px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);color:rgb(200,200,200);font-size:11px;padding:0 8px}}
 .config-btn{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);padding:6px 12px;font-size:11px;color:rgb(200,200,200);cursor:pointer;width:100%;margin-top:6px}}
 .config-btn:hover{{background:rgb(20,20,20)}}
-.modal-overlay{{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(12,12,12,0.9);display:none;align-items:center;justify-content:center;z-index:9999}}
+.modal-overlay{{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(12,12,12,0.95);display:none;align-items:center;justify-content:center;z-index:9999}}
 .modal-overlay.active{{display:flex}}
-.modal-box{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);padding:24px;min-width:300px;border-radius:4px}}
+.modal-box{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);padding:24px;min-width:300px}}
 .modal-title{{color:rgb(200,200,200);font-size:13px;margin-bottom:16px}}
-.modal-input{{width:100%;height:28px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);color:rgb(200,200,200);font-size:11px;padding:0 10px;outline:none;margin-bottom:12px}}
+.modal-input{{width:100%;height:28px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);color:rgb(200,200,200);font-size:11px;padding:0 10px;margin-bottom:12px}}
 .modal-buttons{{display:flex;gap:8px}}
 .modal-btn{{flex:1;height:28px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);color:rgb(200,200,200);font-size:11px;cursor:pointer}}
 .modal-btn:hover{{background:rgb(20,20,20)}}
@@ -2388,10 +2466,8 @@ body{{height:100vh;background:rgb(12,12,12);font-family:Arial,Helvetica,sans-ser
                     <div class="half-panel">
                         <div class="panel-header">Aimbot</div>
                         <div class="toggle-row" style="top:32px">
-                            <div class="toggle-text">
-                                <div class="toggle active" data-setting="camlock.Enabled"></div>
-                                <span class="enable-text">Enable Aimbot</span>
-                            </div>
+                            <div class="toggle active" data-setting="camlock.Enabled"></div>
+                            <span class="enable-text">Enable Aimbot</span>
                             <div class="keybind-picker" data-setting="camlock.Keybind">Q</div>
                         </div>
                         <div class="toggle-row" style="top:58px">
@@ -2415,80 +2491,50 @@ body{{height:100vh;background:rgb(12,12,12);font-family:Arial,Helvetica,sans-ser
                             <span class="enable-text">Enable Prediction</span>
                         </div>
                         <div class="slider-label" style="top:180px">Body Part</div>
-                        <div class="custom-dropdown" style="top:194px" id="bodyPartDropdown" data-setting="camlock.BodyPart">
+                        <div class="custom-dropdown" style="top:194px">
                             <div class="dropdown-header" id="bodyPartHeader">Head</div>
                             <div class="dropdown-list" id="bodyPartList">
                                 <div class="dropdown-item selected" data-value="Head">Head</div>
                                 <div class="dropdown-item" data-value="UpperTorso">UpperTorso</div>
                                 <div class="dropdown-item" data-value="LowerTorso">LowerTorso</div>
-                                <div class="dropdown-item" data-value="HumanoidRootPart">HumanoidRootPart</div>
-                                <div class="dropdown-item" data-value="LeftUpperArm">LeftUpperArm</div>
-                                <div class="dropdown-item" data-value="RightUpperArm">RightUpperArm</div>
-                                <div class="dropdown-item" data-value="LeftLowerArm">LeftLowerArm</div>
-                                <div class="dropdown-item" data-value="RightLowerArm">RightLowerArm</div>
-                                <div class="dropdown-item" data-value="LeftHand">LeftHand</div>
-                                <div class="dropdown-item" data-value="RightHand">RightHand</div>
-                                <div class="dropdown-item" data-value="LeftUpperLeg">LeftUpperLeg</div>
-                                <div class="dropdown-item" data-value="RightUpperLeg">RightUpperLeg</div>
-                                <div class="dropdown-item" data-value="LeftLowerLeg">LeftLowerLeg</div>
-                                <div class="dropdown-item" data-value="RightLowerLeg">RightLowerLeg</div>
-                                <div class="dropdown-item" data-value="LeftFoot">LeftFoot</div>
-                                <div class="dropdown-item" data-value="RightFoot">RightFoot</div>
+                                <div class="dropdown-item" data-value="HumanoidRootPart">Root</div>
                             </div>
                         </div>
                     </div>
                     <div class="half-panel">
                         <div class="panel-header">Aimbot Settings</div>
                         <div class="slider-label" style="top:32px">FOV</div>
-                        <div class="slider-container" id="fovSlider" style="top:46px" data-setting="camlock.FOV">
-                            <div class="slider-track">
-                                <div class="slider-fill" id="fovFill"></div>
-                                <div class="slider-value" id="fovValue">280</div>
-                            </div>
+                        <div class="slider-container" id="fovSlider" style="top:46px">
+                            <div class="slider-fill" id="fovFill" style="width:56%"></div>
+                            <div class="slider-value" id="fovValue">280</div>
                         </div>
                         <div class="slider-label" style="top:72px">Smooth X</div>
-                        <div class="slider-container" id="smoothXSlider" style="top:86px" data-setting="camlock.SmoothX">
-                            <div class="slider-track">
-                                <div class="slider-fill" id="smoothXFill"></div>
-                                <div class="slider-value" id="smoothXValue">14</div>
-                            </div>
+                        <div class="slider-container" id="smoothXSlider" style="top:86px">
+                            <div class="slider-fill" id="smoothXFill" style="width:47%"></div>
+                            <div class="slider-value" id="smoothXValue">14</div>
                         </div>
                         <div class="slider-label" style="top:112px">Smooth Y</div>
-                        <div class="slider-container" id="smoothYSlider" style="top:126px" data-setting="camlock.SmoothY">
-                            <div class="slider-track">
-                                <div class="slider-fill" id="smoothYFill"></div>
-                                <div class="slider-value" id="smoothYValue">14</div>
-                            </div>
+                        <div class="slider-container" id="smoothYSlider" style="top:126px">
+                            <div class="slider-fill" id="smoothYFill" style="width:47%"></div>
+                            <div class="slider-value" id="smoothYValue">14</div>
                         </div>
                         <div class="slider-label" style="top:152px">Prediction</div>
-                        <div class="slider-container" id="camlockPredSlider" style="top:166px" data-setting="camlock.Prediction">
-                            <div class="slider-track">
-                                <div class="slider-fill" id="camlockPredFill"></div>
-                                <div class="slider-value" id="camlockPredValue">0.14</div>
-                            </div>
+                        <div class="slider-container" id="camlockPredSlider" style="top:166px">
+                            <div class="slider-fill" id="camlockPredFill" style="width:14%"></div>
+                            <div class="slider-value" id="camlockPredValue">0.14</div>
                         </div>
                         <div class="slider-label" style="top:192px">Max Studs</div>
-                        <div class="slider-container" id="camlockMaxStudsSlider" style="top:206px" data-setting="camlock.MaxStuds">
-                            <div class="slider-track">
-                                <div class="slider-fill" id="camlockMaxStudsFill"></div>
-                                <div class="slider-value" id="camlockMaxStudsValue">120</div>
-                            </div>
+                        <div class="slider-container" id="camlockMaxStudsSlider" style="top:206px">
+                            <div class="slider-fill" id="camlockMaxStudsFill" style="width:40%"></div>
+                            <div class="slider-value" id="camlockMaxStudsValue">120</div>
                         </div>
                         <div class="slider-label" style="top:232px">Easing Style</div>
-                        <div class="custom-dropdown" style="top:246px" id="easingDropdown" data-setting="camlock.EasingStyle">
+                        <div class="custom-dropdown" style="top:246px">
                             <div class="dropdown-header" id="easingHeader">Linear</div>
                             <div class="dropdown-list" id="easingList">
                                 <div class="dropdown-item selected" data-value="Linear">Linear</div>
                                 <div class="dropdown-item" data-value="Sine">Sine</div>
                                 <div class="dropdown-item" data-value="Quad">Quad</div>
-                                <div class="dropdown-item" data-value="Cubic">Cubic</div>
-                                <div class="dropdown-item" data-value="Quart">Quart</div>
-                                <div class="dropdown-item" data-value="Quint">Quint</div>
-                                <div class="dropdown-item" data-value="Expo">Expo</div>
-                                <div class="dropdown-item" data-value="Circ">Circ</div>
-                                <div class="dropdown-item" data-value="Back">Back</div>
-                                <div class="dropdown-item" data-value="Elastic">Elastic</div>
-                                <div class="dropdown-item" data-value="Bounce">Bounce</div>
                             </div>
                         </div>
                         <div class="toggle-row" style="top:272px">
@@ -2496,34 +2542,28 @@ body{{height:100vh;background:rgb(12,12,12);font-family:Arial,Helvetica,sans-ser
                             <span class="enable-text">Scale Toggle</span>
                         </div>
                         <div class="slider-label" style="top:298px">Scale</div>
-                        <div class="slider-container" id="scaleSlider" style="top:312px" data-setting="camlock.Scale">
-                            <div class="slider-track">
-                                <div class="slider-fill" id="scaleFill"></div>
-                                <div class="slider-value" id="scaleValue">1.0</div>
-                            </div>
+                        <div class="slider-container" id="scaleSlider" style="top:312px">
+                            <div class="slider-fill" id="scaleFill" style="width:50%"></div>
+                            <div class="slider-value" id="scaleValue">1.0</div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-
+        
         <div class="tab-content" id="triggerbot">
             <div class="merged-panel">
                 <div class="inner-container">
                     <div class="half-panel">
                         <div class="panel-header">Triggerbot</div>
                         <div class="toggle-row" style="top:32px">
-                            <div class="toggle-text">
-                                <div class="toggle active" data-setting="triggerbot.Enabled"></div>
-                                <span class="enable-text">Enable Triggerbot</span>
-                            </div>
+                            <div class="toggle active" data-setting="triggerbot.Enabled"></div>
+                            <span class="enable-text">Enable Triggerbot</span>
                             <div class="keybind-picker" data-setting="triggerbot.Keybind">Right Mouse</div>
                         </div>
                         <div class="toggle-row" style="top:58px">
-                            <div class="toggle-text">
-                                <div class="toggle" data-setting="triggerbot.TargetMode"></div>
-                                <span class="enable-text">Target Mode</span>
-                            </div>
+                            <div class="toggle" data-setting="triggerbot.TargetMode"></div>
+                            <span class="enable-text">Target Mode</span>
                             <div class="keybind-picker" data-setting="triggerbot.TargetKeybind">Middle Mouse</div>
                         </div>
                     </div>
@@ -2545,39 +2585,31 @@ body{{height:100vh;background:rgb(12,12,12);font-family:Arial,Helvetica,sans-ser
                             <div class="toggle active" data-setting="triggerbot.TeamCheck"></div>
                             <span class="enable-text">Team Check</span>
                         </div>
-                        <div class="slider-label" style="top:130px">Delay (s)</div>
-                        <div class="slider-container" id="delaySlider" style="top:144px" data-setting="triggerbot.Delay">
-                            <div class="slider-track">
-                                <div class="slider-fill" id="delayFill"></div>
-                                <div class="slider-value" id="delayValue">0.05</div>
-                            </div>
+                        <div class="slider-label" style="top:130px">Delay</div>
+                        <div class="slider-container" id="delaySlider" style="top:144px">
+                            <div class="slider-fill" id="delayFill" style="width:5%"></div>
+                            <div class="slider-value" id="delayValue">0.05</div>
                         </div>
                         <div class="slider-label" style="top:170px">Max Studs</div>
-                        <div class="slider-container" id="maxStudsSlider" style="top:184px" data-setting="triggerbot.MaxStuds">
-                            <div class="slider-track">
-                                <div class="slider-fill" id="maxStudsFill"></div>
-                                <div class="slider-value" id="maxStudsValue">120</div>
-                            </div>
+                        <div class="slider-container" id="maxStudsSlider" style="top:184px">
+                            <div class="slider-fill" id="maxStudsFill" style="width:40%"></div>
+                            <div class="slider-value" id="maxStudsValue">120</div>
                         </div>
                         <div class="slider-label" style="top:210px">Prediction</div>
-                        <div class="slider-container" id="predSlider" style="top:224px" data-setting="triggerbot.Prediction">
-                            <div class="slider-track">
-                                <div class="slider-fill" id="predFill"></div>
-                                <div class="slider-value" id="predValue">0.10</div>
-                            </div>
+                        <div class="slider-container" id="predSlider" style="top:224px">
+                            <div class="slider-fill" id="predFill" style="width:10%"></div>
+                            <div class="slider-value" id="predValue">0.10</div>
                         </div>
                         <div class="slider-label" style="top:250px">FOV</div>
-                        <div class="slider-container" id="trigFovSlider" style="top:264px" data-setting="triggerbot.FOV">
-                            <div class="slider-track">
-                                <div class="slider-fill" id="trigFovFill"></div>
-                                <div class="slider-value" id="trigFovValue">25</div>
-                            </div>
+                        <div class="slider-container" id="trigFovSlider" style="top:264px">
+                            <div class="slider-fill" id="trigFovFill" style="width:25%"></div>
+                            <div class="slider-value" id="trigFovValue">25</div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-
+        
         <div class="tab-content" id="settings">
             <div class="merged-panel">
                 <div class="inner-container">
@@ -2591,7 +2623,7 @@ body{{height:100vh;background:rgb(12,12,12);font-family:Arial,Helvetica,sans-ser
                             <div style="margin-bottom:12px">
                                 <div style="font-size:11px;color:rgb(200,200,200);margin-bottom:4px">Save Current Config</div>
                                 <input type="text" id="saveConfigInput" class="input-box" placeholder="Config name...">
-                                <button class="config-btn" style="margin-top:4px;width:100%" onclick="saveCurrentConfig()">Save</button>
+                                <button class="config-btn" style="margin-top:4px" onclick="saveCurrentConfig()">Save</button>
                             </div>
                             <div style="margin-top:20px">
                                 <div style="font-size:11px;color:rgb(200,200,200);margin-bottom:4px">Quick Actions</div>
@@ -2695,7 +2727,7 @@ function applyConfigToUI() {{
             toggle.classList.toggle('active', config[section][key]);
         }}
     }});
-
+    
     document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
         const setting = picker.dataset.setting;
         const [section, key] = setting.split('.');
@@ -2703,29 +2735,12 @@ function applyConfigToUI() {{
             picker.textContent = config[section][key];
         }}
     }});
-
-    if (sliders.delay)       {{ sliders.delay.current = config.triggerbot.Delay;       sliders.delay.update(); }}
-    if (sliders.maxStuds)    {{ sliders.maxStuds.current = config.triggerbot.MaxStuds; sliders.maxStuds.update(); }}
-    if (sliders.pred)        {{ sliders.pred.current = config.triggerbot.Prediction;   sliders.pred.update(); }}
-    if (sliders.trigFov)     {{ sliders.trigFov.current = config.triggerbot.FOV;       sliders.trigFov.update(); }}
-    if (sliders.fov)         {{ sliders.fov.current = config.camlock.FOV;              sliders.fov.update(); }}
-    if (sliders.smoothX)     {{ sliders.smoothX.current = config.camlock.SmoothX;      sliders.smoothX.update(); }}
-    if (sliders.smoothY)     {{ sliders.smoothY.current = config.camlock.SmoothY;      sliders.smoothY.update(); }}
-    if (sliders.camlockPred) {{ sliders.camlockPred.current = config.camlock.Prediction; sliders.camlockPred.update(); }}
-    if (sliders.camlockMaxStuds) {{ sliders.camlockMaxStuds.current = config.camlock.MaxStuds; sliders.camlockMaxStuds.update(); }}
-    if (sliders.scale)       {{ sliders.scale.current = config.camlock.Scale;          sliders.scale.update(); }}
-
+    
     if (config.camlock.BodyPart) {{
         document.getElementById('bodyPartHeader').textContent = config.camlock.BodyPart;
-        document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item => {{
-            item.classList.toggle('selected', item.dataset.value === config.camlock.BodyPart);
-        }});
     }}
     if (config.camlock.EasingStyle) {{
         document.getElementById('easingHeader').textContent = config.camlock.EasingStyle;
-        document.querySelectorAll('#easingList .dropdown-item').forEach(item => {{
-            item.classList.toggle('selected', item.dataset.value === config.camlock.EasingStyle);
-        }});
     }}
 }}
 
@@ -2797,106 +2812,6 @@ document.querySelectorAll('#easingList .dropdown-item').forEach(item => {{
         saveConfig();
     }});
 }});
-
-const sliders = {{}};
-
-function createDecimalSlider(id, fillId, valueId, defaultVal, min, max, step, setting, textColorThreshold = 0.5) {{
-    const slider = document.getElementById(id);
-    if (!slider) return null;
-    const fill = document.getElementById(fillId);
-    const valueText = document.getElementById(valueId);
-    
-    const obj = {{
-        current: defaultVal,
-        min: min,
-        max: max,
-        step: step,
-        setting: setting,
-        threshold: textColorThreshold,
-        update: function() {{
-            const percent = ((this.current - this.min) / (this.max - this.min)) * 100;
-            fill.style.width = percent + '%';
-            valueText.textContent = this.current.toFixed(2);
-            valueText.style.color = this.current < this.threshold ? '#fff' : '#000';
-        }}
-    }};
-
-    slider.addEventListener('mousedown', (e) => {{
-        const rect = slider.getBoundingClientRect();
-        function move(e) {{
-            const x = e.clientX - rect.left;
-            let percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
-            obj.current = obj.min + (percent / 100) * (obj.max - obj.min);
-            obj.current = Math.round(obj.current / obj.step) * obj.step;
-            obj.current = Math.max(obj.min, Math.min(obj.max, obj.current));
-            obj.update();
-            const [section, key] = obj.setting.split('.');
-            config[section][key] = obj.current;
-            saveConfig();
-        }}
-        function up() {{
-            document.removeEventListener('mousemove', move);
-            document.removeEventListener('mouseup', up);
-        }}
-        document.addEventListener('mousemove', move);
-        document.addEventListener('mouseup', up);
-        move(e);
-    }});
-
-    obj.update();
-    return obj;
-}}
-
-function createIntSlider(id, fillId, valueId, defaultVal, max, blackThreshold, setting) {{
-    const slider = document.getElementById(id);
-    if (!slider) return null;
-    const fill = document.getElementById(fillId);
-    const valueText = document.getElementById(valueId);
-    const obj = {{
-        current: defaultVal,
-        max: max,
-        blackThreshold: blackThreshold,
-        setting: setting,
-        update: function() {{
-            const percent = (this.current / this.max) * 100;
-            fill.style.width = percent + '%';
-            valueText.textContent = Math.round(this.current);
-            valueText.style.color = this.current >= this.blackThreshold ? '#000' : '#fff';
-        }}
-    }};
-    slider.addEventListener('mousedown', (e) => {{
-        const rect = slider.getBoundingClientRect();
-        function move(e) {{
-            const x = e.clientX - rect.left;
-            const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
-            obj.current = (percent / 100) * obj.max;
-            obj.update();
-            const [section, key] = obj.setting.split('.');
-            config[section][key] = Math.round(obj.current);
-            saveConfig();
-        }}
-        function up() {{
-            document.removeEventListener('mousemove', move);
-            document.removeEventListener('mouseup', up);
-        }}
-        document.addEventListener('mousemove', move);
-        document.addEventListener('mouseup', up);
-        move(e);
-    }});
-    obj.update();
-    return obj;
-}}
-
-sliders.delay           = createDecimalSlider('delaySlider',       'delayFill',       'delayValue',       0.05, 0.01, 1.00, 0.01, 'triggerbot.Delay');
-sliders.maxStuds        = createIntSlider(   'maxStudsSlider',    'maxStudsFill',    'maxStudsValue',    120,  300,  150,   'triggerbot.MaxStuds');
-sliders.pred            = createDecimalSlider('predSlider',        'predFill',        'predValue',        0.10, 0.01, 1.00, 0.01, 'triggerbot.Prediction');
-sliders.trigFov         = createIntSlider(   'trigFovSlider',     'trigFovFill',     'trigFovValue',     25,   100,  50,    'triggerbot.FOV');
-sliders.fov             = createIntSlider(   'fovSlider',         'fovFill',         'fovValue',         280,  500,  250,   'camlock.FOV');
-sliders.smoothX         = createIntSlider(   'smoothXSlider',     'smoothXFill',     'smoothXValue',     14,   30,   15,    'camlock.SmoothX');
-sliders.smoothY         = createIntSlider(   'smoothYSlider',     'smoothYFill',     'smoothYValue',     14,   30,   15,    'camlock.SmoothY');
-sliders.camlockPred     = createDecimalSlider('camlockPredSlider', 'camlockPredFill', 'camlockPredValue', 0.14, 0.01, 1.00, 0.01, 'camlock.Prediction');
-sliders.camlockMaxStuds = createIntSlider(   'camlockMaxStudsSlider', 'camlockMaxStudsFill', 'camlockMaxStudsValue', 120, 300, 150, 'camlock.MaxStuds');
-sliders.scale = createDecimalSlider('scaleSlider', 'scaleFill', 'scaleValue', 1.0, 0.5, 2.0, 0.1, 'camlock.Scale', 1.20);
 
 async function loadSavedConfigs() {{
     try {{
@@ -2977,7 +2892,6 @@ function renameConfigPrompt(oldName) {{
     document.getElementById('renameInput').value = oldName;
     document.getElementById('renameModal').classList.add('active');
     document.getElementById('renameInput').focus();
-    document.getElementById('renameInput').select();
 }}
 
 function closeRenameModal() {{
@@ -3005,11 +2919,6 @@ async function confirmRename() {{
     }}
 }}
 
-document.getElementById('renameInput').addEventListener('keypress', (e) => {{
-    if (e.key === 'Enter') confirmRename();
-    if (e.key === 'Escape') closeRenameModal();
-}});
-
 async function deleteConfigByName(name) {{
     try {{
         await fetch(`/api/configs/${{key}}/delete/${{name}}`, {{method: 'DELETE'}});
@@ -3021,7 +2930,7 @@ async function deleteConfigByName(name) {{
 
 loadSavedConfigs();
 loadConfig();
-setInterval(loadConfig, 1000);
+setInterval(loadConfig, 5000);
 </script>
 
 {ENHANCED_ANTI_DEVTOOLS_JS}
@@ -3040,11 +2949,11 @@ setInterval(loadConfig, 1000);
 <meta name="theme-color" content="#0c0c0c">
 <style>
 body{{background:rgb(12,12,12);color:rgb(180,180,180);font-family:Arial,Helvetica,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
-.container{{text-align:center;padding:40px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:4px}}
-h1{{color:rgb(255,80,80);font-size:24px;font-weight:400;margin-bottom:20px}}
-.error-details{{color:rgb(255,120,120);font-size:13px;margin-top:20px;padding:15px;background:rgba(255,0,0,0.1);border:1px solid rgb(255,80,80);border-radius:4px}}
-button{{padding:12px 30px;background:linear-gradient(90deg,rgb(14,14,14),rgb(20,20,20));border:1px solid rgba(40,40,40,0.8);color:rgb(200,200,200);cursor:pointer;border-radius:4px}}
-button:hover{{background:linear-gradient(90deg,rgb(18,18,18),rgb(28,28,28));border-color:rgba(40,40,40,1)}}
+.container{{text-align:center;padding:30px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:3px}}
+h1{{color:rgb(255,80,80);font-size:20px;margin-bottom:15px}}
+.error-details{{color:rgb(255,120,120);font-size:12px;margin-top:15px;padding:12px;background:rgba(255,0,0,0.1);border:1px solid rgb(255,80,80);border-radius:3px}}
+button{{padding:10px 25px;background:rgb(20,20,20);border:1px solid rgb(40,40,40);color:rgb(200,200,200);cursor:pointer;border-radius:3px;margin-top:15px}}
+button:hover{{background:rgb(25,25,25)}}
 </style>
 </head>
 <body>
