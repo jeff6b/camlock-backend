@@ -48,25 +48,32 @@ DEFAULT_CONFIG = {
         "TargetMode": False,
         "TargetKeybind": "Middle Mouse",
         "Prediction": 0.1,
-        "FOV": 25
+        "FOV": 25,
+        "HitboxScanning": False,
+        "HitboxSize": 1.2,
+        "RaycastMode": True,
+        "VisibilityCheck": True,
+        "PerformanceMode": True
     },
     "camlock": {
         "Enabled": True,
         "Keybind": "Q",
         "FOV": 280.0,
-        "SmoothX": 14.0,
-        "SmoothY": 14.0,
-        "EnableSmoothing": True,
+        "SmoothX": 12.0,
+        "SmoothY": 12.0,
+        "EnableSmoothing": False,
         "EasingStyle": "Linear",
-        "Prediction": 0.14,
-        "EnablePrediction": True,
-        "MaxStuds": 120.0,
+        "Prediction": 0.15,
+        "EnablePrediction": False,
+        "MaxStuds": 900.0,
         "UnlockOnDeath": True,
         "SelfDeathCheck": True,
         "BodyPart": "Head",
         "ClosestPart": False,
         "ScaleToggle": True,
-        "Scale": 1.0
+        "Scale": 1.0,
+        "AssistMode": True,
+        "Delay": 100
     }
 }
 
@@ -173,6 +180,18 @@ def init_db():
                 ip_address TEXT
             )""")
             
+            # NEW: Clients table for client ID authentication
+            cur.execute("""CREATE TABLE IF NOT EXISTS clients (
+                client_id TEXT PRIMARY KEY,
+                hwid TEXT NOT NULL,
+                session_token TEXT,
+                license_key TEXT,
+                username TEXT,
+                created_at TEXT NOT NULL,
+                last_ping TEXT,
+                authenticated INTEGER DEFAULT 0
+            )""")
+            
         else:
             cur.execute("""CREATE TABLE IF NOT EXISTS keys (
                 key TEXT PRIMARY KEY,
@@ -239,8 +258,19 @@ def init_db():
                 expires_at TEXT NOT NULL,
                 ip_address TEXT
             )""")
+            
+            # NEW: Clients table for client ID authentication
+            cur.execute("""CREATE TABLE IF NOT EXISTS clients (
+                client_id TEXT PRIMARY KEY,
+                hwid TEXT NOT NULL,
+                session_token TEXT,
+                license_key TEXT,
+                username TEXT,
+                created_at TEXT NOT NULL,
+                last_ping TEXT,
+                authenticated INTEGER DEFAULT 0
+            )""")
         
-        # DON'T seed any placeholder configs - keep public_configs empty initially
         db.commit()
         print(f"Database initialized successfully. Using: {'PostgreSQL' if USE_POSTGRES else 'SQLite'}")
         
@@ -312,12 +342,26 @@ class CreateAccount(BaseModel):
 class UserLogin(BaseModel):
     username: str
     password: str
-    redirect: Optional[str] = None  # Add redirect parameter
+    redirect: Optional[str] = None
 
 class UserAuth(BaseModel):
     username: Optional[str] = None
     license_key: Optional[str] = None
     password: str
+
+# ========== NEW CLIENT AUTH MODELS ==========
+class ClientRegister(BaseModel):
+    client_id: str
+    hwid: str
+
+class ClientAuthStatus(BaseModel):
+    client_id: str
+    session_token: Optional[str] = None
+
+class ClientAuthenticate(BaseModel):
+    client_id: str
+    license_key: str
+    username: str
 
 # Security middleware
 @app.middleware("http")
@@ -394,10 +438,8 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         }, 100);
     }
     
-    // Check for dev tools every second
     setInterval(checkDevTools, 1000);
     
-    // Override console methods
     if (typeof console !== 'undefined') {
         console.log = function() {};
         console.info = function() {};
@@ -567,7 +609,6 @@ async def user_login(request: Request, data: UserLogin):
         db.close()
         create_web_session(license_key)
         
-        # Different redirect based on where the login came from
         redirect_url = None
         if data.redirect == "community":
             redirect_url = "/community"
@@ -665,6 +706,162 @@ async def auth_validate(request: Request, data: UserAuth):
     except Exception as e:
         db.close()
         return {"valid": False, "error": f"Server error: {str(e)}"}
+
+# ========== NEW CLIENT AUTH ENDPOINTS ==========
+
+@app.post("/api/client/register")
+@limiter.limit("10/minute")
+async def register_client(request: Request, data: ClientRegister):
+    """Register a new client and generate session token"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        session_token = secrets.token_hex(32)
+        created_at = datetime.now().isoformat()
+        
+        cur.execute(q("SELECT client_id FROM clients WHERE client_id=%s"), (data.client_id,))
+        existing = cur.fetchone()
+        
+        if existing:
+            cur.execute(q("""
+                UPDATE clients 
+                SET hwid=%s, session_token=%s, last_ping=%s
+                WHERE client_id=%s
+            """), (data.hwid, session_token, created_at, data.client_id))
+        else:
+            cur.execute(q("""
+                INSERT INTO clients (client_id, hwid, session_token, created_at, last_ping, authenticated)
+                VALUES (%s, %s, %s, %s, %s, 0)
+            """), (data.client_id, data.hwid, session_token, created_at, created_at))
+        
+        db.commit()
+        db.close()
+        
+        return {
+            "success": True,
+            "session_token": session_token,
+            "client_id": data.client_id
+        }
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in register_client: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@app.post("/api/client/auth-status")
+@limiter.limit("30/minute")
+async def client_auth_status(request: Request, data: ClientAuthStatus):
+    """Check if client has been authenticated via website"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("""
+            SELECT authenticated, license_key, username, hwid
+            FROM clients 
+            WHERE client_id=%s AND session_token=%s
+        """), (data.client_id, data.session_token))
+        
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            return {
+                "authenticated": False,
+                "error": "Invalid client ID or session token"
+            }
+        
+        authenticated, license_key, username, hwid = result
+        
+        db.close()
+        
+        return {
+            "authenticated": bool(authenticated),
+            "license_key": license_key,
+            "username": username,
+            "hwid": hwid
+        }
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in client_auth_status: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "authenticated": False,
+            "error": str(e)
+        }
+
+@app.post("/api/client/authenticate")
+@limiter.limit("10/minute")
+async def client_authenticate(request: Request, data: ClientAuthenticate):
+    """Website calls this when user logs in to associate client with license"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT key, active, expires_at, hwid FROM keys WHERE key=%s"), (data.license_key,))
+        license_result = cur.fetchone()
+        
+        if not license_result:
+            db.close()
+            return {"success": False, "error": "Invalid license key"}
+        
+        key, active, expires_at, bound_hwid = license_result
+        
+        if active == 0:
+            db.close()
+            return {"success": False, "error": "License inactive"}
+        
+        if expires_at:
+            try:
+                if datetime.now() > datetime.fromisoformat(expires_at):
+                    db.close()
+                    return {"success": False, "error": "License expired"}
+            except:
+                pass
+        
+        cur.execute(q("SELECT hwid FROM clients WHERE client_id=%s"), (data.client_id,))
+        client_result = cur.fetchone()
+        
+        if not client_result:
+            db.close()
+            return {"success": False, "error": "Client not registered"}
+        
+        client_hwid = client_result[0]
+        
+        if bound_hwid:
+            if bound_hwid != client_hwid:
+                db.close()
+                return {"success": False, "error": "HWID mismatch - license already bound to another PC"}
+        else:
+            cur.execute(q("UPDATE keys SET hwid=%s WHERE key=%s"), (client_hwid, data.license_key))
+        
+        cur.execute(q("""
+            UPDATE clients 
+            SET authenticated=1, license_key=%s, username=%s, last_ping=%s
+            WHERE client_id=%s
+        """), (data.license_key, data.username, datetime.now().isoformat(), data.client_id))
+        
+        db.commit()
+        db.close()
+        
+        return {
+            "success": True,
+            "message": "Client authenticated successfully",
+            "license_key": data.license_key,
+            "username": data.username
+        }
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in client_authenticate: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.get("/api/account-info/{license_key}")
 @limiter.limit("30/minute")
@@ -1233,6 +1430,8 @@ def debug_db(request: Request):
         account_count = cur.fetchone()
         cur.execute(q("SELECT COUNT(*) FROM public_configs"))
         public_count = cur.fetchone()
+        cur.execute(q("SELECT COUNT(*) FROM clients"))
+        clients_count = cur.fetchone()
         db.close()
         
         return {
@@ -1241,6 +1440,7 @@ def debug_db(request: Request):
             "keys_count": count[0] if count else 0,
             "accounts_count": account_count[0] if account_count else 0,
             "public_configs_count": public_count[0] if public_count else 0,
+            "clients_count": clients_count[0] if clients_count else 0,
             "use_postgres": USE_POSTGRES,
             "database_url": DATABASE_URL if DATABASE_URL else "local.db"
         }
@@ -1275,7 +1475,7 @@ def test_license(request: Request, license_key: str):
 
 # ========== HTML PAGES ==========
 
-# COMPACT LOGIN PAGE - LESS VERTICAL SPACE
+# COMPACT LOGIN PAGE WITH CLIENT ID HANDLING
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1527,6 +1727,14 @@ LOGIN_HTML = """<!DOCTYPE html>
             color: rgb(180,180,180);
             text-decoration: underline;
         }
+        
+        .client-id {
+            position: absolute;
+            bottom: 12px;
+            right: 12px;
+            font-size: 9px;
+            color: rgb(80,80,80);
+        }
     </style>
 </head>
 <body>
@@ -1568,6 +1776,7 @@ LOGIN_HTML = """<!DOCTYPE html>
                 </a>
             </div>
         </div>
+        <div class="client-id" id="clientIdDisplay"></div>
     </div>
 
     <script>
@@ -1596,6 +1805,26 @@ LOGIN_HTML = """<!DOCTYPE html>
             }
         }
 
+        // Get client ID from URL or localStorage
+        function getClientId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            let clientId = urlParams.get('client');
+            
+            if (clientId) {
+                localStorage.setItem('axion_client_id', clientId);
+                document.getElementById('clientIdDisplay').textContent = 'Client: ' + clientId.substring(0, 8) + '...';
+                return clientId;
+            }
+            
+            clientId = localStorage.getItem('axion_client_id');
+            if (clientId) {
+                document.getElementById('clientIdDisplay').textContent = 'Client: ' + clientId.substring(0, 8) + '...';
+                return clientId;
+            }
+            
+            return null;
+        }
+
         function clearMessages() {
             document.getElementById('errorMsg').textContent = '';
             document.getElementById('successMsg').textContent = '';
@@ -1618,6 +1847,7 @@ LOGIN_HTML = """<!DOCTYPE html>
         async function performLogin() {
             const username = document.getElementById('usernameInput').value.trim();
             const password = document.getElementById('passwordInput').value;
+            const clientId = getClientId();
             
             if (!username || !password) {
                 document.getElementById('errorMsg').textContent = 'Please enter both username and password';
@@ -1634,13 +1864,30 @@ LOGIN_HTML = """<!DOCTYPE html>
                     body: JSON.stringify({ 
                         username: username, 
                         password: password,
-                        redirect: 'dashboard'  // Explicitly for dashboard redirect
+                        redirect: 'dashboard'
                     })
                 });
                 
                 const data = await response.json();
                 
                 if (data.valid) {
+                    // If there's a pending client, authenticate it
+                    if (clientId) {
+                        try {
+                            await fetch('/api/client/authenticate', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    client_id: clientId,
+                                    license_key: data.license_key,
+                                    username: data.username
+                                })
+                            });
+                        } catch (e) {
+                            console.error('Failed to authenticate client:', e);
+                        }
+                    }
+                    
                     document.getElementById('successMsg').textContent = 'Login successful! Redirecting...';
                     
                     setTimeout(() => {
@@ -1669,6 +1916,7 @@ LOGIN_HTML = """<!DOCTYPE html>
         });
 
         createParticles();
+        getClientId();
         setTimeout(() => {
             document.getElementById('usernameInput').focus();
         }, 100);
@@ -1678,7 +1926,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 </html>
 """
 
-# COMMUNITY PAGE - NO PLACEHOLDERS, STAYS ON COMMUNITY AFTER LOGIN
+# COMMUNITY PAGE WITH CLIENT ID HANDLING
 COMMUNITY_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2010,6 +2258,14 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             color: rgb(180,180,180);
             text-decoration: underline;
         }
+        
+        .client-id {
+            position: fixed;
+            bottom: 12px;
+            left: 12px;
+            font-size: 9px;
+            color: rgb(80,80,80);
+        }
     </style>
 </head>
 <body>
@@ -2046,6 +2302,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
     </div>
 
     <button class="fab" id="fabButton">+</button>
+    <div class="client-id" id="clientIdDisplay"></div>
 
     <div class="modal-overlay" id="loginModal">
         <div class="modal-content">
@@ -2075,6 +2332,26 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         const totalDownloadsEl = document.getElementById('totalDownloads');
         const topGameEl = document.getElementById('topGame');
         const fabButton = document.getElementById('fabButton');
+        const clientIdDisplay = document.getElementById('clientIdDisplay');
+        
+        function getClientId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            let clientId = urlParams.get('client');
+            
+            if (clientId) {
+                localStorage.setItem('axion_client_id', clientId);
+                clientIdDisplay.textContent = 'Client: ' + clientId.substring(0, 8) + '...';
+                return clientId;
+            }
+            
+            clientId = localStorage.getItem('axion_client_id');
+            if (clientId) {
+                clientIdDisplay.textContent = 'Client: ' + clientId.substring(0, 8) + '...';
+                return clientId;
+            }
+            
+            return null;
+        }
         
         function showLoginModal() {
             loginModal.classList.add('active');
@@ -2102,6 +2379,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
         async function modalLogin() {
             const username = modalUsername.value.trim();
             const password = modalPassword.value;
+            const clientId = getClientId();
             
             if (!username || !password) {
                 modalError.textContent = 'All fields required';
@@ -2120,19 +2398,34 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                     body: JSON.stringify({ 
                         username: username, 
                         password: password,
-                        redirect: 'community'  // Stay on community after login
+                        redirect: 'community'
                     })
                 });
                 
                 const data = await res.json();
                 
                 if (data.valid) {
+                    // If there's a pending client, authenticate it
+                    if (clientId) {
+                        try {
+                            await fetch('/api/client/authenticate', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    client_id: clientId,
+                                    license_key: data.license_key,
+                                    username: data.username
+                                })
+                            });
+                        } catch (e) {
+                            console.error('Failed to authenticate client:', e);
+                        }
+                    }
+                    
                     modalSuccess.textContent = 'Login successful!';
                     
-                    // Stay on community page, don't redirect
                     setTimeout(() => {
                         hideLoginModal();
-                        // Refresh the page to show logged in state
                         window.location.reload();
                     }, 1500);
                 } else {
@@ -2156,11 +2449,9 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                 
                 allConfigs = data.configs || [];
                 
-                // Update stats with real data
                 totalConfigsEl.textContent = allConfigs.length;
                 totalDownloadsEl.textContent = data.total_downloads || 0;
                 
-                // Calculate top game from real data
                 const gameCounts = {};
                 allConfigs.forEach(config => {
                     const game = config.game_name || 'Unknown';
@@ -2253,10 +2544,8 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             filterConfigs();
         });
         
-        // Load configs immediately
+        getClientId();
         loadConfigs();
-        
-        // Refresh every 30 seconds
         setInterval(loadConfigs, 30000);
     </script>
 
@@ -2313,7 +2602,6 @@ button:hover{{background:rgb(25,25,25);border-color:rgb(60,60,60)}}
 </body>
 </html>"""
         
-        # Return config dashboard HTML (simplified version)
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
