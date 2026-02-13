@@ -240,6 +240,7 @@ def init_db():
                 ip_address TEXT
             )""")
         
+        # DON'T seed any placeholder configs - keep public_configs empty initially
         db.commit()
         print(f"Database initialized successfully. Using: {'PostgreSQL' if USE_POSTGRES else 'SQLite'}")
         
@@ -264,7 +265,6 @@ def create_web_session(license_key):
     expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
     
     if USE_POSTGRES:
-        # FIXED: Remove ON CONFLICT since there's no unique constraint on license_key
         cur.execute("""
             INSERT INTO user_sessions (session_id, license_key, created_at, expires_at)
             VALUES (%s, %s, %s, %s)
@@ -312,6 +312,7 @@ class CreateAccount(BaseModel):
 class UserLogin(BaseModel):
     username: str
     password: str
+    redirect: Optional[str] = None  # Add redirect parameter
 
 class UserAuth(BaseModel):
     username: Optional[str] = None
@@ -333,39 +334,38 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
 (function() {
     'use strict';
     
+    let devToolsOpen = false;
+    let debuggerInterval = null;
+    
+    function checkDevTools() {
+        const widthThreshold = window.outerWidth - window.innerWidth > 160;
+        const heightThreshold = window.outerHeight - window.innerHeight > 160;
+        
+        if (widthThreshold || heightThreshold) {
+            if (!devToolsOpen) {
+                devToolsOpen = true;
+                startDebuggerSpam();
+                setTimeout(() => {
+                    window.location.href = 'about:blank';
+                }, 100);
+            }
+        } else {
+            devToolsOpen = false;
+        }
+    }
+    
     document.addEventListener('keydown', function(e) {
-        if (e.key === 'F12' || e.keyCode === 123) {
+        if (e.key === 'F12' || e.keyCode === 123 ||
+            (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) ||
+            (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) ||
+            (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) ||
+            (e.ctrlKey && (e.key === 'U' || e.keyCode === 85))) {
             e.preventDefault();
             e.stopPropagation();
             startDebuggerSpam();
-            return false;
-        }
-        
-        if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) {
-            e.preventDefault();
-            e.stopPropagation();
-            startDebuggerSpam();
-            return false;
-        }
-        
-        if (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) {
-            e.preventDefault();
-            e.stopPropagation();
-            startDebuggerSpam();
-            return false;
-        }
-        
-        if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) {
-            e.preventDefault();
-            e.stopPropagation();
-            startDebuggerSpam();
-            return false;
-        }
-        
-        if (e.ctrlKey && (e.key === 'U' || e.keyCode === 85)) {
-            e.preventDefault();
-            e.stopPropagation();
-            startDebuggerSpam();
+            setTimeout(() => {
+                window.location.href = 'about:blank';
+            }, 100);
             return false;
         }
     });
@@ -377,7 +377,8 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
     });
     
     function startDebuggerSpam() {
-        setInterval(() => {
+        if (debuggerInterval) clearInterval(debuggerInterval);
+        debuggerInterval = setInterval(() => {
             try {
                 debugger;
                 eval("debugger");
@@ -388,25 +389,22 @@ ENHANCED_ANTI_DEVTOOLS_JS = """
         setInterval(() => {
             if (typeof console !== 'undefined') {
                 console.clear();
-                console.log('%c dm on discord if you manage to harm the website and lmk how u did it so i can improve thanks', 'color: red; font-size: 30px; font-weight: bold;');
+                console.log('%c PROTECTED', 'color: red; font-size: 30px; font-weight: bold;');
             }
         }, 100);
     }
     
-    let lastWidth = window.innerWidth;
-    let lastHeight = window.innerHeight;
+    // Check for dev tools every second
+    setInterval(checkDevTools, 1000);
     
-    setInterval(() => {
-        const widthDiff = Math.abs(window.outerWidth - window.innerWidth);
-        const heightDiff = Math.abs(window.outerHeight - window.innerHeight);
-        
-        if (widthDiff > 150 || heightDiff > 150) {
-            startDebuggerSpam();
-        }
-        
-        lastWidth = window.innerWidth;
-        lastHeight = window.innerHeight;
-    }, 1000);
+    // Override console methods
+    if (typeof console !== 'undefined') {
+        console.log = function() {};
+        console.info = function() {};
+        console.debug = function() {};
+        console.warn = function() {};
+        console.error = function() {};
+    }
 })();
 </script>
 """
@@ -569,12 +567,20 @@ async def user_login(request: Request, data: UserLogin):
         db.close()
         create_web_session(license_key)
         
+        # Different redirect based on where the login came from
+        redirect_url = None
+        if data.redirect == "community":
+            redirect_url = "/community"
+        else:
+            redirect_url = f"/config/{license_key}"
+        
         return {
             "valid": True, 
             "message": "Login successful",
             "username": username,
             "license_key": license_key,
-            "session_id": session_id
+            "session_id": session_id,
+            "redirect": redirect_url
         }
         
     except Exception as e:
@@ -1267,118 +1273,9 @@ def test_license(request: Request, license_key: str):
     except Exception as e:
         return {"error": str(e)}
 
-@app.post("/api/seed-public-configs")
-@limiter.limit("1/minute")
-async def seed_public_configs(request: Request):
-    """Seed the database with sample public configs"""
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        # Check if we already have configs
-        cur.execute(q("SELECT COUNT(*) FROM public_configs"))
-        count = cur.fetchone()[0]
-        
-        if count > 0:
-            db.close()
-            return {"success": True, "message": f"Already have {count} configs"}
-        
-        sample_configs = [
-            {
-                "config_name": "Competitive Arsenal",
-                "author_name": "fade",
-                "game_name": "Arsenal",
-                "description": "Optimized for competitive play, smooth aim and fast trigger. High FOV and low smoothing for quick target acquisition.",
-                "config_data": DEFAULT_CONFIG,
-                "license_key": "sample",
-                "created_at": (datetime.now() - timedelta(days=30)).isoformat(),
-                "downloads": 247
-            },
-            {
-                "config_name": "BedWars Rush",
-                "author_name": "nexus",
-                "game_name": "BedWars",
-                "description": "Perfect for rushing. High FOV, quick target switching, and optimized for fast-paced gameplay.",
-                "config_data": DEFAULT_CONFIG,
-                "license_key": "sample",
-                "created_at": (datetime.now() - timedelta(days=25)).isoformat(),
-                "downloads": 189
-            },
-            {
-                "config_name": "Murder Mystery",
-                "author_name": "shadow",
-                "game_name": "Murder Mystery",
-                "description": "Low delay triggerbot optimized for knife detection. Perfect for finding the murderer quickly.",
-                "config_data": DEFAULT_CONFIG,
-                "license_key": "sample",
-                "created_at": (datetime.now() - timedelta(days=20)).isoformat(),
-                "downloads": 112
-            },
-            {
-                "config_name": "Tower Defense Sim",
-                "author_name": "vector",
-                "game_name": "Tower Defense Simulator",
-                "description": "Smooth aimbot for taking down enemies quickly. Optimized for high stud ranges.",
-                "config_data": DEFAULT_CONFIG,
-                "license_key": "sample",
-                "created_at": (datetime.now() - timedelta(days=15)).isoformat(),
-                "downloads": 87
-            },
-            {
-                "config_name": "Prison Life",
-                "author_name": "crimson",
-                "game_name": "Prison Life",
-                "description": "All-around config for prison servers. Balanced aim and trigger settings.",
-                "config_data": DEFAULT_CONFIG,
-                "license_key": "sample",
-                "created_at": (datetime.now() - timedelta(days=10)).isoformat(),
-                "downloads": 156
-            }
-        ]
-        
-        for config in sample_configs:
-            cur.execute(q("""
-                INSERT INTO public_configs 
-                (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """), (
-                config["config_name"],
-                config["author_name"],
-                config["game_name"],
-                config["description"],
-                json.dumps(config["config_data"]),
-                config["license_key"],
-                config["created_at"],
-                config["downloads"]
-            ))
-        
-        db.commit()
-        db.close()
-        return {"success": True, "message": f"Added {len(sample_configs)} sample configs"}
-    except Exception as e:
-        db.close()
-        print(f"Error seeding public configs: {e}")
-        import traceback
-        traceback.print_exc()
-        return {"success": False, "error": str(e)}
-
-# Run this on startup
-@app.on_event("startup")
-async def startup_event():
-    try:
-        # Seed public configs
-        import requests
-        # Make internal request to seed endpoint
-        from fastapi.testclient import TestClient
-        client = TestClient(app)
-        response = client.post("/api/seed-public-configs")
-        print(f"Seeding public configs: {response.json()}")
-    except:
-        print("Could not seed public configs automatically")
-
 # ========== HTML PAGES ==========
 
-# FIXED LOGIN PAGE - LESS VERTICAL SPACE
+# COMPACT LOGIN PAGE - LESS VERTICAL SPACE
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1431,13 +1328,13 @@ LOGIN_HTML = """<!DOCTYPE html>
         }
 
         .container {
-            width: 340px;
+            width: 300px;
             max-width: 90%;
             background: rgb(12,12,12);
             background-image:
                 radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
             background-size: 6px 6px;
-            padding: 20px 25px;
+            padding: 20px 20px;
             box-sizing: border-box;
             border-radius: 4px;
             border: 1px solid rgb(28,28,28);
@@ -1505,8 +1402,8 @@ LOGIN_HTML = """<!DOCTYPE html>
         }
 
         .logo-image {
-            width: 70px;
-            height: 70px;
+            width: 60px;
+            height: 60px;
             object-fit: contain;
             filter: brightness(1.1) contrast(1.1);
         }
@@ -1520,7 +1417,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 
         .input-group {
             width: 100%;
-            max-width: 300px;
+            max-width: 260px;
             margin-bottom: 12px;
             display: flex;
             flex-direction: column;
@@ -1535,7 +1432,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 
         .input-field {
             width: 100%;
-            padding: 10px 12px;
+            padding: 8px 12px;
             background: rgb(20,20,20);
             border: 1px solid rgb(35,35,35);
             color: rgb(200,200,200);
@@ -1557,8 +1454,8 @@ LOGIN_HTML = """<!DOCTYPE html>
 
         .login-btn {
             width: 100%;
-            max-width: 300px;
-            padding: 10px;
+            max-width: 260px;
+            padding: 8px;
             margin-top: 5px;
             background: rgb(20,20,20);
             border: 1px solid rgb(40,40,40);
@@ -1586,7 +1483,7 @@ LOGIN_HTML = """<!DOCTYPE html>
             margin-top: 8px;
             text-align: center;
             min-height: 16px;
-            max-width: 300px;
+            max-width: 260px;
             word-wrap: break-word;
         }
 
@@ -1666,7 +1563,7 @@ LOGIN_HTML = """<!DOCTYPE html>
                     Login with username/password created when redeeming your license
                 </div>
                 
-                <a class="discord-link" href="https://discord.gg/axion" target="_blank">
+                <a class="discord-link" href="https://discord.gg/celestialrbx" target="_blank">
                     Need help? Join Discord
                 </a>
             </div>
@@ -1676,7 +1573,7 @@ LOGIN_HTML = """<!DOCTYPE html>
     <script>
         function createParticles() {
             const particlesContainer = document.getElementById('particles');
-            const count = 50;
+            const count = 40;
 
             for (let i = 0; i < count; i++) {
                 const particle = document.createElement('div');
@@ -1734,7 +1631,11 @@ LOGIN_HTML = """<!DOCTYPE html>
                 const response = await fetch('/api/user-login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: username, password: password })
+                    body: JSON.stringify({ 
+                        username: username, 
+                        password: password,
+                        redirect: 'dashboard'  // Explicitly for dashboard redirect
+                    })
                 });
                 
                 const data = await response.json();
@@ -1777,7 +1678,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 </html>
 """
 
-# FIXED COMMUNITY PAGE - REAL CONFIGS, NO GRADIENT ON BUTTONS
+# COMMUNITY PAGE - NO PLACEHOLDERS, STAYS ON COMMUNITY AFTER LOGIN
 COMMUNITY_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2095,13 +1996,27 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             margin-top: 8px;
             text-align: center;
         }
+        
+        .discord-link {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            color: rgb(100,100,100);
+            font-size: 11px;
+            text-decoration: none;
+        }
+        
+        .discord-link:hover {
+            color: rgb(180,180,180);
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>Community</h1>
-            <a href="/menu" class="nav-link">← Login</a>
+            <a href="/menu" class="nav-link">Login</a>
         </header>
 
         <div class="stats" id="statsBar">
@@ -2119,11 +2034,15 @@ COMMUNITY_HTML = """<!DOCTYPE html>
             </div>
         </div>
 
-        <input type="search" class="search" id="searchInput" placeholder="Search configs by name, game, author...">
+        <input type="search" class="search" id="searchInput" placeholder="Search configs...">
 
         <div class="config-grid" id="configsList">
             <div class="loading">Loading configs</div>
         </div>
+        
+        <a class="discord-link" href="https://discord.gg/celestialrbx" target="_blank">
+            Join our Discord
+        </a>
     </div>
 
     <button class="fab" id="fabButton">+</button>
@@ -2131,7 +2050,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
     <div class="modal-overlay" id="loginModal">
         <div class="modal-content">
             <button class="close-modal" onclick="hideLoginModal()">&times;</button>
-            <div class="modal-title">Login Required</div>
+            <div class="modal-title">Login to Share</div>
             <input type="text" class="modal-input" id="modalUsername" placeholder="Username">
             <input type="password" class="modal-input" id="modalPassword" placeholder="Password">
             <button class="modal-btn" id="modalLoginBtn" onclick="modalLogin()">Login</button>
@@ -2198,19 +2117,24 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                 const res = await fetch('/api/user-login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
+                    body: JSON.stringify({ 
+                        username: username, 
+                        password: password,
+                        redirect: 'community'  // Stay on community after login
+                    })
                 });
                 
                 const data = await res.json();
                 
                 if (data.valid) {
-                    modalSuccess.textContent = 'Login successful! Redirecting...';
+                    modalSuccess.textContent = 'Login successful!';
                     
+                    // Stay on community page, don't redirect
                     setTimeout(() => {
-                        if (data.license_key) {
-                            window.location.href = `/config/${data.license_key}`;
-                        }
-                    }, 800);
+                        hideLoginModal();
+                        // Refresh the page to show logged in state
+                        window.location.reload();
+                    }, 1500);
                 } else {
                     modalError.textContent = data.error || 'Login failed';
                     modalLoginBtn.disabled = false;
@@ -2263,7 +2187,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                 
             } catch(error) {
                 console.error('Error loading configs:', error);
-                configsList.innerHTML = '<div class="empty">Failed to load configs. Please try again.</div>';
+                configsList.innerHTML = '<div class="empty">Failed to load configs</div>';
             }
         }
         
@@ -2304,7 +2228,7 @@ COMMUNITY_HTML = """<!DOCTYPE html>
                     <div class="config-description">${escapeHtml(config.description || 'No description')}</div>
                     <div class="config-footer">
                         <span class="config-author">by ${escapeHtml(config.author_name)}</span>
-                        <span class="config-downloads">${config.downloads || 0} downloads</span>
+                        <span class="config-downloads">${config.downloads || 0} ⬇️</span>
                     </div>
                     <button class="load-btn" onclick="viewConfig(${config.id})">View Config</button>
                 `;
@@ -2389,7 +2313,7 @@ button:hover{{background:rgb(25,25,25);border-color:rgb(60,60,60)}}
 </body>
 </html>"""
         
-        # Return config dashboard HTML (keeping it simple)
+        # Return config dashboard HTML (simplified version)
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2652,40 +2576,7 @@ body{{height:100vh;background:rgb(12,12,12);font-family:Arial,Helvetica,sans-ser
 <script>
 const key = "{license_key}";
 
-let config = {{
-    "triggerbot": {{
-        "Enabled": true,
-        "Keybind": "Right Mouse",
-        "Delay": 0.05,
-        "MaxStuds": 120,
-        "StudCheck": true,
-        "DeathCheck": true,
-        "KnifeCheck": true,
-        "TeamCheck": true,
-        "TargetMode": false,
-        "TargetKeybind": "Middle Mouse",
-        "Prediction": 0.1,
-        "FOV": 25
-    }},
-    "camlock": {{
-        "Enabled": true,
-        "Keybind": "Q",
-        "FOV": 280.0,
-        "SmoothX": 14.0,
-        "SmoothY": 14.0,
-        "EnableSmoothing": true,
-        "EasingStyle": "Linear",
-        "Prediction": 0.14,
-        "EnablePrediction": true,
-        "MaxStuds": 120.0,
-        "UnlockOnDeath": true,
-        "SelfDeathCheck": true,
-        "BodyPart": "Head",
-        "ClosestPart": false,
-        "ScaleToggle": true,
-        "Scale": 1.0
-    }}
-}};
+let config = {json.dumps(DEFAULT_CONFIG)};
 
 document.querySelectorAll('.tab').forEach(tab => {{
     tab.addEventListener('click', () => {{
