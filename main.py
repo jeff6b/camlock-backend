@@ -712,7 +712,7 @@ async def auth_validate(request: Request, data: UserAuth):
 @app.post("/api/client/register")
 @limiter.limit("10/minute")
 async def register_client(request: Request, data: ClientRegister):
-    """Register a new client and generate session token"""
+    """Register a new client - always start unauthenticated"""
     db = get_db()
     cur = db.cursor()
     
@@ -720,16 +720,18 @@ async def register_client(request: Request, data: ClientRegister):
         session_token = secrets.token_hex(32)
         created_at = datetime.now().isoformat()
         
+        # Check if client already exists
         cur.execute(q("SELECT client_id FROM clients WHERE client_id=%s"), (data.client_id,))
         existing = cur.fetchone()
         
         if existing:
             cur.execute(q("""
                 UPDATE clients 
-                SET hwid=%s, session_token=%s, last_ping=%s
+                SET hwid=%s, session_token=%s, last_ping=%s, authenticated=0
                 WHERE client_id=%s
             """), (data.hwid, session_token, created_at, data.client_id))
         else:
+            # Insert new client - always start unauthenticated
             cur.execute(q("""
                 INSERT INTO clients (client_id, hwid, session_token, created_at, last_ping, authenticated)
                 VALUES (%s, %s, %s, %s, %s, 0)
@@ -741,7 +743,8 @@ async def register_client(request: Request, data: ClientRegister):
         return {
             "success": True,
             "session_token": session_token,
-            "client_id": data.client_id
+            "client_id": data.client_id,
+            "authenticated": False
         }
         
     except Exception as e:
@@ -754,7 +757,7 @@ async def register_client(request: Request, data: ClientRegister):
 @app.post("/api/client/auth-status")
 @limiter.limit("30/minute")
 async def client_auth_status(request: Request, data: ClientAuthStatus):
-    """Check if client has been authenticated via website"""
+    """Check if client has been authenticated via website ONLY"""
     db = get_db()
     cur = db.cursor()
     
@@ -798,7 +801,7 @@ async def client_auth_status(request: Request, data: ClientAuthStatus):
 @app.post("/api/client/authenticate")
 @limiter.limit("10/minute")
 async def client_authenticate(request: Request, data: ClientAuthenticate):
-    """Website calls this when user logs in to associate client with license"""
+    """Website calls this ONLY when user manually logs in"""
     db = get_db()
     cur = db.cursor()
     
@@ -833,13 +836,16 @@ async def client_authenticate(request: Request, data: ClientAuthenticate):
         
         client_hwid = client_result[0]
         
+        # Check HWID match if license already bound
         if bound_hwid:
             if bound_hwid != client_hwid:
                 db.close()
                 return {"success": False, "error": "HWID mismatch - license already bound to another PC"}
         else:
+            # First time - bind HWID to license
             cur.execute(q("UPDATE keys SET hwid=%s WHERE key=%s"), (client_hwid, data.license_key))
         
+        # Authenticate the client
         cur.execute(q("""
             UPDATE clients 
             SET authenticated=1, license_key=%s, username=%s, last_ping=%s
@@ -862,39 +868,6 @@ async def client_authenticate(request: Request, data: ClientAuthenticate):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-
-@app.get("/api/account-info/{license_key}")
-@limiter.limit("30/minute")
-def get_account_info(request: Request, license_key: str):
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        cur.execute(q("""
-            SELECT username, email, created_at, last_login 
-            FROM user_accounts 
-            WHERE license_key=%s
-        """), (license_key,))
-        
-        result = cur.fetchone()
-        db.close()
-        
-        if not result:
-            return {"exists": False}
-        
-        username, email, created_at, last_login = result
-        
-        return {
-            "exists": True,
-            "username": username,
-            "email": email,
-            "created_at": created_at,
-            "last_login": last_login
-        }
-        
-    except Exception as e:
-        db.close()
-        return {"exists": False, "error": str(e)}
 
 @app.get("/api/check-active-session")
 @limiter.limit("10/minute")
