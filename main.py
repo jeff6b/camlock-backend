@@ -35,7 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Updated DEFAULT_CONFIG with correct structures - PANIC KEY NOW IN CAMLOCK
+# Updated DEFAULT_CONFIG with correct structures
 DEFAULT_CONFIG = {
     "triggerbot": {
         "Enabled": True,
@@ -133,12 +133,7 @@ DEFAULT_CONFIG = {
         "FOVFillOpacity": 60,
         "FOVRingColor": [0, 0, 0],
         "FOVFill": True
-    },
-    "loadup": {
-        "AutoValidate": True,
-        "SilentMode": False
-    },
-    "game_configs": []
+    }
 }
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -391,11 +386,6 @@ class UserLogin(BaseModel):
     username: str
     password: str
 
-class UserAuth(BaseModel):
-    username: Optional[str] = None
-    license_key: Optional[str] = None
-    password: str
-
 class GameConfig(BaseModel):
     game_id: str
     config_name: str
@@ -552,59 +542,6 @@ async def validate_user(request: Request, data: KeyValidate):
         db.close()
         return {"valid": False, "error": f"Server error: {str(e)}"}
 
-@app.post("/api/create-account")
-@limiter.limit("5/minute")
-async def create_account(request: Request, data: CreateAccount):
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        cur.execute(q("SELECT key, active, expires_at FROM keys WHERE key=%s"), (data.license_key,))
-        license_result = cur.fetchone()
-        
-        if not license_result:
-            db.close()
-            return {"success": False, "error": "Invalid license key"}
-        
-        key, active, expires_at = license_result
-        
-        if active == 0:
-            db.close()
-            return {"success": False, "error": "License inactive"}
-        
-        if expires_at:
-            try:
-                if datetime.now() > datetime.fromisoformat(expires_at):
-                    db.close()
-                    return {"success": False, "error": "License expired"}
-            except:
-                pass
-        
-        cur.execute(q("SELECT username FROM user_accounts WHERE username=%s"), (data.username,))
-        if cur.fetchone():
-            db.close()
-            return {"success": False, "error": "Username already exists"}
-        
-        cur.execute(q("SELECT license_key FROM user_accounts WHERE license_key=%s"), (data.license_key,))
-        if cur.fetchone():
-            db.close()
-            return {"success": False, "error": "Account already exists for this license"}
-        
-        password_hash, salt = hash_password(data.password)
-        
-        cur.execute(q("""
-            INSERT INTO user_accounts (license_key, username, password_hash, email, created_at)
-            VALUES (%s, %s, %s, %s, %s)
-        """), (data.license_key, data.username, password_hash, data.email, datetime.now().isoformat()))
-        
-        db.commit()
-        db.close()
-        return {"success": True, "message": "Account created successfully"}
-        
-    except Exception as e:
-        db.close()
-        return {"success": False, "error": f"Server error: {str(e)}"}
-
 @app.post("/api/user-login")
 @limiter.limit("10/minute")
 async def user_login(request: Request, data: UserLogin):
@@ -659,10 +596,8 @@ async def user_login(request: Request, data: UserLogin):
         db.close()
         create_web_session(license_key)
         
-        # Get subscription type
         subscription = "Lifetime" if expires_at is None else "Temporary"
         
-        # Create session cookie
         response = JSONResponse({
             "valid": True, 
             "message": "Login successful",
@@ -692,7 +627,6 @@ async def logout(request: Request):
 @app.get("/api/me")
 async def get_current_user(request: Request):
     license_key = request.cookies.get("license_key")
-    username = request.cookies.get("username")
     session_id = request.cookies.get("session_id")
     
     if not license_key or not session_id:
@@ -970,6 +904,46 @@ async def set_config(request: Request, data: dict):
         db.commit()
         db.close()
         return {"status": "ok"}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+# CLIENT-FRIENDLY CONFIG ENDPOINT - Uses client_id for auth
+@app.post("/api/client/config")
+@limiter.limit("30/minute")
+async def get_client_config(request: Request, data: dict):
+    """Get config for a client - uses client_id and session_token for auth"""
+    client_id = data.get("client_id")
+    session_token = data.get("session_token")
+    
+    if not client_id or not session_token:
+        raise HTTPException(status_code=401, detail="Missing credentials")
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Get license_key from clients table
+        cur.execute(q("SELECT license_key FROM clients WHERE client_id=%s AND session_token=%s AND authenticated=1"),
+                   (client_id, session_token))
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        
+        license_key = result[0]
+        
+        # Get config
+        cur.execute(q("SELECT config FROM settings WHERE key=%s"), (license_key,))
+        config_result = cur.fetchone()
+        db.close()
+        
+        if config_result:
+            return json.loads(config_result[0])
+        else:
+            return DEFAULT_CONFIG
+            
     except Exception as e:
         db.close()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
@@ -2662,7 +2636,6 @@ def serve_menu():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
-    # Check if user is authenticated
     license_key = request.cookies.get("license_key")
     session_id = request.cookies.get("session_id")
     
