@@ -35,7 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Updated DEFAULT_CONFIG with correct structures
+# Updated DEFAULT_CONFIG with correct structures - PANIC KEY NOW IN CAMLOCK
 DEFAULT_CONFIG = {
     "triggerbot": {
         "Enabled": True,
@@ -77,6 +77,10 @@ DEFAULT_CONFIG = {
         "ScaleToggle": True,
         "Scale": 1.0,
         "MustBeMoving": False,
+        "PanicKey": {
+            "Enabled": False,
+            "Keybind": "C"
+        },
         "StarTryouts": {
             "Enabled": False,
             "Keybind": "X",
@@ -132,10 +136,6 @@ DEFAULT_CONFIG = {
     },
     "loadup": {
         "AutoValidate": True,
-        "PanicKey": {
-            "Enabled": False,
-            "Keybind": "C"
-        },
         "SilentMode": False
     },
     "game_configs": []
@@ -1137,7 +1137,6 @@ async def get_loadup_settings(request: Request):
     if not result:
         return {
             "auto_validate": True,
-            "panic_key": {"enabled": False, "keybind": "C"},
             "silent_mode": False
         }
     
@@ -2078,23 +2077,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             transform: scale(1.02);
         }
 
-        .keybind-input {
-            background: #0d0d0f;
-            border: 1px solid var(--border);
-            color: var(--text);
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            width: 80px;
-            text-align: center;
-            cursor: pointer;
-        }
-
-        .keybind-input:focus {
-            outline: none;
-            border-color: #ABA3FF;
-        }
-
         .logout-btn {
             position: fixed;
             top: 18px;
@@ -2207,17 +2189,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     </div>
                     <label class="square-toggle">
                         <input type="checkbox" id="autoValidateToggle" checked>
-                        <span class="square"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label"><span>Panic</span> <span>Key</span></div>
-                        <div class="setting-desc">Enable quick shutdown / self-destruct key</div>
-                    </div>
-                    <label class="square-toggle">
-                        <input type="checkbox" id="panicKeyToggle">
                         <span class="square"></span>
                     </label>
                 </div>
@@ -2358,7 +2329,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 const loadupData = await loadupRes.json();
                 
                 document.getElementById('autoValidateToggle').checked = loadupData.auto_validate;
-                document.getElementById('panicKeyToggle').checked = loadupData.panic_key.enabled;
                 
             } catch (e) {
                 console.error('Failed to load dashboard:', e);
@@ -2658,10 +2628,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         async function saveLoadupSettings() {
             const settings = {
                 auto_validate: document.getElementById('autoValidateToggle').checked,
-                panic_key: {
-                    enabled: document.getElementById('panicKeyToggle').checked,
-                    keybind: "C"
-                },
                 silent_mode: false
             };
             
@@ -2677,7 +2643,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         document.getElementById('autoValidateToggle').addEventListener('change', saveLoadupSettings);
-        document.getElementById('panicKeyToggle').addEventListener('change', saveLoadupSettings);
 
         // Initialize
         loadDashboard();
