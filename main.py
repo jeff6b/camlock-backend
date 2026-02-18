@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Cookie, Response, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -35,7 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Updated DEFAULT_CONFIG with correct triggerbot structure
+# Updated DEFAULT_CONFIG with correct structures
 DEFAULT_CONFIG = {
     "triggerbot": {
         "Enabled": True,
@@ -60,22 +60,22 @@ DEFAULT_CONFIG = {
     "camlock": {
         "Enabled": True,
         "Keybind": "Q",
+        "BodyPart": "Head",
         "FOV": 280.0,
-        "SmoothX": 150.0,
-        "SmoothY": 150.0,
-        "EnableSmoothing": True,
-        "EasingStyle": "Exponential",
-        "Prediction": 0.15,
-        "EnablePrediction": False,
         "MaxStuds": 900.0,
+        "EnableSmoothing": True,
+        "SmoothX": 150,
+        "SmoothY": 150,
+        "EasingStyle": "Exponential",
+        "EnablePrediction": False,
+        "Prediction": 0.15,
+        "AssistMode": True,
+        "UnlockOutOfFOV": True,
         "UnlockOnDeath": True,
         "SelfDeathCheck": True,
-        "BodyPart": "Head",
         "ClosestPart": False,
         "ScaleToggle": True,
         "Scale": 1.0,
-        "AssistMode": True,
-        "UnlockOutOfFOV": True,
         "MustBeMoving": False,
         "StarTryouts": {
             "Enabled": False,
@@ -243,7 +243,6 @@ def init_db():
                 authenticated INTEGER DEFAULT 0
             )""")
             
-            # New table for game configs
             cur.execute("""CREATE TABLE IF NOT EXISTS game_configs (
                 id SERIAL PRIMARY KEY,
                 license_key TEXT NOT NULL,
@@ -397,19 +396,9 @@ class UserAuth(BaseModel):
     license_key: Optional[str] = None
     password: str
 
-# New models for dashboard features
 class GameConfig(BaseModel):
     game_id: str
     config_name: str
-
-class PanicKeySettings(BaseModel):
-    enabled: bool
-    keybind: str
-
-class LoadupSettings(BaseModel):
-    auto_validate: bool
-    panic_key: PanicKeySettings
-    silent_mode: bool
 
 class ClientRegister(BaseModel):
     client_id: str
@@ -673,24 +662,65 @@ async def user_login(request: Request, data: UserLogin):
         # Get subscription type
         subscription = "Lifetime" if expires_at is None else "Temporary"
         
-        return {
+        # Create session cookie
+        response = JSONResponse({
             "valid": True, 
             "message": "Login successful",
             "username": username,
             "license_key": license_key,
-            "session_id": session_id,
             "subscription": subscription,
             "hwid_resets": hwid_resets or 0
-        }
+        })
+        response.set_cookie(key="session_id", value=session_id, httponly=True, max_age=2592000)
+        response.set_cookie(key="license_key", value=license_key, httponly=True, max_age=2592000)
+        response.set_cookie(key="username", value=username, httponly=True, max_age=2592000)
+        
+        return response
         
     except Exception as e:
         db.close()
         return {"valid": False, "error": f"Server error: {str(e)}"}
 
+@app.post("/api/logout")
+async def logout(request: Request):
+    response = JSONResponse({"success": True})
+    response.delete_cookie("session_id")
+    response.delete_cookie("license_key")
+    response.delete_cookie("username")
+    return response
+
+@app.get("/api/me")
+async def get_current_user(request: Request):
+    license_key = request.cookies.get("license_key")
+    username = request.cookies.get("username")
+    session_id = request.cookies.get("session_id")
+    
+    if not license_key or not session_id:
+        return {"authenticated": False}
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT username, license_key FROM login_sessions WHERE session_id=%s AND expires_at > %s"),
+                   (session_id, datetime.now().isoformat()))
+        result = cur.fetchone()
+        db.close()
+        
+        if result:
+            return {
+                "authenticated": True,
+                "username": result[0],
+                "license_key": result[1]
+            }
+        return {"authenticated": False}
+    except:
+        db.close()
+        return {"authenticated": False}
+
 @app.post("/api/client/register")
 @limiter.limit("10/minute")
 async def register_client(request: Request, data: ClientRegister):
-    """Register a new client - always start unauthenticated"""
     db = get_db()
     cur = db.cursor()
     
@@ -698,7 +728,6 @@ async def register_client(request: Request, data: ClientRegister):
         session_token = secrets.token_hex(32)
         created_at = datetime.now().isoformat()
         
-        # Check if client already exists
         cur.execute(q("SELECT client_id FROM clients WHERE client_id=%s"), (data.client_id,))
         existing = cur.fetchone()
         
@@ -709,7 +738,6 @@ async def register_client(request: Request, data: ClientRegister):
                 WHERE client_id=%s
             """), (data.hwid, session_token, created_at, data.client_id))
         else:
-            # Insert new client - always start unauthenticated
             cur.execute(q("""
                 INSERT INTO clients (client_id, hwid, session_token, created_at, last_ping, authenticated)
                 VALUES (%s, %s, %s, %s, %s, 0)
@@ -735,7 +763,6 @@ async def register_client(request: Request, data: ClientRegister):
 @app.post("/api/client/auth-status")
 @limiter.limit("30/minute")
 async def client_auth_status(request: Request, data: ClientAuthStatus):
-    """Check if client has been authenticated via website ONLY"""
     db = get_db()
     cur = db.cursor()
     
@@ -779,7 +806,6 @@ async def client_auth_status(request: Request, data: ClientAuthStatus):
 @app.post("/api/client/authenticate")
 @limiter.limit("10/minute")
 async def client_authenticate(request: Request, data: ClientAuthenticate):
-    """Website calls this ONLY when user manually logs in"""
     db = get_db()
     cur = db.cursor()
     
@@ -814,16 +840,13 @@ async def client_authenticate(request: Request, data: ClientAuthenticate):
         
         client_hwid = client_result[0]
         
-        # Check HWID match if license already bound
         if bound_hwid:
             if bound_hwid != client_hwid:
                 db.close()
                 return {"success": False, "error": "HWID mismatch - license already bound to another PC"}
         else:
-            # First time - bind HWID to license
             cur.execute(q("UPDATE keys SET hwid=%s WHERE key=%s"), (client_hwid, data.license_key))
         
-        # Authenticate the client
         cur.execute(q("""
             UPDATE clients 
             SET authenticated=1, license_key=%s, username=%s, last_ping=%s
@@ -847,9 +870,14 @@ async def client_authenticate(request: Request, data: ClientAuthenticate):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-@app.get("/api/dashboard/{license_key}")
+@app.get("/api/dashboard")
 @limiter.limit("30/minute")
-def get_dashboard_data(request: Request, license_key: str):
+async def get_dashboard_data(request: Request):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     
@@ -863,7 +891,6 @@ def get_dashboard_data(request: Request, license_key: str):
         
         key, duration, expires_at, active, hwid, discord_id, hwid_resets = result
         
-        # Get subscription type
         subscription = "Lifetime" if expires_at is None else "Temporary"
         
         db.close()
@@ -882,26 +909,31 @@ def get_dashboard_data(request: Request, license_key: str):
         db.close()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-@app.get("/api/config/{key}")
+@app.get("/api/config")
 @limiter.limit("30/minute")
-def get_config(request: Request, key: str):
+async def get_config(request: Request):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     
     try:
-        cur.execute(q("SELECT config FROM settings WHERE key=%s"), (key,))
+        cur.execute(q("SELECT config FROM settings WHERE key=%s"), (license_key,))
         result = cur.fetchone()
         
         if not result:
             if USE_POSTGRES:
                 cur.execute(
                     "INSERT INTO settings (key, config) VALUES (%s, %s)",
-                    (key, json.dumps(DEFAULT_CONFIG))
+                    (license_key, json.dumps(DEFAULT_CONFIG))
                 )
             else:
                 cur.execute(
                     "INSERT OR IGNORE INTO settings (key, config) VALUES (?, ?)",
-                    (key, json.dumps(DEFAULT_CONFIG))
+                    (license_key, json.dumps(DEFAULT_CONFIG))
                 )
             db.commit()
             db.close()
@@ -913,9 +945,14 @@ def get_config(request: Request, key: str):
         db.close()
         return DEFAULT_CONFIG
 
-@app.post("/api/config/{key}")
+@app.post("/api/config")
 @limiter.limit("20/minute")
-async def set_config(request: Request, key: str, data: dict):
+async def set_config(request: Request, data: dict):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     
@@ -923,12 +960,12 @@ async def set_config(request: Request, key: str, data: dict):
         if USE_POSTGRES:
             cur.execute(
                 "INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config",
-                (key, json.dumps(data))
+                (license_key, json.dumps(data))
             )
         else:
             cur.execute(
                 "INSERT OR REPLACE INTO settings (key, config) VALUES (?, ?)",
-                (key, json.dumps(data))
+                (license_key, json.dumps(data))
             )
         db.commit()
         db.close()
@@ -937,9 +974,14 @@ async def set_config(request: Request, key: str, data: dict):
         db.close()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-@app.get("/api/configs/{license_key}/list")
+@app.get("/api/configs/list")
 @limiter.limit("30/minute")
-def list_configs(request: Request, license_key: str):
+async def list_configs(request: Request):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     cur.execute(q("SELECT config_name, created_at FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC"), (license_key,))
@@ -948,9 +990,14 @@ def list_configs(request: Request, license_key: str):
     configs = [{"name": row[0], "created_at": row[1]} for row in rows]
     return {"configs": configs}
 
-@app.post("/api/configs/{license_key}/save")
+@app.post("/api/configs/save")
 @limiter.limit("20/minute")
-async def save_config(request: Request, license_key: str, data: SavedConfigRequest):
+async def save_config(request: Request, data: SavedConfigRequest):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     
@@ -971,9 +1018,14 @@ async def save_config(request: Request, license_key: str, data: SavedConfigReque
         db.close()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-@app.get("/api/configs/{license_key}/load/{config_name}")
+@app.get("/api/configs/load/{config_name}")
 @limiter.limit("30/minute")
-def load_config(request: Request, license_key: str, config_name: str):
+async def load_config(request: Request, config_name: str):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     cur.execute(q("SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
@@ -983,9 +1035,14 @@ def load_config(request: Request, license_key: str, config_name: str):
         raise HTTPException(status_code=404, detail="Config not found")
     return json.loads(row[0])
 
-@app.post("/api/configs/{license_key}/rename")
+@app.post("/api/configs/rename")
 @limiter.limit("20/minute")
-async def rename_config(request: Request, license_key: str, data: dict):
+async def rename_config(request: Request, data: dict):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     old_name = data.get("old_name")
     new_name = data.get("new_name")
     db = get_db()
@@ -996,9 +1053,14 @@ async def rename_config(request: Request, license_key: str, data: dict):
     db.close()
     return {"success": True}
 
-@app.delete("/api/configs/{license_key}/delete/{config_name}")
+@app.delete("/api/configs/delete/{config_name}")
 @limiter.limit("20/minute")
-async def delete_config(request: Request, license_key: str, config_name: str):
+async def delete_config(request: Request, config_name: str):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     cur.execute(q("DELETE FROM saved_configs WHERE license_key=%s AND config_name=%s"), (license_key, config_name))
@@ -1006,10 +1068,14 @@ async def delete_config(request: Request, license_key: str, config_name: str):
     db.close()
     return {"success": True}
 
-# Game Configs endpoints
-@app.get("/api/game-configs/{license_key}")
+@app.get("/api/game-configs")
 @limiter.limit("30/minute")
-def get_game_configs(request: Request, license_key: str):
+async def get_game_configs(request: Request):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     cur.execute(q("SELECT game_id, config_name FROM game_configs WHERE license_key=%s"), (license_key,))
@@ -1018,9 +1084,14 @@ def get_game_configs(request: Request, license_key: str):
     configs = [{"game_id": row[0], "config_name": row[1]} for row in rows]
     return {"configs": configs}
 
-@app.post("/api/game-configs/{license_key}")
+@app.post("/api/game-configs")
 @limiter.limit("20/minute")
-async def add_game_config(request: Request, license_key: str, data: GameConfig):
+async def add_game_config(request: Request, data: GameConfig):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     
@@ -1034,9 +1105,14 @@ async def add_game_config(request: Request, license_key: str, data: GameConfig):
         db.close()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-@app.delete("/api/game-configs/{license_key}/{game_id}")
+@app.delete("/api/game-configs/{game_id}")
 @limiter.limit("20/minute")
-async def delete_game_config(request: Request, license_key: str, game_id: str):
+async def delete_game_config(request: Request, game_id: str):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     cur.execute(q("DELETE FROM game_configs WHERE license_key=%s AND game_id=%s"), (license_key, game_id))
@@ -1044,9 +1120,14 @@ async def delete_game_config(request: Request, license_key: str, game_id: str):
     db.close()
     return {"success": True}
 
-@app.get("/api/loadup-settings/{license_key}")
+@app.get("/api/loadup-settings")
 @limiter.limit("30/minute")
-def get_loadup_settings(request: Request, license_key: str):
+async def get_loadup_settings(request: Request):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     cur.execute(q("SELECT config FROM settings WHERE key=%s"), (f"{license_key}_loadup",))
@@ -1062,9 +1143,14 @@ def get_loadup_settings(request: Request, license_key: str):
     
     return json.loads(result[0])
 
-@app.post("/api/loadup-settings/{license_key}")
+@app.post("/api/loadup-settings")
 @limiter.limit("20/minute")
-async def set_loadup_settings(request: Request, license_key: str, data: dict):
+async def set_loadup_settings(request: Request, data: dict):
+    license_key = request.cookies.get("license_key")
+    
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     db = get_db()
     cur = db.cursor()
     
@@ -1324,7 +1410,7 @@ LOGIN_HTML = """<!DOCTYPE html>
                         }
                     }
                     
-                    window.location.href = `/dashboard/${data.license_key}`;
+                    window.location.href = '/dashboard';
                 } else {
                     document.getElementById('errorMsg').textContent = data.error || 'Login failed';
                     document.getElementById('loader').style.display = 'none';
@@ -1400,6 +1486,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             background-repeat: no-repeat;
             background-size: 100% 100%;
             background-attachment: fixed;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
         }
 
         body::after {
@@ -1460,6 +1550,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             min-height: calc(100vh - 140px);
             display: none;
             position: relative;
+            width: 100%;
+            max-width: 1400px;
         }
 
         .content-wrapper.active { display: block; }
@@ -1666,31 +1758,68 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
         .btn-download:hover { border-color: #3a3a40; }
 
-        .table-container {
-            height: calc(100vh - 200px);
-            padding: 0 1vw 0 1.5vw;
+        .table-section {
             display: flex;
-            flex-direction: row;
+            flex-direction: column;
             align-items: center;
-            justify-content: flex-start;
-            gap: clamp(10px, 1.5vw, 25px);
-            overflow-x: hidden;
-            position: relative;
+            width: 100%;
             margin-top: 60px;
         }
 
+        .table-container {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            gap: 25px;
+            width: 100%;
+            position: relative;
+        }
+
+        .save-btn-container {
+            width: 100%;
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 10px;
+            padding-right: calc((100% - 780px - 280px - 25px) / 2);
+        }
+
+        .save-mask-btn {
+            padding: 10px 24px;
+            background: var(--save-active);
+            color: #0a0a0c;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .save-mask-btn.disabled {
+            background: var(--save-inactive);
+            color: #444;
+            cursor: not-allowed;
+            pointer-events: none;
+            box-shadow: none;
+        }
+
+        .save-mask-btn:hover:not(.disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
         .floating-panel {
-            width: clamp(200px, 22vw, 280px);
-            min-width: 200px;
-            max-width: 290px;
-            height: clamp(360px, 65vh, 480px);
+            width: 280px;
+            height: 480px;
             background: #0d0d0f;
             border: 1px solid var(--border);
             border-radius: 10px;
             box-shadow: 0 8px 30px rgba(0,0,0,0.6);
             position: relative;
             overflow: hidden;
-            flex: 0 0 auto;
+            flex-shrink: 0;
         }
 
         .header-area {
@@ -1715,9 +1844,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         .plus-button {
-            font-size: 18px;
+            font-size: 24px;
             font-weight: 500;
-            color: var(--plus-gray);
+            color: #ffffff;
             line-height: 1;
             width: 28px;
             height: 28px;
@@ -1725,11 +1854,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             align-items: center;
             justify-content: center;
             border-radius: 6px;
-            transition: color 0.15s ease;
+            transition: opacity 0.15s ease;
             cursor: pointer;
         }
 
-        .header-area:hover .plus-button { color: var(--hover-white); }
+        .plus-button:hover { opacity: 0.85; }
 
         .configs-divider {
             position: absolute;
@@ -1813,69 +1942,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         .popup-item:hover { background: var(--popup-hover); }
 
         .big-table-box {
-            width: clamp(500px, 65vw, 780px);
-            min-width: 460px;
-            max-width: 820px;
-            height: clamp(360px, 65vh, 480px);
+            width: 780px;
+            height: 480px;
             background: #0d0d0f;
             border: 1px solid var(--border);
             border-radius: 10px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.5);
             overflow: hidden;
-            flex: 0 1 auto;
+            flex-shrink: 0;
         }
 
         #monacoContainer { width: 100%; height: 100%; }
-
-        .table-tab-controls {
-            position: absolute;
-            top: 60px;
-            right: 7%;
-            z-index: 10;
-        }
-
-        .save-mask-btn {
-            padding: 10px 24px;
-            background: var(--save-active);
-            color: #0a0a0c;
-            border: none;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        }
-
-        .save-mask-btn.disabled {
-            background: var(--save-inactive);
-            color: #444;
-            cursor: not-allowed;
-            pointer-events: none;
-            box-shadow: none;
-        }
-
-        .save-mask-btn:hover:not(.disabled) {
-            transform: scale(1.05);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-        }
-
-        .keybind-input {
-            background: #0d0d0f;
-            border: 1px solid var(--border);
-            color: var(--text);
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            width: 80px;
-            text-align: center;
-            cursor: pointer;
-        }
-
-        .keybind-input:focus {
-            outline: none;
-            border-color: #ABA3FF;
-        }
 
         .modal-overlay {
             position: fixed;
@@ -1905,6 +1982,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             overflow-y: auto;
             padding: 24px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.7);
+        }
+
+        .modal-title {
+            color: #ffffff;
+            font-size: 18px;
+            margin-bottom: 20px;
         }
 
         .config-slot {
@@ -1937,15 +2020,15 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             background: transparent;
             border: none;
             color: #ffffff;
-            font-size: 18px;
+            font-size: 24px;
             font-weight: bold;
             cursor: pointer;
             margin: 16px 0 24px;
-            transition: transform 0.2s ease;
+            transition: opacity 0.2s ease;
             text-align: center;
         }
 
-        .new-slot-btn:hover { transform: scale(1.05); }
+        .new-slot-btn:hover { opacity: 0.85; }
 
         .save-btn {
             width: 100%;
@@ -1962,6 +2045,75 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         .save-btn:hover { transform: scale(1.05); }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .modal-btn-primary {
+            background: #ffffff;
+            color: #0a0a0c;
+        }
+
+        .modal-btn-secondary {
+            background: transparent;
+            color: #ffffff;
+            border: 1px solid var(--border);
+        }
+
+        .modal-btn:hover {
+            transform: scale(1.02);
+        }
+
+        .keybind-input {
+            background: #0d0d0f;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            width: 80px;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .keybind-input:focus {
+            outline: none;
+            border-color: #ABA3FF;
+        }
+
+        .logout-btn {
+            position: fixed;
+            top: 18px;
+            right: 20px;
+            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: #888890;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            z-index: 101;
+        }
+
+        .logout-btn:hover {
+            color: #ffffff;
+            border-color: #ffffff;
+        }
     </style>
 </head>
 <body>
@@ -1973,6 +2125,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <div class="tab" data-tab="table">Table</div>
         <div class="tab" data-tab="settings">Settings</div>
     </div>
+
+    <button class="logout-btn" onclick="logout()">Logout</button>
 
     <div id="home" class="content-wrapper active">
         <div class="home-container">
@@ -1989,7 +2143,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             <div class="license-grid">
                 <div class="license-card">
                     <div class="license-header">EXTERNAL LICENSE</div>
-                    <div class="license-key" id="licenseKey">LUMINA-XXXX-XXXX-XXXX</div>
+                    <div class="license-key" id="licenseKey">Loading...</div>
                 </div>
                 <div class="license-card">
                     <div class="license-header">HWID</div>
@@ -2016,26 +2170,27 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
 
     <div id="table" class="content-wrapper">
-        <div class="table-tab-controls">
-            <button class="save-mask-btn" id="saveMaskBtn">Save</button>
-        </div>
-
-        <div class="table-container">
-            <div class="floating-panel">
-                <div class="header-area">
-                    <div class="configs-label">configs</div>
-                    <div class="plus-button" id="createConfigBtn">+</div>
-                </div>
-                <div class="configs-divider"></div>
-                <div class="configs-list" id="configsList"></div>
-                <div class="popup-menu" id="configMenu">
-                    <div class="popup-item" onclick="loadSelectedConfig()">Load</div>
-                    <div class="popup-item" onclick="renameSelectedConfig()">Rename</div>
-                    <div class="popup-item" onclick="deleteSelectedConfig()">Delete</div>
-                </div>
+        <div class="table-section">
+            <div class="save-btn-container">
+                <button class="save-mask-btn" id="saveMaskBtn">Save</button>
             </div>
-            <div class="big-table-box">
-                <div id="monacoContainer"></div>
+            <div class="table-container">
+                <div class="floating-panel">
+                    <div class="header-area">
+                        <div class="configs-label">configs</div>
+                        <div class="plus-button" id="createConfigBtn">+</div>
+                    </div>
+                    <div class="configs-divider"></div>
+                    <div class="configs-list" id="configsList"></div>
+                    <div class="popup-menu" id="configMenu">
+                        <div class="popup-item" onclick="loadSelectedConfig()">Load</div>
+                        <div class="popup-item" onclick="renameSelectedConfig()">Rename</div>
+                        <div class="popup-item" onclick="deleteSelectedConfig()">Delete</div>
+                    </div>
+                </div>
+                <div class="big-table-box">
+                    <div id="monacoContainer"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -2061,13 +2216,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         <div class="setting-label"><span>Panic</span> <span>Key</span></div>
                         <div class="setting-desc">Enable quick shutdown / self-destruct key</div>
                     </div>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <label class="square-toggle">
-                            <input type="checkbox" id="panicKeyToggle">
-                            <span class="square"></span>
-                        </label>
-                        <input type="text" class="keybind-input" id="panicKeybind" value="C" maxlength="20" readonly>
-                    </div>
+                    <label class="square-toggle">
+                        <input type="checkbox" id="panicKeyToggle">
+                        <span class="square"></span>
+                    </label>
                 </div>
 
                 <div class="game-configs-row">
@@ -2083,31 +2235,29 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
     <div class="modal-overlay" id="gameConfigsModal">
         <div class="modal-content">
-            <h3 style="color: #ffffff; margin-bottom: 20px;">Game Configs</h3>
+            <div class="modal-title">Game Configs</div>
             <div id="gameConfigSlots"></div>
-            <button class="new-slot-btn" id="newGameConfigBtn">+ Add Config</button>
+            <button class="new-slot-btn" id="newGameConfigBtn">+</button>
             <button class="save-btn" onclick="saveGameConfigs()">Save</button>
         </div>
     </div>
 
     <div class="modal-overlay" id="createConfigModal">
         <div class="modal-content">
-            <h3 style="color: #ffffff; margin-bottom: 20px;">Create Config</h3>
-            <input type="text" class="config-gameid" id="newConfigName" placeholder="Config name" style="width: 100%; margin-bottom: 20px;">
-            <div style="display: flex; gap: 10px;">
-                <button class="save-btn" onclick="createNewConfig()" style="flex: 1;">Create</button>
-                <button class="save-btn" onclick="closeCreateModal()" style="flex: 1; background: transparent; color: #ffffff;">Cancel</button>
+            <div class="modal-title">Create Config</div>
+            <input type="text" class="config-gameid" id="newConfigName" placeholder="Config name" style="width: 100%;">
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-primary" onclick="createNewConfig()">Create</button>
+                <button class="modal-btn modal-btn-secondary" onclick="closeCreateModal()">Cancel</button>
             </div>
         </div>
     </div>
 
     <script>
-        let licenseKey = '';
         let currentConfig = {};
         let editor = null;
         let selectedConfig = null;
         let configMenu = document.getElementById('configMenu');
-        let menuTarget = null;
         let gameConfigs = [];
 
         // Initialize Monaco
@@ -2152,13 +2302,37 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             });
         });
 
+        // Check authentication
+        async function checkAuth() {
+            try {
+                const res = await fetch('/api/me');
+                const data = await res.json();
+                
+                if (!data.authenticated) {
+                    window.location.href = '/menu';
+                    return false;
+                }
+                
+                return data;
+            } catch (e) {
+                window.location.href = '/menu';
+                return false;
+            }
+        }
+
+        // Logout
+        async function logout() {
+            await fetch('/api/logout', { method: 'POST' });
+            window.location.href = '/menu';
+        }
+
         // Load dashboard data
         async function loadDashboard() {
-            const pathParts = window.location.pathname.split('/');
-            licenseKey = pathParts[pathParts.length - 1];
+            const auth = await checkAuth();
+            if (!auth) return;
             
             try {
-                const res = await fetch(`/api/dashboard/${licenseKey}`);
+                const res = await fetch('/api/dashboard');
                 const data = await res.json();
                 
                 document.getElementById('hwidResets').textContent = data.hwid_resets || 0;
@@ -2167,7 +2341,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 document.getElementById('hwid').textContent = data.hwid || 'Not bound';
                 
                 // Load config
-                const configRes = await fetch(`/api/config/${licenseKey}`);
+                const configRes = await fetch('/api/config');
                 currentConfig = await configRes.json();
                 if (editor) {
                     editor.setValue(JSON.stringify(currentConfig, null, 2));
@@ -2180,12 +2354,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 loadGameConfigs();
                 
                 // Load loadup settings
-                const loadupRes = await fetch(`/api/loadup-settings/${licenseKey}`);
+                const loadupRes = await fetch('/api/loadup-settings');
                 const loadupData = await loadupRes.json();
                 
                 document.getElementById('autoValidateToggle').checked = loadupData.auto_validate;
                 document.getElementById('panicKeyToggle').checked = loadupData.panic_key.enabled;
-                document.getElementById('panicKeybind').value = loadupData.panic_key.keybind;
                 
             } catch (e) {
                 console.error('Failed to load dashboard:', e);
@@ -2195,7 +2368,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         // Load configs list
         async function loadConfigsList() {
             try {
-                const res = await fetch(`/api/configs/${licenseKey}/list`);
+                const res = await fetch('/api/configs/list');
                 const data = await res.json();
                 
                 const list = document.getElementById('configsList');
@@ -2246,7 +2419,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         // Load config by name
         async function loadConfigByName(name) {
             try {
-                const res = await fetch(`/api/configs/${licenseKey}/load/${name}`);
+                const res = await fetch(`/api/configs/load/${name}`);
                 const config = await res.json();
                 currentConfig = config;
                 editor.setValue(JSON.stringify(config, null, 2));
@@ -2269,7 +2442,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             const newName = prompt('Enter new name:', selectedConfig);
             if (newName && newName !== selectedConfig) {
                 try {
-                    await fetch(`/api/configs/${licenseKey}/rename`, {
+                    await fetch('/api/configs/rename', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ old_name: selectedConfig, new_name: newName })
@@ -2287,7 +2460,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             
             if (confirm(`Delete config "${selectedConfig}"?`)) {
                 try {
-                    await fetch(`/api/configs/${licenseKey}/delete/${selectedConfig}`, {
+                    await fetch(`/api/configs/delete/${selectedConfig}`, {
                         method: 'DELETE'
                     });
                     await loadConfigsList();
@@ -2304,174 +2477,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             
             try {
                 const newConfig = JSON.parse(editor.getValue());
-                await fetch(`/api/config/${licenseKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newConfig)
-                });
-                
-                document.getElementById('saveMaskBtn').classList.add('disabled');
-                currentConfig = newConfig;
-            } catch (e) {
-                alert('Invalid JSON');
-            }
-        });
-
-        // Create config modal
-        document.getElementById('createConfigBtn').addEventListener('click', () => {
-            document.getElementById('createConfigModal').classList.add('show');
-        });
-
-        function closeCreateModal() {
-            document.getElementById('createConfigModal').classList.remove('show');
-            document.getElementById('newConfigName').value = '';
-        }
-
-        async function createNewConfig() {
-            const name = document.getElementById('newConfigName').value.trim();
-            if (!name) return;
-            
-            try {
-                await fetch(`/api/configs/${licenseKey}/save`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        config_name: name,
-                        config_data: currentConfig
-                    })
-                });
-                
-                closeCreateModal();
-                await loadConfigsList();
-            } catch (e) {
-                console.error('Failed to create config:', e);
-            }
-        }
-
-        // Game Configs
-        async function loadGameConfigs() {
-            try {
-                const res = await fetch(`/api/game-configs/${licenseKey}`);
-                const data = await res.json();
-                gameConfigs = data.configs || [];
-                renderGameConfigs();
-            } catch (e) {
-                console.error('Failed to load game configs:', e);
-            }
-        }
-
-        async function loadConfigsList() {
-            try {
-                const res = await fetch(`/api/configs/${licenseKey}/list`);
-                const data = await res.json();
-                
-                const list = document.getElementById('configsList');
-                list.innerHTML = '';
-                
-                data.configs.forEach(config => {
-                    const div = document.createElement('div');
-                    div.className = 'config-item';
-                    div.innerHTML = `
-                        <div class="config-name">${config.name}</div>
-                        <div class="config-dots">•••</div>
-                    `;
-                    
-                    div.addEventListener('click', (e) => {
-                        if (!e.target.classList.contains('config-dots')) {
-                            loadConfigByName(config.name);
-                        }
-                    });
-                    
-                    div.querySelector('.config-dots').addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        showConfigMenu(e, config.name);
-                    });
-                    
-                    list.appendChild(div);
-                });
-            } catch (e) {
-                console.error('Failed to load configs list:', e);
-            }
-        }
-
-        // Show config menu
-        function showConfigMenu(event, configName) {
-            const rect = event.target.getBoundingClientRect();
-            configMenu.style.top = rect.bottom + 5 + 'px';
-            configMenu.style.left = rect.left - 100 + 'px';
-            configMenu.classList.add('visible');
-            selectedConfig = configName;
-            
-            document.addEventListener('click', function closeMenu(e) {
-                if (!configMenu.contains(e.target) && !e.target.classList.contains('config-dots')) {
-                    configMenu.classList.remove('visible');
-                    document.removeEventListener('click', closeMenu);
-                }
-            });
-        }
-
-        // Load config by name
-        async function loadConfigByName(name) {
-            try {
-                const res = await fetch(`/api/configs/${licenseKey}/load/${name}`);
-                const config = await res.json();
-                currentConfig = config;
-                editor.setValue(JSON.stringify(config, null, 2));
-                document.getElementById('saveMaskBtn').classList.remove('disabled');
-            } catch (e) {
-                console.error('Failed to load config:', e);
-            }
-        }
-
-        function loadSelectedConfig() {
-            if (selectedConfig) {
-                loadConfigByName(selectedConfig);
-                configMenu.classList.remove('visible');
-            }
-        }
-
-        async function renameSelectedConfig() {
-            if (!selectedConfig) return;
-            
-            const newName = prompt('Enter new name:', selectedConfig);
-            if (newName && newName !== selectedConfig) {
-                try {
-                    await fetch(`/api/configs/${licenseKey}/rename`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ old_name: selectedConfig, new_name: newName })
-                    });
-                    await loadConfigsList();
-                } catch (e) {
-                    console.error('Failed to rename config:', e);
-                }
-            }
-            configMenu.classList.remove('visible');
-        }
-
-        async function deleteSelectedConfig() {
-            if (!selectedConfig) return;
-            
-            if (confirm(`Delete config "${selectedConfig}"?`)) {
-                try {
-                    await fetch(`/api/configs/${licenseKey}/delete/${selectedConfig}`, {
-                        method: 'DELETE'
-                    });
-                    await loadConfigsList();
-                } catch (e) {
-                    console.error('Failed to delete config:', e);
-                }
-            }
-            configMenu.classList.remove('visible');
-        }
-
-        // Save button
-        document.getElementById('saveMaskBtn').addEventListener('click', async () => {
-            if (document.getElementById('saveMaskBtn').classList.contains('disabled')) return;
-            
-            try {
-                const newConfig = JSON.parse(editor.getValue());
-                await fetch(`/api/config/${licenseKey}`, {
+                await fetch('/api/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newConfig)
@@ -2499,7 +2505,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             if (!name) return;
             
             try {
-                await fetch(`/api/configs/${licenseKey}/save`, {
+                await fetch('/api/configs/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -2528,184 +2534,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
         async function loadGameConfigs() {
             try {
-                const res = await fetch(`/api/game-configs/${licenseKey}`);
-                const data = await res.json();
-                gameConfigs = data.configs || [];
-                renderGameConfigs();
-            } catch (e) {
-                console.error('Failed to load game configs:', e);
-            }
-        }
-
-        async function loadConfigsList() {
-            try {
-                const res = await fetch(`/api/configs/${licenseKey}/list`);
-                const data = await res.json();
-                
-                const list = document.getElementById('configsList');
-                list.innerHTML = '';
-                
-                data.configs.forEach(config => {
-                    const div = document.createElement('div');
-                    div.className = 'config-item';
-                    div.innerHTML = `
-                        <div class="config-name">${config.name}</div>
-                        <div class="config-dots">•••</div>
-                    `;
-                    
-                    div.addEventListener('click', (e) => {
-                        if (!e.target.classList.contains('config-dots')) {
-                            loadConfigByName(config.name);
-                        }
-                    });
-                    
-                    div.querySelector('.config-dots').addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        showConfigMenu(e, config.name);
-                    });
-                    
-                    list.appendChild(div);
-                });
-            } catch (e) {
-                console.error('Failed to load configs list:', e);
-            }
-        }
-
-        // Show config menu
-        function showConfigMenu(event, configName) {
-            const rect = event.target.getBoundingClientRect();
-            configMenu.style.top = rect.bottom + 5 + 'px';
-            configMenu.style.left = rect.left - 100 + 'px';
-            configMenu.classList.add('visible');
-            selectedConfig = configName;
-            
-            document.addEventListener('click', function closeMenu(e) {
-                if (!configMenu.contains(e.target) && !e.target.classList.contains('config-dots')) {
-                    configMenu.classList.remove('visible');
-                    document.removeEventListener('click', closeMenu);
-                }
-            });
-        }
-
-        // Load config by name
-        async function loadConfigByName(name) {
-            try {
-                const res = await fetch(`/api/configs/${licenseKey}/load/${name}`);
-                const config = await res.json();
-                currentConfig = config;
-                editor.setValue(JSON.stringify(config, null, 2));
-                document.getElementById('saveMaskBtn').classList.remove('disabled');
-            } catch (e) {
-                console.error('Failed to load config:', e);
-            }
-        }
-
-        function loadSelectedConfig() {
-            if (selectedConfig) {
-                loadConfigByName(selectedConfig);
-                configMenu.classList.remove('visible');
-            }
-        }
-
-        async function renameSelectedConfig() {
-            if (!selectedConfig) return;
-            
-            const newName = prompt('Enter new name:', selectedConfig);
-            if (newName && newName !== selectedConfig) {
-                try {
-                    await fetch(`/api/configs/${licenseKey}/rename`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ old_name: selectedConfig, new_name: newName })
-                    });
-                    await loadConfigsList();
-                } catch (e) {
-                    console.error('Failed to rename config:', e);
-                }
-            }
-            configMenu.classList.remove('visible');
-        }
-
-        async function deleteSelectedConfig() {
-            if (!selectedConfig) return;
-            
-            if (confirm(`Delete config "${selectedConfig}"?`)) {
-                try {
-                    await fetch(`/api/configs/${licenseKey}/delete/${selectedConfig}`, {
-                        method: 'DELETE'
-                    });
-                    await loadConfigsList();
-                } catch (e) {
-                    console.error('Failed to delete config:', e);
-                }
-            }
-            configMenu.classList.remove('visible');
-        }
-
-        // Save button
-        document.getElementById('saveMaskBtn').addEventListener('click', async () => {
-            if (document.getElementById('saveMaskBtn').classList.contains('disabled')) return;
-            
-            try {
-                const newConfig = JSON.parse(editor.getValue());
-                await fetch(`/api/config/${licenseKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newConfig)
-                });
-                
-                document.getElementById('saveMaskBtn').classList.add('disabled');
-                currentConfig = newConfig;
-            } catch (e) {
-                alert('Invalid JSON');
-            }
-        });
-
-        // Create config modal
-        document.getElementById('createConfigBtn').addEventListener('click', () => {
-            document.getElementById('createConfigModal').classList.add('show');
-        });
-
-        window.closeCreateModal = function() {
-            document.getElementById('createConfigModal').classList.remove('show');
-            document.getElementById('newConfigName').value = '';
-        };
-
-        window.createNewConfig = async function() {
-            const name = document.getElementById('newConfigName').value.trim();
-            if (!name) return;
-            
-            try {
-                await fetch(`/api/configs/${licenseKey}/save`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        config_name: name,
-                        config_data: currentConfig
-                    })
-                });
-                
-                closeCreateModal();
-                await loadConfigsList();
-            } catch (e) {
-                console.error('Failed to create config:', e);
-            }
-        };
-
-        // Game Configs
-        document.getElementById('openGameConfigs').addEventListener('click', () => {
-            document.getElementById('gameConfigsModal').classList.add('show');
-        });
-
-        document.getElementById('gameConfigsModal').addEventListener('click', (e) => {
-            if (e.target === document.getElementById('gameConfigsModal')) {
-                document.getElementById('gameConfigsModal').classList.remove('show');
-            }
-        });
-
-        async function loadGameConfigs() {
-            try {
-                const res = await fetch(`/api/game-configs/${licenseKey}`);
+                const res = await fetch('/api/game-configs');
                 const data = await res.json();
                 gameConfigs = data.configs || [];
                 renderGameConfigs();
@@ -2715,7 +2544,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         async function renderGameConfigs() {
-            const configsRes = await fetch(`/api/configs/${licenseKey}/list`);
+            const configsRes = await fetch('/api/configs/list');
             const configsData = await configsRes.json();
             const availableConfigs = configsData.configs || [];
             
@@ -2751,39 +2580,38 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             });
         }
 
-        document.getElementById('newGameConfigBtn').addEventListener('click', () => {
+        document.getElementById('newGameConfigBtn').addEventListener('click', async () => {
             const slots = document.getElementById('gameConfigSlots');
             const index = gameConfigs.length;
             
-            fetch(`/api/configs/${licenseKey}/list`)
-                .then(res => res.json())
-                .then(data => {
-                    const slot = document.createElement('div');
-                    slot.className = 'config-slot';
-                    
-                    const select = document.createElement('select');
-                    select.className = 'config-dropdown';
-                    select.id = `gameConfigSelect_${index}`;
-                    
-                    data.configs.forEach(c => {
-                        const option = document.createElement('option');
-                        option.value = c.name;
-                        option.textContent = c.name;
-                        select.appendChild(option);
-                    });
-                    
-                    const input = document.createElement('input');
-                    input.type = 'text';
-                    input.className = 'config-gameid';
-                    input.id = `gameConfigId_${index}`;
-                    input.placeholder = 'Game ID';
-                    
-                    slot.appendChild(select);
-                    slot.appendChild(input);
-                    slots.appendChild(slot);
-                    
-                    gameConfigs.push({ game_id: '', config_name: data.configs[0]?.name || '' });
-                });
+            const configsRes = await fetch('/api/configs/list');
+            const configsData = await configsRes.json();
+            
+            const slot = document.createElement('div');
+            slot.className = 'config-slot';
+            
+            const select = document.createElement('select');
+            select.className = 'config-dropdown';
+            select.id = `gameConfigSelect_${index}`;
+            
+            configsData.configs.forEach(c => {
+                const option = document.createElement('option');
+                option.value = c.name;
+                option.textContent = c.name;
+                select.appendChild(option);
+            });
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'config-gameid';
+            input.id = `gameConfigId_${index}`;
+            input.placeholder = 'Game ID';
+            
+            slot.appendChild(select);
+            slot.appendChild(input);
+            slots.appendChild(slot);
+            
+            gameConfigs.push({ game_id: '', config_name: configsData.configs[0]?.name || '' });
         });
 
         window.saveGameConfigs = async function() {
@@ -2804,7 +2632,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 // Delete all existing first
                 for (const config of gameConfigs) {
                     if (config.game_id) {
-                        await fetch(`/api/game-configs/${licenseKey}/${config.game_id}`, {
+                        await fetch(`/api/game-configs/${config.game_id}`, {
                             method: 'DELETE'
                         });
                     }
@@ -2812,7 +2640,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 
                 // Add new ones
                 for (const config of newConfigs) {
-                    await fetch(`/api/game-configs/${licenseKey}`, {
+                    await fetch('/api/game-configs', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(config)
@@ -2826,48 +2654,19 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         };
 
-        // Panic key handling
-        const panicKeyInput = document.getElementById('panicKeybind');
-        panicKeyInput.addEventListener('click', function() {
-            this.value = 'Press any key...';
-            
-            const listener = (e) => {
-                e.preventDefault();
-                let keyName = '';
-                
-                if (e.button !== undefined) {
-                    keyName = e.button === 0 ? 'Left Mouse' :
-                             e.button === 2 ? 'Right Mouse' :
-                             e.button === 1 ? 'Middle Mouse' : `Mouse${e.button}`;
-                } else if (e.key) {
-                    keyName = e.key.toUpperCase();
-                    if (keyName === ' ') keyName = 'SPACE';
-                }
-                
-                panicKeyInput.value = keyName || 'C';
-                saveLoadupSettings();
-                
-                document.removeEventListener('keydown', listener);
-                document.removeEventListener('mousedown', listener);
-            };
-            
-            document.addEventListener('keydown', listener, { once: true });
-            document.addEventListener('mousedown', listener, { once: true });
-        });
-
         // Save loadup settings
         async function saveLoadupSettings() {
             const settings = {
                 auto_validate: document.getElementById('autoValidateToggle').checked,
                 panic_key: {
                     enabled: document.getElementById('panicKeyToggle').checked,
-                    keybind: document.getElementById('panicKeybind').value
+                    keybind: "C"
                 },
                 silent_mode: false
             };
             
             try {
-                await fetch(`/api/loadup-settings/${licenseKey}`, {
+                await fetch('/api/loadup-settings', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(settings)
@@ -2896,9 +2695,31 @@ def serve_home():
 def serve_menu():
     return HTMLResponse(content=LOGIN_HTML)
 
-@app.get("/dashboard/{license_key}", response_class=HTMLResponse)
-def serve_dashboard(license_key: str):
-    return HTMLResponse(content=DASHBOARD_HTML.replace('LUMINA-XXXX-XXXX-XXXX', license_key))
+@app.get("/dashboard", response_class=HTMLResponse)
+async def serve_dashboard(request: Request):
+    # Check if user is authenticated
+    license_key = request.cookies.get("license_key")
+    session_id = request.cookies.get("session_id")
+    
+    if not license_key or not session_id:
+        return RedirectResponse(url="/menu")
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT username FROM login_sessions WHERE session_id=%s AND license_key=%s AND expires_at > %s"),
+                   (session_id, license_key, datetime.now().isoformat()))
+        result = cur.fetchone()
+        db.close()
+        
+        if not result:
+            return RedirectResponse(url="/menu")
+        
+        return HTMLResponse(content=DASHBOARD_HTML)
+    except:
+        db.close()
+        return RedirectResponse(url="/menu")
 
 if __name__ == "__main__":
     import uvicorn
