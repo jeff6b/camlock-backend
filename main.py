@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Cookie, Response, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import psycopg2
 import sqlite3
 import os
@@ -35,6 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Updated DEFAULT_CONFIG with correct triggerbot structure
 DEFAULT_CONFIG = {
     "triggerbot": {
         "Enabled": True,
@@ -45,24 +46,25 @@ DEFAULT_CONFIG = {
         "DeathCheck": True,
         "KnifeCheck": True,
         "TeamCheck": True,
-        "TargetMode": False,
-        "TargetKeybind": "Middle Mouse",
-        "Prediction": 0.1,
-        "FOV": 25,
-        "HitboxScanning": False,
-        "HitboxSize": 1.2,
-        "RaycastMode": True,
         "VisibilityCheck": True,
-        "PerformanceMode": True
+        "DistanceScale": {
+            "Enabled": True,
+            "Scale": [
+                {"range": "30+", "size": "1.4"},
+                {"range": "80-", "size": "0.9"},
+                {"range": "150+", "size": "2.0"}
+            ],
+            "DefaultSize": 1.2
+        }
     },
     "camlock": {
         "Enabled": True,
         "Keybind": "Q",
         "FOV": 280.0,
-        "SmoothX": 12.0,
-        "SmoothY": 12.0,
-        "EnableSmoothing": False,
-        "EasingStyle": "Linear",
+        "SmoothX": 150.0,
+        "SmoothY": 150.0,
+        "EnableSmoothing": True,
+        "EasingStyle": "Exponential",
         "Prediction": 0.15,
         "EnablePrediction": False,
         "MaxStuds": 900.0,
@@ -73,8 +75,70 @@ DEFAULT_CONFIG = {
         "ScaleToggle": True,
         "Scale": 1.0,
         "AssistMode": True,
-        "Delay": 100
-    }
+        "UnlockOutOfFOV": True,
+        "MustBeMoving": False,
+        "StarTryouts": {
+            "Enabled": False,
+            "Keybind": "X",
+            "UnlockOnDeath": True
+        },
+        "StatusIndicator": {
+            "Enabled": True,
+            "Position": "top left"
+        },
+        "KodasEnabled": False,
+        "OffsetEnabled": False,
+        "OffsetX": 12.0,
+        "OffsetY": 12.0,
+        "ShakeEnabled": False,
+        "ShakeAmount": 2.0,
+        "WeaponScalingEnabled": False,
+        "WeaponProfiles": {
+            "Double-Barrel SG": {
+                "OffsetX": 8.0,
+                "OffsetY": 8.0,
+                "SmoothX": 120,
+                "SmoothY": 120,
+                "Prediction": 0.2,
+                "MaxStuds": 900.0,
+                "ShakeAmount": 3.0
+            },
+            "TacticalShotgun": {
+                "OffsetX": 15.0,
+                "OffsetY": 15.0,
+                "SmoothX": 80,
+                "SmoothY": 80,
+                "Prediction": 0.15,
+                "MaxStuds": 300.0,
+                "ShakeAmount": 1.5
+            },
+            "Revolver": {
+                "OffsetX": 12.0,
+                "OffsetY": 12.0,
+                "SmoothX": 180,
+                "SmoothY": 180,
+                "Prediction": 0.12,
+                "MaxStuds": 500.0,
+                "ShakeAmount": 2.0
+            }
+        },
+        "ShowFOV": True,
+        "FOVRadius": 140,
+        "FOVOutlineColor": [255, 255, 255],
+        "FOVFillColor": [255, 255, 255],
+        "FOVFillOpacity": 60,
+        "FOVRingColor": [0, 0, 0],
+        "FOVFill": True
+    },
+    "loadup": {
+        "AutoValidate": True,
+        "PanicKey": {
+            "Enabled": False,
+            "Keybind": "C"
+        },
+        "SilentMode": False
+    },
+    "game_configs": []
 }
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -136,18 +200,6 @@ def init_db():
                 UNIQUE(license_key, config_name)
             )""")
             
-            cur.execute("""CREATE TABLE IF NOT EXISTS public_configs (
-                id SERIAL PRIMARY KEY,
-                config_name TEXT NOT NULL,
-                author_name TEXT NOT NULL,
-                game_name TEXT NOT NULL,
-                description TEXT,
-                config_data TEXT NOT NULL,
-                license_key TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                downloads INTEGER DEFAULT 0
-            )""")
-            
             cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
                 session_id TEXT PRIMARY KEY,
                 license_key TEXT NOT NULL,
@@ -180,7 +232,6 @@ def init_db():
                 ip_address TEXT
             )""")
             
-            # NEW: Clients table for client ID authentication
             cur.execute("""CREATE TABLE IF NOT EXISTS clients (
                 client_id TEXT PRIMARY KEY,
                 hwid TEXT NOT NULL,
@@ -190,6 +241,16 @@ def init_db():
                 created_at TEXT NOT NULL,
                 last_ping TEXT,
                 authenticated INTEGER DEFAULT 0
+            )""")
+            
+            # New table for game configs
+            cur.execute("""CREATE TABLE IF NOT EXISTS game_configs (
+                id SERIAL PRIMARY KEY,
+                license_key TEXT NOT NULL,
+                game_id TEXT NOT NULL,
+                config_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(license_key, game_id)
             )""")
             
         else:
@@ -215,18 +276,6 @@ def init_db():
                 UNIQUE(license_key, config_name)
             )""")
             
-            cur.execute("""CREATE TABLE IF NOT EXISTS public_configs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                config_name TEXT NOT NULL,
-                author_name TEXT NOT NULL,
-                game_name TEXT NOT NULL,
-                description TEXT,
-                config_data TEXT NOT NULL,
-                license_key TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                downloads INTEGER DEFAULT 0
-            )""")
-            
             cur.execute("""CREATE TABLE IF NOT EXISTS user_sessions (
                 session_id TEXT PRIMARY KEY,
                 license_key TEXT NOT NULL,
@@ -259,7 +308,6 @@ def init_db():
                 ip_address TEXT
             )""")
             
-            # NEW: Clients table for client ID authentication
             cur.execute("""CREATE TABLE IF NOT EXISTS clients (
                 client_id TEXT PRIMARY KEY,
                 hwid TEXT NOT NULL,
@@ -269,6 +317,15 @@ def init_db():
                 created_at TEXT NOT NULL,
                 last_ping TEXT,
                 authenticated INTEGER DEFAULT 0
+            )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS game_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                license_key TEXT NOT NULL,
+                game_id TEXT NOT NULL,
+                config_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(license_key, game_id)
             )""")
         
         db.commit()
@@ -317,14 +374,6 @@ class KeyCreate(BaseModel):
     duration: str
     created_by: str
 
-class PublicConfig(BaseModel):
-    config_name: str
-    author_name: str
-    game_name: str
-    description: str
-    config_data: dict
-    license_key: str
-
 class SavedConfigRequest(BaseModel):
     config_name: str
     config_data: dict
@@ -342,14 +391,26 @@ class CreateAccount(BaseModel):
 class UserLogin(BaseModel):
     username: str
     password: str
-    redirect: Optional[str] = None
 
 class UserAuth(BaseModel):
     username: Optional[str] = None
     license_key: Optional[str] = None
     password: str
 
-# ========== NEW CLIENT AUTH MODELS ==========
+# New models for dashboard features
+class GameConfig(BaseModel):
+    game_id: str
+    config_name: str
+
+class PanicKeySettings(BaseModel):
+    enabled: bool
+    keybind: str
+
+class LoadupSettings(BaseModel):
+    auto_validate: bool
+    panic_key: PanicKeySettings
+    silent_mode: bool
+
 class ClientRegister(BaseModel):
     client_id: str
     hwid: str
@@ -460,14 +521,14 @@ async def validate_user(request: Request, data: KeyValidate):
     cur = db.cursor()
     
     try:
-        cur.execute(q("SELECT key, active, expires_at, hwid FROM keys WHERE key=%s"), (data.key,))
+        cur.execute(q("SELECT key, active, expires_at, hwid, hwid_resets FROM keys WHERE key=%s"), (data.key,))
         result = cur.fetchone()
         
         if not result:
             db.close()
             return {"valid": False, "error": "Invalid license key"}
         
-        key, active, expires_at, hwid = result
+        key, active, expires_at, hwid, hwid_resets = result
         
         if active == 0:
             db.close()
@@ -563,7 +624,7 @@ async def user_login(request: Request, data: UserLogin):
     
     try:
         cur.execute(q("""
-            SELECT ua.username, ua.password_hash, ua.license_key, k.active, k.expires_at
+            SELECT ua.username, ua.password_hash, ua.license_key, k.active, k.expires_at, k.hwid_resets
             FROM user_accounts ua
             JOIN keys k ON ua.license_key = k.key
             WHERE ua.username=%s
@@ -575,7 +636,7 @@ async def user_login(request: Request, data: UserLogin):
             db.close()
             return {"valid": False, "error": "Invalid username or password"}
         
-        username, password_hash, license_key, active, expires_at = result
+        username, password_hash, license_key, active, expires_at, hwid_resets = result
         
         if active == 0:
             db.close()
@@ -609,11 +670,8 @@ async def user_login(request: Request, data: UserLogin):
         db.close()
         create_web_session(license_key)
         
-        redirect_url = None
-        if data.redirect == "community":
-            redirect_url = "/community"
-        else:
-            redirect_url = f"/config/{license_key}"
+        # Get subscription type
+        subscription = "Lifetime" if expires_at is None else "Temporary"
         
         return {
             "valid": True, 
@@ -621,93 +679,13 @@ async def user_login(request: Request, data: UserLogin):
             "username": username,
             "license_key": license_key,
             "session_id": session_id,
-            "redirect": redirect_url
+            "subscription": subscription,
+            "hwid_resets": hwid_resets or 0
         }
         
     except Exception as e:
         db.close()
         return {"valid": False, "error": f"Server error: {str(e)}"}
-
-@app.post("/api/auth-validate")
-@limiter.limit("10/minute")
-async def auth_validate(request: Request, data: UserAuth):
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        if data.username:
-            cur.execute(q("""
-                SELECT ua.username, ua.password_hash, ua.license_key, k.active, k.expires_at
-                FROM user_accounts ua
-                JOIN keys k ON ua.license_key = k.key
-                WHERE ua.username=%s
-            """), (data.username,))
-            
-            result = cur.fetchone()
-            
-            if result:
-                username, password_hash, license_key, active, expires_at = result
-                
-                if active == 0:
-                    db.close()
-                    return {"valid": False, "error": "License inactive"}
-                
-                if expires_at:
-                    try:
-                        if datetime.now() > datetime.fromisoformat(expires_at):
-                            db.close()
-                            return {"valid": False, "error": "License expired"}
-                    except:
-                        pass
-                
-                if verify_password(password_hash, data.password):
-                    create_web_session(license_key)
-                    cur.execute(q("UPDATE user_accounts SET last_login=%s WHERE username=%s"),
-                               (datetime.now().isoformat(), username))
-                    db.commit()
-                    db.close()
-                    return {
-                        "valid": True,
-                        "message": "Login successful",
-                        "username": username,
-                        "license_key": license_key,
-                        "auth_method": "username"
-                    }
-        
-        if data.license_key:
-            cur.execute(q("SELECT key, active, expires_at FROM keys WHERE key=%s"), (data.license_key,))
-            result = cur.fetchone()
-            
-            if not result:
-                db.close()
-                return {"valid": False, "error": "Invalid credentials"}
-            
-            key, active, expires_at = result
-            
-            if active == 0:
-                db.close()
-                return {"valid": False, "error": "License inactive"}
-            
-            if expires_at:
-                try:
-                    if datetime.now() > datetime.fromisoformat(expires_at):
-                        db.close()
-                        return {"valid": False, "error": "License expired"}
-                except:
-                    pass
-            
-            db.close()
-            create_web_session(data.license_key)
-            return {"valid": True, "message": "License login successful", "auth_method": "license"}
-        
-        db.close()
-        return {"valid": False, "error": "Please provide username or license key"}
-        
-    except Exception as e:
-        db.close()
-        return {"valid": False, "error": f"Server error: {str(e)}"}
-
-# ========== NEW CLIENT AUTH ENDPOINTS ==========
 
 @app.post("/api/client/register")
 @limiter.limit("10/minute")
@@ -869,76 +847,6 @@ async def client_authenticate(request: Request, data: ClientAuthenticate):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-@app.get("/api/check-active-session")
-@limiter.limit("10/minute")
-async def check_active_session(request: Request, hwid: str = None):
-    if not hwid:
-        return {"has_active_session": False}
-    
-    db = get_db()
-    cur = db.cursor()
-    
-    two_minutes_ago = (datetime.now() - timedelta(minutes=2)).isoformat()
-    
-    cur.execute(q("""
-        SELECT us.license_key 
-        FROM user_sessions us
-        JOIN keys k ON us.license_key = k.key
-        WHERE k.hwid = %s 
-        AND us.created_at > %s
-        ORDER BY us.created_at DESC
-        LIMIT 1
-    """), (hwid, two_minutes_ago))
-    
-    result = cur.fetchone()
-    db.close()
-    
-    if result:
-        return {
-            "has_active_session": True,
-            "license_key": result[0],
-            "message": "Active website session found"
-        }
-    
-    return {"has_active_session": False, "message": "No active session"}
-
-@app.post("/api/keys/create")
-@limiter.limit("5/minute")
-async def create_key(request: Request, data: KeyCreate):
-    key = f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}"
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        expires_at = None
-        if data.duration != "lifetime":
-            now = datetime.now()
-            if data.duration == "monthly":
-                expires_at = (now + timedelta(days=30)).isoformat()
-            elif data.duration == "weekly":
-                expires_at = (now + timedelta(days=7)).isoformat()
-            elif data.duration == "3monthly":
-                expires_at = (now + timedelta(days=90)).isoformat()
-        
-        cur.execute(q("INSERT INTO keys (key, duration, created_at, expires_at, active, created_by) VALUES (%s, %s, %s, %s, 0, %s)"),
-                   (key, data.duration, datetime.now().isoformat(), expires_at, data.created_by))
-        db.commit()
-        db.close()
-        return {"key": key, "duration": data.duration, "expires_at": expires_at}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-
-@app.delete("/api/keys/{license_key}")
-@limiter.limit("10/minute")
-async def delete_key(request: Request, license_key: str):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(q("DELETE FROM keys WHERE key=%s"), (license_key,))
-    db.commit()
-    db.close()
-    return {"success": True}
-
 @app.get("/api/dashboard/{license_key}")
 @limiter.limit("30/minute")
 def get_dashboard_data(request: Request, license_key: str):
@@ -948,12 +856,17 @@ def get_dashboard_data(request: Request, license_key: str):
     try:
         cur.execute(q("SELECT key, duration, expires_at, active, hwid, redeemed_by, hwid_resets FROM keys WHERE key=%s"), (license_key,))
         result = cur.fetchone()
-        db.close()
         
         if not result:
+            db.close()
             raise HTTPException(status_code=404, detail="Not found")
         
         key, duration, expires_at, active, hwid, discord_id, hwid_resets = result
+        
+        # Get subscription type
+        subscription = "Lifetime" if expires_at is None else "Temporary"
+        
+        db.close()
         
         return {
             "license_key": key,
@@ -962,191 +875,12 @@ def get_dashboard_data(request: Request, license_key: str):
             "active": active,
             "hwid": hwid,
             "discord_id": discord_id,
-            "hwid_resets": hwid_resets if hwid_resets else 0
+            "hwid_resets": hwid_resets if hwid_resets else 0,
+            "subscription": subscription
         }
     except Exception as e:
         db.close()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-
-@app.post("/api/redeem")
-@limiter.limit("5/minute")
-async def redeem_key(request: Request, data: RedeemRequest):
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        cur.execute(q("SELECT key, duration, redeemed_at, expires_at FROM keys WHERE key=%s"), (data.key,))
-        result = cur.fetchone()
-        
-        if not result:
-            db.close()
-            raise HTTPException(status_code=404, detail="Invalid key")
-        
-        key, duration, redeemed_at, existing_expires = result
-        
-        if redeemed_at:
-            db.close()
-            raise HTTPException(status_code=400, detail="Already redeemed")
-        
-        now = datetime.now()
-        expires_at = existing_expires
-        
-        if not expires_at and duration != "lifetime":
-            if duration == "monthly":
-                expires_at = (now + timedelta(days=30)).isoformat()
-            elif duration == "weekly":
-                expires_at = (now + timedelta(days=7)).isoformat()
-            elif duration == "3monthly":
-                expires_at = (now + timedelta(days=90)).isoformat()
-        
-        cur.execute(q("UPDATE keys SET redeemed_at=%s, redeemed_by=%s, expires_at=%s, active=1 WHERE key=%s"),
-                   (now.isoformat(), data.discord_id, expires_at, data.key))
-        db.commit()
-        db.close()
-        
-        return {"success": True, "duration": duration, "expires_at": expires_at, "message": "Key redeemed successfully"}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-
-@app.post("/api/reset-hwid/{license_key}")
-@limiter.limit("5/minute")
-async def reset_hwid(request: Request, license_key: str):
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        cur.execute(q("SELECT hwid_resets FROM keys WHERE key=%s"), (license_key,))
-        result = cur.fetchone()
-        
-        if not result:
-            db.close()
-            raise HTTPException(status_code=404, detail="Not found")
-        
-        resets = result[0] if result[0] else 0
-        
-        cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE key=%s"), (resets + 1, license_key))
-        db.commit()
-        db.close()
-        
-        return {"success": True, "hwid_resets": resets + 1}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-
-@app.get("/api/users/{user_id}/license")
-@limiter.limit("30/minute")
-def get_user_license(request: Request, user_id: str):
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        cur.execute(q("SELECT key, duration, expires_at, redeemed_at, hwid, active FROM keys WHERE redeemed_by=%s"), (user_id,))
-        result = cur.fetchone()
-        db.close()
-        
-        if not result:
-            return {"active": False, "message": "No license found"}
-        
-        key, duration, expires_at, redeemed_at, hwid, active = result
-        
-        if active == 0:
-            return {"active": False, "message": "License inactive"}
-        
-        if expires_at:
-            is_expired = datetime.now() > datetime.fromisoformat(expires_at)
-            if is_expired:
-                return {"active": False, "expired": True, "key": key}
-        
-        return {
-            "active": True,
-            "key": key,
-            "duration": duration,
-            "expires_at": expires_at,
-            "redeemed_at": redeemed_at,
-            "hwid": hwid
-        }
-    except Exception as e:
-        db.close()
-        return {"active": False, "error": f"Server error: {str(e)}"}
-
-@app.delete("/api/users/{user_id}/license")
-@limiter.limit("10/minute")
-async def delete_user_license(request: Request, user_id: str):
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        cur.execute(q("SELECT key FROM keys WHERE redeemed_by=%s"), (user_id,))
-        result = cur.fetchone()
-        
-        if not result:
-            db.close()
-            raise HTTPException(status_code=404, detail="No license found")
-        
-        key = result[0]
-        cur.execute(q("DELETE FROM keys WHERE redeemed_by=%s"), (user_id,))
-        db.commit()
-        db.close()
-        
-        return {"status": "deleted", "key": key, "user_id": user_id}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-
-@app.post("/api/users/{user_id}/reset-hwid")
-@limiter.limit("5/minute")
-async def reset_user_hwid(request: Request, user_id: str):
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        cur.execute(q("SELECT hwid, hwid_resets FROM keys WHERE redeemed_by=%s"), (user_id,))
-        result = cur.fetchone()
-        
-        if not result:
-            db.close()
-            raise HTTPException(status_code=404, detail="No license found")
-        
-        old_hwid, resets = result
-        resets = resets if resets else 0
-        
-        cur.execute(q("UPDATE keys SET hwid=NULL, hwid_resets=%s WHERE redeemed_by=%s"), (resets + 1, user_id))
-        db.commit()
-        db.close()
-        
-        return {"status": "reset", "user_id": user_id, "old_hwid": old_hwid}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-
-@app.post("/api/check-login")
-@limiter.limit("10/minute")
-async def check_login(request: Request, data: dict):
-    hwid = data.get("hwid")
-    
-    db = get_db()
-    cur = db.cursor()
-    
-    try:
-        cur.execute(q("SELECT key FROM keys WHERE hwid=%s AND active=1"), (hwid,))
-        result = cur.fetchone()
-        db.close()
-        
-        if result:
-            return {
-                "logged_in": True,
-                "username": result[0],
-                "message": "User is logged in"
-            }
-        
-        return {
-            "logged_in": False,
-            "message": "User not logged in"
-        }
-    except Exception as e:
-        db.close()
-        return {"logged_in": False, "error": f"Server error: {str(e)}"}
 
 @app.get("/api/config/{key}")
 @limiter.limit("30/minute")
@@ -1188,7 +922,7 @@ async def set_config(request: Request, key: str, data: dict):
     try:
         if USE_POSTGRES:
             cur.execute(
-                "INSERT INTO settings (key, config) VALUES (%s, %s)",
+                "INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config",
                 (key, json.dumps(data))
             )
         else:
@@ -1272,579 +1006,308 @@ async def delete_config(request: Request, license_key: str, config_name: str):
     db.close()
     return {"success": True}
 
-@app.get("/api/public-configs")
-@limiter.limit("60/minute")
-def get_public_configs(request: Request):
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute(q("""
-            SELECT id, config_name, author_name, game_name, description, config_data, downloads, created_at 
-            FROM public_configs 
-            ORDER BY downloads DESC, created_at DESC
-        """))
-        rows = cur.fetchall()
-        db.close()
-        
-        configs = []
-        total_downloads = 0
-        
-        for row in rows:
-            downloads = row[6] if row[6] else 0
-            total_downloads += downloads
-            configs.append({
-                "id": row[0],
-                "config_name": row[1],
-                "author_name": row[2],
-                "game_name": row[3],
-                "description": row[4],
-                "config_data": json.loads(row[5]) if row[5] else DEFAULT_CONFIG,
-                "downloads": downloads,
-                "created_at": row[7]
-            })
-        
-        return {
-            "configs": configs,
-            "total_configs": len(configs),
-            "total_downloads": total_downloads
-        }
-    except Exception as e:
-        print(f"Error in get_public_configs: {e}")
-        import traceback
-        traceback.print_exc()
-        return {"configs": [], "total_configs": 0, "total_downloads": 0}
+# Game Configs endpoints
+@app.get("/api/game-configs/{license_key}")
+@limiter.limit("30/minute")
+def get_game_configs(request: Request, license_key: str):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT game_id, config_name FROM game_configs WHERE license_key=%s"), (license_key,))
+    rows = cur.fetchall()
+    db.close()
+    configs = [{"game_id": row[0], "config_name": row[1]} for row in rows]
+    return {"configs": configs}
 
-@app.post("/api/public-configs/create")
-@limiter.limit("10/minute")
-async def create_public_config(request: Request, data: PublicConfig):
+@app.post("/api/game-configs/{license_key}")
+@limiter.limit("20/minute")
+async def add_game_config(request: Request, license_key: str, data: GameConfig):
     db = get_db()
     cur = db.cursor()
     
     try:
-        cur.execute(q("""
-            INSERT INTO public_configs 
-            (config_name, author_name, game_name, description, config_data, license_key, created_at, downloads) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 0)
-        """), (
-            data.config_name, 
-            data.author_name, 
-            data.game_name, 
-            data.description, 
-            json.dumps(data.config_data), 
-            data.license_key, 
-            datetime.now().isoformat()
-        ))
+        cur.execute(q("INSERT OR REPLACE INTO game_configs (license_key, game_id, config_name, created_at) VALUES (%s, %s, %s, %s)"),
+                   (license_key, data.game_id, data.config_name, datetime.now().isoformat()))
         db.commit()
         db.close()
         return {"success": True}
     except Exception as e:
         db.close()
-        print(f"Error in create_public_config: {e}")
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-@app.get("/api/public-configs/{config_id}")
-@limiter.limit("30/minute")
-def get_public_config(request: Request, config_id: int):
+@app.delete("/api/game-configs/{license_key}/{game_id}")
+@limiter.limit("20/minute")
+async def delete_game_config(request: Request, license_key: str, game_id: str):
     db = get_db()
     cur = db.cursor()
-    cur.execute(q("""
-        SELECT id, config_name, author_name, game_name, description, config_data, downloads 
-        FROM public_configs WHERE id=%s
-    """), (config_id,))
-    row = cur.fetchone()
-    db.close()
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    return {
-        "id": row[0],
-        "config_name": row[1],
-        "author_name": row[2],
-        "game_name": row[3],
-        "description": row[4],
-        "config_data": json.loads(row[5]) if row[5] else {},
-        "downloads": row[6] if row[6] else 0
-    }
-
-@app.post("/api/public-configs/{config_id}/download")
-@limiter.limit("30/minute")
-async def download_config(request: Request, config_id: int):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(q("UPDATE public_configs SET downloads = downloads + 1 WHERE id=%s"), (config_id,))
+    cur.execute(q("DELETE FROM game_configs WHERE license_key=%s AND game_id=%s"), (license_key, game_id))
     db.commit()
     db.close()
     return {"success": True}
+
+@app.get("/api/loadup-settings/{license_key}")
+@limiter.limit("30/minute")
+def get_loadup_settings(request: Request, license_key: str):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(q("SELECT config FROM settings WHERE key=%s"), (f"{license_key}_loadup",))
+    result = cur.fetchone()
+    db.close()
+    
+    if not result:
+        return {
+            "auto_validate": True,
+            "panic_key": {"enabled": False, "keybind": "C"},
+            "silent_mode": False
+        }
+    
+    return json.loads(result[0])
+
+@app.post("/api/loadup-settings/{license_key}")
+@limiter.limit("20/minute")
+async def set_loadup_settings(request: Request, license_key: str, data: dict):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        if USE_POSTGRES:
+            cur.execute(
+                "INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config",
+                (f"{license_key}_loadup", json.dumps(data))
+            )
+        else:
+            cur.execute(
+                "INSERT OR REPLACE INTO settings (key, config) VALUES (?, ?)",
+                (f"{license_key}_loadup", json.dumps(data))
+            )
+        db.commit()
+        db.close()
+        return {"success": True}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.get("/api/keepalive")
 @limiter.limit("60/minute")
 def keepalive(request: Request):
     return {"status": "alive", "timestamp": datetime.now().isoformat()}
 
-@app.get("/api/debug/db")
-@limiter.limit("10/minute")
-def debug_db(request: Request):
-    try:
-        db = get_db()
-        cur = db.cursor()
-        
-        if USE_POSTGRES:
-            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
-        else:
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        
-        tables = cur.fetchall()
-        cur.execute(q("SELECT COUNT(*) FROM keys"))
-        count = cur.fetchone()
-        cur.execute(q("SELECT COUNT(*) FROM user_accounts"))
-        account_count = cur.fetchone()
-        cur.execute(q("SELECT COUNT(*) FROM public_configs"))
-        public_count = cur.fetchone()
-        cur.execute(q("SELECT COUNT(*) FROM clients"))
-        clients_count = cur.fetchone()
-        db.close()
-        
-        return {
-            "database_type": "PostgreSQL" if USE_POSTGRES else "SQLite",
-            "tables_found": [t[0] for t in tables],
-            "keys_count": count[0] if count else 0,
-            "accounts_count": account_count[0] if account_count else 0,
-            "public_configs_count": public_count[0] if public_count else 0,
-            "clients_count": clients_count[0] if clients_count else 0,
-            "use_postgres": USE_POSTGRES,
-            "database_url": DATABASE_URL if DATABASE_URL else "local.db"
-        }
-    except Exception as e:
-        return {"error": str(e), "type": type(e).__name__}
-
-@app.get("/api/test/{license_key}")
-@limiter.limit("30/minute")
-def test_license(request: Request, license_key: str):
-    try:
-        db = get_db()
-        cur = db.cursor()
-        query = q("SELECT key, duration, expires_at, active FROM keys WHERE key=%s")
-        cur.execute(query, (license_key,))
-        result = cur.fetchone()
-        db.close()
-        
-        if not result:
-            return {"exists": False, "key_provided": license_key}
-        
-        key, duration, expires_at, active = result
-        return {
-            "exists": True,
-            "key": key,
-            "duration": duration,
-            "expires_at": expires_at,
-            "active": active,
-            "is_lifetime": expires_at is None
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-# ========== HTML PAGES ==========
-
-# COMPACT LOGIN PAGE WITH CLIENT ID HANDLING
+# ========== LOGIN PAGE ==========
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login • Axion</title>
-    <meta name="theme-color" content="#0c0c0c">
+    <meta name="theme-color" content="#0a0a0c">
     <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            overflow: hidden;
-            background: rgb(12,12,12);
-            color: rgb(180,180,180);
-            font-family: Arial, Helvetica, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            position: relative;
+        :root {
+            --bg: #0a0a0c;
+            --grid: rgba(180, 180, 200, 0.035);
+            --glow: #ABA3FF33;
+            --border: #1e1e22;
+            --text: #e0e0e8;
         }
 
-        .particles {
+        * { margin:0; padding:0; box-sizing:border-box; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, sans-serif;
+            min-height: 100vh;
+            background-image: linear-gradient(to right, rgba(255,255,255,0.065) 0px, rgba(255,255,255,0.055) 40px, rgba(255,255,255,0.038) 100px, rgba(255,255,255,0.022) 180px, rgba(255,255,255,0.010) 280px, transparent 420px);
+            background-position: left center;
+            background-repeat: no-repeat;
+            background-size: 100% 100%;
+            background-attachment: fixed;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at 0% 30%, var(--glow) 0%, transparent 60%);
+            pointer-events: none;
+            z-index: -2;
+            opacity: 0.4;
+        }
+
+        .grid-overlay {
             position: fixed;
             inset: 0;
             pointer-events: none;
-            z-index: 1;
+            background-image: linear-gradient(to right, var(--grid) 1px, transparent 1px), linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+            background-size: 28px 28px;
+            z-index: -1;
+            opacity: 0.65;
+            mix-blend-mode: screen;
         }
 
-        .particle {
-            position: absolute;
-            background: rgba(140,140,140, 0.35);
-            border-radius: 50%;
-            pointer-events: none;
-            will-change: transform;
-            animation: fall linear infinite;
+        .login-container {
+            width: 340px;
+            background: rgba(17, 17, 19, 0.65);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 32px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.6);
         }
 
-        @keyframes fall {
-            0% {
-                transform: translateY(-10vh) translateX(0) rotate(0deg);
-                opacity: 0;
-            }
-            10% { opacity: 0.6; }
-            90% { opacity: 0.6; }
-            100% {
-                transform: translateY(110vh) translateX(var(--drift)) rotate(720deg);
-                opacity: 0;
-            }
-        }
-
-        .container {
-            width: 300px;
-            max-width: 90%;
-            background: rgb(12,12,12);
-            background-image:
-                radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
-            background-size: 6px 6px;
-            padding: 20px 20px;
-            box-sizing: border-box;
-            border-radius: 4px;
-            border: 1px solid rgb(28,28,28);
-            position: relative;
-            z-index: 10;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .loader {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 30px;
-            height: 30px;
-            z-index: 20;
-            display: none;
-        }
-
-        .arc-spinner {
-            width: 30px;
-            height: 30px;
-            position: relative;
-        }
-
-        .arc-spinner::before,
-        .arc-spinner::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border: 3px solid transparent;
-            border-radius: 50%;
-            border-right-color: transparent;
-            border-bottom-color: transparent;
-            border-left-color: transparent;
-            animation: spin-clockwise 1.2s linear infinite;
-        }
-
-        .arc-spinner::before,
-        .arc-spinner::after {
-            border-top-color: #888888;
-        }
-
-        .arc-spinner::after {
-            animation-delay: 0.2s;
-        }
-
-        @keyframes spin-clockwise {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        .form-content {
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .logo-container {
-            margin-bottom: 15px;
+        .logo {
+            font-size: 28px;
+            font-weight: 600;
             text-align: center;
-        }
-
-        .logo-image {
-            width: 60px;
-            height: 60px;
-            object-fit: contain;
-            filter: brightness(1.1) contrast(1.1);
-        }
-
-        .login-form {
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            margin-bottom: 24px;
+            color: #ffffff;
         }
 
         .input-group {
-            width: 100%;
-            max-width: 260px;
-            margin-bottom: 12px;
-            display: flex;
-            flex-direction: column;
+            margin-bottom: 20px;
         }
 
         .input-label {
-            font-size: 11px;
-            color: rgb(120,120,120);
-            margin-bottom: 3px;
-            margin-left: 2px;
+            font-size: 12px;
+            color: #888890;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .input-field {
             width: 100%;
-            padding: 8px 12px;
-            background: rgb(20,20,20);
-            border: 1px solid rgb(35,35,35);
-            color: rgb(200,200,200);
-            font-size: 13px;
+            padding: 12px;
+            background: #0d0d0f;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 14px;
             outline: none;
-            box-sizing: border-box;
-            border-radius: 3px;
-            transition: border-color 0.2s ease;
-        }
-
-        .input-field::placeholder {
-            color: rgb(100,100,100);
-            font-size: 12px;
+            transition: border-color 0.2s;
         }
 
         .input-field:focus {
-            border-color: #888888;
+            border-color: #ABA3FF;
         }
 
         .login-btn {
             width: 100%;
-            max-width: 260px;
-            padding: 8px;
-            margin-top: 5px;
-            background: rgb(20,20,20);
-            border: 1px solid rgb(40,40,40);
-            color: rgb(200,200,200);
-            font-size: 13px;
-            font-weight: 500;
+            padding: 12px;
+            background: #ffffff;
+            border: none;
+            border-radius: 6px;
+            color: #0a0a0c;
+            font-weight: 600;
+            font-size: 14px;
             cursor: pointer;
-            border-radius: 3px;
-            transition: all 0.2s ease;
+            transition: transform 0.2s;
+            margin-top: 8px;
         }
 
         .login-btn:hover {
-            background: rgb(25,25,25);
-            border-color: rgb(60,60,60);
-        }
-
-        .login-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+            transform: scale(1.02);
         }
 
         .error-message {
-            color: rgb(255, 80, 80);
-            font-size: 11px;
-            margin-top: 8px;
-            text-align: center;
-            min-height: 16px;
-            max-width: 260px;
-            word-wrap: break-word;
-        }
-
-        .success-message {
-            color: rgb(80, 255, 80);
-            font-size: 11px;
-            margin-top: 8px;
-            text-align: center;
-            min-height: 16px;
-        }
-
-        .info-note {
-            font-size: 10px;
-            color: rgb(100,100,100);
+            color: #ff6b6b;
+            font-size: 12px;
             margin-top: 12px;
             text-align: center;
-            line-height: 1.3;
+            min-height: 18px;
         }
-        
-        .back-link {
-            position: absolute;
-            top: 12px;
-            left: 12px;
-            color: rgb(100,100,100);
-            font-size: 11px;
-            text-decoration: none;
-        }
-        
-        .back-link:hover {
-            color: rgb(180,180,180);
-        }
-        
-        .discord-link {
-            font-size: 11px;
-            color: rgb(100,100,100);
-            margin-top: 10px;
-            text-decoration: none;
-        }
-        
-        .discord-link:hover {
-            color: rgb(180,180,180);
-            text-decoration: underline;
-        }
-        
+
         .client-id {
-            position: absolute;
+            position: fixed;
             bottom: 12px;
             right: 12px;
             font-size: 9px;
-            color: rgb(80,80,80);
+            color: #888890;
+        }
+
+        .loader {
+            display: none;
+            width: 30px;
+            height: 30px;
+            margin: 10px auto;
+            border: 3px solid #1e1e22;
+            border-top-color: #ffffff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
-    <div class="particles" id="particles"></div>
-
-    <div class="container" id="container">
-        <div class="loader" id="loader">
-            <div class="arc-spinner"></div>
+    <div class="grid-overlay"></div>
+    
+    <div class="login-container">
+        <div class="logo">AXION</div>
+        
+        <div class="input-group">
+            <div class="input-label">Username</div>
+            <input type="text" class="input-field" id="username" placeholder="Enter username">
         </div>
         
-        <div class="form-content" id="form">
-            <a href="/community" class="back-link">← Community</a>
-            
-            <div class="logo-container">
-                <img src="https://image2url.com/r2/default/images/1770423268822-32a09791-acb6-41e0-b8f9-1b159be9dc14.blob" alt="Axion" class="logo-image">
-            </div>
-            
-            <div class="login-form" id="loginForm">
-                <div class="input-group">
-                    <div class="input-label">Username</div>
-                    <input type="text" class="input-field" id="usernameInput" placeholder="Enter username">
-                </div>
-                <div class="input-group">
-                    <div class="input-label">Password</div>
-                    <input type="password" class="input-field" id="passwordInput" placeholder="Enter password">
-                </div>
-                
-                <button class="login-btn" id="loginBtn">Login</button>
-                
-                <div class="error-message" id="errorMsg"></div>
-                <div class="success-message" id="successMsg"></div>
-                
-                <div class="info-note">
-                    Login with username/password created when redeeming your license
-                </div>
-                
-                <a class="discord-link" href="https://discord.gg/celestialrbx" target="_blank">
-                    Need help? Join Discord
-                </a>
-            </div>
+        <div class="input-group">
+            <div class="input-label">Password</div>
+            <input type="password" class="input-field" id="password" placeholder="Enter password">
         </div>
-        <div class="client-id" id="clientIdDisplay"></div>
+        
+        <button class="login-btn" id="loginBtn">Login</button>
+        <div class="loader" id="loader"></div>
+        <div class="error-message" id="errorMsg"></div>
     </div>
+    
+    <div class="client-id" id="clientId"></div>
 
     <script>
-        function createParticles() {
-            const particlesContainer = document.getElementById('particles');
-            const count = 40;
-
-            for (let i = 0; i < count; i++) {
-                const particle = document.createElement('div');
-                particle.className = 'particle';
-
-                const size = Math.random() * 1.4 + 0.5;
-                const duration = Math.random() * 70 + 60;
-                const delay = Math.random() * -80;
-                const left = Math.random() * 100;
-                const drift = (Math.random() - 0.5) * 40 + 'vw';
-
-                particle.style.width = size + 'px';
-                particle.style.height = size + 'px';
-                particle.style.left = left + 'vw';
-                particle.style.setProperty('--drift', drift);
-                particle.style.animationDuration = duration + 's';
-                particle.style.animationDelay = delay + 's';
-
-                particlesContainer.appendChild(particle);
-            }
-        }
-
-        // Get client ID from URL or localStorage
         function getClientId() {
             const urlParams = new URLSearchParams(window.location.search);
             let clientId = urlParams.get('client');
             
             if (clientId) {
                 localStorage.setItem('axion_client_id', clientId);
-                document.getElementById('clientIdDisplay').textContent = 'Client: ' + clientId.substring(0, 8) + '...';
+                document.getElementById('clientId').textContent = 'Client: ' + clientId.substring(0, 8) + '...';
                 return clientId;
             }
             
             clientId = localStorage.getItem('axion_client_id');
             if (clientId) {
-                document.getElementById('clientIdDisplay').textContent = 'Client: ' + clientId.substring(0, 8) + '...';
+                document.getElementById('clientId').textContent = 'Client: ' + clientId.substring(0, 8) + '...';
                 return clientId;
             }
             
             return null;
         }
 
-        function clearMessages() {
-            document.getElementById('errorMsg').textContent = '';
-            document.getElementById('successMsg').textContent = '';
-        }
-
-        function showLoading() {
-            document.getElementById('loader').style.display = 'block';
-            document.getElementById('form').style.opacity = '0.6';
-            document.getElementById('loginBtn').disabled = true;
-            document.getElementById('loginBtn').textContent = 'Logging in...';
-        }
-
-        function hideLoading() {
-            document.getElementById('loader').style.display = 'none';
-            document.getElementById('form').style.opacity = '1';
-            document.getElementById('loginBtn').disabled = false;
-            document.getElementById('loginBtn').textContent = 'Login';
-        }
-
-        async function performLogin() {
-            const username = document.getElementById('usernameInput').value.trim();
-            const password = document.getElementById('passwordInput').value;
+        async function login() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
             const clientId = getClientId();
             
             if (!username || !password) {
-                document.getElementById('errorMsg').textContent = 'Please enter both username and password';
+                document.getElementById('errorMsg').textContent = 'Please enter username and password';
                 return;
             }
             
-            clearMessages();
-            showLoading();
+            document.getElementById('errorMsg').textContent = '';
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('loginBtn').disabled = true;
             
             try {
                 const response = await fetch('/api/user-login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        username: username, 
-                        password: password,
-                        redirect: 'dashboard'
-                    })
+                    body: JSON.stringify({ username, password })
                 });
                 
                 const data = await response.json();
                 
                 if (data.valid) {
-                    // If there's a pending client, authenticate it
                     if (clientId) {
                         try {
                             await fetch('/api/client/authenticate', {
@@ -1861,668 +1324,1566 @@ LOGIN_HTML = """<!DOCTYPE html>
                         }
                     }
                     
-                    document.getElementById('successMsg').textContent = 'Login successful! Redirecting...';
-                    
-                    setTimeout(() => {
-                        if (data.license_key) {
-                            window.location.href = `/config/${data.license_key}`;
-                        }
-                    }, 1000);
+                    window.location.href = `/dashboard/${data.license_key}`;
                 } else {
                     document.getElementById('errorMsg').textContent = data.error || 'Login failed';
-                    hideLoading();
+                    document.getElementById('loader').style.display = 'none';
+                    document.getElementById('loginBtn').disabled = false;
                 }
             } catch (error) {
-                document.getElementById('errorMsg').textContent = 'Connection error. Please try again.';
-                hideLoading();
+                document.getElementById('errorMsg').textContent = 'Connection error';
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('loginBtn').disabled = false;
             }
         }
 
-        document.getElementById('loginBtn').addEventListener('click', performLogin);
-        
-        document.getElementById('usernameInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') performLogin();
+        document.getElementById('loginBtn').addEventListener('click', login);
+        document.getElementById('password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') login();
         });
         
-        document.getElementById('passwordInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') performLogin();
-        });
-
-        createParticles();
         getClientId();
-        setTimeout(() => {
-            document.getElementById('usernameInput').focus();
-        }, 100);
     </script>
 """ + ENHANCED_ANTI_DEVTOOLS_JS + """
 </body>
 </html>
 """
 
-# COMMUNITY PAGE WITH CLIENT ID HANDLING
-COMMUNITY_HTML = """<!DOCTYPE html>
+# ========== DASHBOARD PAGE ==========
+DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Community • Axion</title>
-    <meta name="theme-color" content="#0c0c0c">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prada Panel • Axion</title>
+    <meta name="theme-color" content="#0a0a0c">
+    <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs/editor/editor.main.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs/loader.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --bg: #0a0a0c;
+            --grid: rgba(180, 180, 200, 0.035);
+            --glow: #ABA3FF33;
+            --outline: #252529;
+            --card-bg: rgba(17, 17, 19, 0.65);
+            --border: #1e1e22;
+            --text: #e0e0e8;
+            --header-bg: rgba(17, 17, 19, 0.65);
+            --table-dark: #0d0d0f;
+            --scroll-thumb: #2a2a2e;
+            --label-gray: #6a6a75;
+            --divider-gray: #1e1e22;
+            --plus-gray: #8a8a95;
+            --hover-white: #ffffff;
+            --hover-bg: rgba(171, 163, 255, 0.12);
+            --semi-bg: #151519;
+            --popup-bg: #111114;
+            --popup-hover: #1c1c20;
+            --dots-color: #888890;
+            --check-on: #ABA3FF;
+            --check-outline: #2a2a2e;
+            --modal-bg: #0f0f12;
+            --modal-border: #222;
+            --save-active: #ffffff;
+            --save-inactive: #888890;
         }
+
+        * { margin:0; padding:0; box-sizing:border-box; }
 
         body {
-            background: rgb(12,12,12);
-            background-image: radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
-            background-size: 6px 6px;
-            color: rgb(180,180,180);
-            font-family: Arial, Helvetica, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, sans-serif;
             min-height: 100vh;
-            padding: 1.5rem;
+            background-image: linear-gradient(to right, rgba(255,255,255,0.065) 0px, rgba(255,255,255,0.055) 40px, rgba(255,255,255,0.038) 100px, rgba(255,255,255,0.022) 180px, rgba(255,255,255,0.010) 280px, transparent 420px);
+            background-position: left center;
+            background-repeat: no-repeat;
+            background-size: 100% 100%;
+            background-attachment: fixed;
         }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
+        body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at 0% 30%, var(--glow) 0%, transparent 60%);
+            pointer-events: none;
+            z-index: -2;
+            opacity: 0.4;
         }
 
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-            border-bottom: 1px solid rgb(28,28,28);
-            padding-bottom: 0.8rem;
+        .grid-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image: linear-gradient(to right, var(--grid) 1px, transparent 1px), linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+            background-size: 28px 28px;
+            z-index: -1;
+            opacity: 0.65;
+            mix-blend-mode: screen;
         }
 
-        h1 {
-            color: rgb(200,200,200);
-            font-weight: 500;
-            font-size: 22px;
-        }
-
-        .nav-link {
-            color: rgb(120,120,120);
-            text-decoration: none;
-            padding: 6px 14px;
-            border: 1px solid rgb(35,35,35);
-            border-radius: 3px;
-            background: rgb(20,20,20);
+        .top-pill {
+            position: fixed;
+            top: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 18px;
             font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+            display: flex;
+            align-items: center;
+            gap: 28px;
+            box-shadow: none;
+            user-select: none;
+            z-index: 100;
         }
 
-        .nav-link:hover {
-            color: rgb(200,200,200);
-            border-color: rgb(80,80,80);
+        .tab {
+            padding: 4px 10px;
+            border-radius: 4px;
+            transition: color 0.14s ease;
+            cursor: pointer;
+            color: #a0a0a8;
         }
 
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1rem;
-            margin-bottom: 1.5rem;
+        .tab.active { color: #ffffff; }
+        .tab:hover { color: #d0d0d8; }
+
+        .content-wrapper {
+            margin-top: 100px;
+            padding: 0 5%;
+            min-height: calc(100vh - 140px);
+            display: none;
+            position: relative;
         }
 
-        .stat {
-            background: rgb(20,20,20);
-            border: 1px solid rgb(35,35,35);
-            border-radius: 3px;
-            padding: 1rem;
-            text-align: center;
+        .content-wrapper.active { display: block; }
+
+        .home-container, .settings-container {
+            max-width: 900px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        .stats-grid, .license-grid {
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .stat-card, .license-card, .settings-section {
+            flex: 1;
+            min-width: 280px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 24px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+
+        .stat-header, .license-header, .section-header {
+            font-size: 14px;
+            font-weight: 600;
+            color: #888890;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
 
         .stat-value {
-            font-size: 1.8rem;
-            color: rgb(200,200,200);
-            margin-bottom: 0.3rem;
+            font-size: 32px;
+            font-weight: 700;
+            color: #ffffff;
         }
 
-        .stat-label {
-            color: rgb(120,120,120);
-            font-size: 11px;
-            text-transform: uppercase;
+        .lifetime-value {
+            color: #ABA3FF;
         }
 
-        .search {
+        .license-key {
+            font-size: 18px;
+            font-weight: 500;
+            color: #ffffff;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+            font-family: monospace;
+            filter: blur(5px);
+            transition: filter 0.3s ease;
+            user-select: none;
+            cursor: default;
+        }
+
+        .license-key:hover {
+            filter: blur(0);
+            user-select: text;
+            cursor: text;
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 0;
+            border-bottom: 1px solid rgba(30,30,34,0.5);
+        }
+
+        .setting-row:last-child { border-bottom: none; }
+
+        .setting-info { flex: 1; }
+
+        .setting-label span:first-child { color: #ffffff; }
+        .setting-label span:last-child { color: #ABA3FF; }
+
+        .setting-desc {
+            font-size: 12px;
+            color: var(--label-gray);
+            margin-top: 4px;
+        }
+
+        .square-toggle {
+            position: relative;
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
+        .square-toggle input { opacity: 0; width: 0; height: 0; }
+
+        .square {
+            position: absolute;
+            inset: 0;
+            background: transparent;
+            border: 1px solid var(--check-outline);
+            border-radius: 3px;
+            transition: all 0.15s ease;
+            cursor: pointer;
+        }
+
+        .square-toggle input:checked + .square {
+            background: var(--check-on);
+            border-color: var(--check-on);
+        }
+
+        .square-toggle:hover .square {
+            border-color: #888890;
+        }
+
+        .game-configs-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 0;
+        }
+
+        .game-configs-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text);
+        }
+
+        .game-configs-desc {
+            font-size: 12px;
+            color: var(--label-gray);
+            margin-top: 4px;
+        }
+
+        .big-plus {
+            font-size: 32px;
+            font-weight: 500;
+            color: #ffffff;
+            cursor: pointer;
+        }
+
+        .big-plus:hover { opacity: 0.85; }
+
+        .external-container {
             width: 100%;
-            max-width: 400px;
-            padding: 10px 12px;
-            background: rgb(20,20,20);
-            border: 1px solid rgb(35,35,35);
-            color: rgb(200,200,200);
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .header-panel {
+            width: 90%;
+            max-width: 1100px;
+            height: 110px;
+            background: var(--header-bg);
+            border: 1px solid var(--border);
+            border-radius: 0;
+            overflow: hidden;
+            box-shadow: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 0 28px;
+            margin: 160px auto 0;
+        }
+
+        .top-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .version {
             font-size: 13px;
-            outline: none;
-            border-radius: 3px;
-            margin-bottom: 1.5rem;
+            color: #888890;
+            margin-top: 6px;
         }
 
-        .search:focus {
-            border-color: #888888;
+        .buttons { display: flex; gap: 12px; margin-right: -20px; }
+
+        .btn {
+            height: 42px;
+            padding: 0 20px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: border-color 0.2s ease;
+            display: flex;
+            align-items: center;
         }
 
-        .config-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 1.2rem;
+        .btn-download {
+            background: transparent;
+            color: #ffffff;
+            border: 1px solid var(--outline);
         }
 
-        .config-card {
-            background: rgb(20,20,20);
-            border: 1px solid rgb(35,35,35);
-            border-radius: 3px;
-            padding: 1.2rem;
+        .btn-download:hover { border-color: #3a3a40; }
+
+        .table-container {
+            height: calc(100vh - 200px);
+            padding: 0 1vw 0 1.5vw;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: flex-start;
+            gap: clamp(10px, 1.5vw, 25px);
+            overflow-x: hidden;
+            position: relative;
+            margin-top: 60px;
         }
 
-        .config-card:hover {
-            border-color: #888888;
+        .floating-panel {
+            width: clamp(200px, 22vw, 280px);
+            min-width: 200px;
+            max-width: 290px;
+            height: clamp(360px, 65vh, 480px);
+            background: #0d0d0f;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+            position: relative;
+            overflow: hidden;
+            flex: 0 0 auto;
         }
+
+        .header-area {
+            position: absolute;
+            top: 8px;
+            left: 0;
+            right: 0;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            transition: color 0.15s ease;
+        }
+
+        .configs-label {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--label-gray);
+            letter-spacing: 0.4px;
+            user-select: none;
+        }
+
+        .plus-button {
+            font-size: 18px;
+            font-weight: 500;
+            color: var(--plus-gray);
+            line-height: 1;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: color 0.15s ease;
+            cursor: pointer;
+        }
+
+        .header-area:hover .plus-button { color: var(--hover-white); }
+
+        .configs-divider {
+            position: absolute;
+            top: 32px;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: var(--divider-gray);
+            opacity: 0.7;
+        }
+
+        .configs-list {
+            position: absolute;
+            top: 40px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+
+        .config-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 16px;
+            transition: background 0.15s ease;
+            cursor: pointer;
+        }
+
+        .config-item:hover { background: var(--semi-bg); }
 
         .config-name {
-            color: rgb(200,200,200);
-            font-size: 16px;
-            font-weight: 500;
-            margin-bottom: 0.3rem;
-        }
-
-        .config-game {
-            color: rgb(140,140,140);
-            font-size: 11px;
-            margin-bottom: 0.8rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid rgb(35,35,35);
-        }
-
-        .config-description {
-            color: rgb(160,160,160);
             font-size: 12px;
-            margin-bottom: 1rem;
-            line-height: 1.4;
-            min-height: 50px;
+            color: var(--text);
         }
 
-        .config-footer {
-            display: flex;
-            justify-content: space-between;
-            color: rgb(120,120,120);
-            font-size: 11px;
-            margin-bottom: 0.8rem;
-        }
-
-        .config-author {
-            color: rgb(180,180,180);
-        }
-
-        .config-downloads {
-            color: rgb(140,140,140);
-        }
-
-        .load-btn {
-            width: 100%;
-            padding: 8px;
-            background: rgb(25,25,25);
-            border: 1px solid rgb(45,45,45);
-            color: rgb(200,200,200);
-            font-size: 12px;
+        .config-dots {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            color: var(--dots-color);
+            font-size: 9px;
+            line-height: 0.7;
             cursor: pointer;
-            border-radius: 3px;
+            padding: 2px 6px;
+            border-radius: 4px;
         }
 
-        .load-btn:hover {
-            background: rgb(30,30,30);
-            border-color: rgb(80,80,80);
+        .config-item:hover .config-dots { display: flex; }
+
+        .popup-menu {
+            position: absolute;
+            background: var(--popup-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            pointer-events: none;
+            z-index: 10;
+            min-width: 120px;
+        }
+
+        .popup-menu.visible {
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: auto;
+        }
+
+        .popup-item {
+            padding: 10px 16px;
+            font-size: 12px;
+            color: var(--text);
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .popup-item:hover { background: var(--popup-hover); }
+
+        .big-table-box {
+            width: clamp(500px, 65vw, 780px);
+            min-width: 460px;
+            max-width: 820px;
+            height: clamp(360px, 65vh, 480px);
+            background: #0d0d0f;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            overflow: hidden;
+            flex: 0 1 auto;
+        }
+
+        #monacoContainer { width: 100%; height: 100%; }
+
+        .table-tab-controls {
+            position: absolute;
+            top: 60px;
+            right: 7%;
+            z-index: 10;
+        }
+
+        .save-mask-btn {
+            padding: 10px 24px;
+            background: var(--save-active);
+            color: #0a0a0c;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .save-mask-btn.disabled {
+            background: var(--save-inactive);
+            color: #444;
+            cursor: not-allowed;
+            pointer-events: none;
+            box-shadow: none;
+        }
+
+        .save-mask-btn:hover:not(.disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        .keybind-input {
+            background: #0d0d0f;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            width: 80px;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .keybind-input:focus {
+            outline: none;
+            border-color: #ABA3FF;
         }
 
         .modal-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(12,12,12,0.95);
-            display: none;
+            inset: 0;
+            background: rgba(0,0,0,0.85);
+            display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 1000;
+            z-index: 9999;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.25s ease;
         }
 
-        .modal-overlay.active {
-            display: flex;
+        .modal-overlay.show {
+            opacity: 1;
+            visibility: visible;
         }
 
         .modal-content {
-            width: 300px;
-            background: rgb(12,12,12);
-            background-image: radial-gradient(circle at 3px 3px, rgb(15,15,15) 1px, transparent 0);
-            background-size: 6px 6px;
-            border: 1px solid rgb(35,35,35);
-            border-radius: 3px;
-            padding: 25px;
-            position: relative;
+            background: var(--modal-bg);
+            border: 1px solid var(--modal-border);
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            padding: 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.7);
         }
 
-        .modal-title {
-            color: rgb(200,200,200);
-            font-size: 16px;
-            margin-bottom: 15px;
-        }
-
-        .modal-input {
-            width: 100%;
-            padding: 10px 12px;
-            background: rgb(20,20,20);
-            border: 1px solid rgb(35,35,35);
-            color: rgb(200,200,200);
-            font-size: 13px;
-            outline: none;
-            border-radius: 3px;
-            margin-bottom: 12px;
-        }
-
-        .modal-input:focus {
-            border-color: #888888;
-        }
-
-        .modal-btn {
-            width: 100%;
-            padding: 10px;
-            background: rgb(25,25,25);
-            border: 1px solid rgb(45,45,45);
-            color: rgb(200,200,200);
-            font-size: 13px;
-            cursor: pointer;
-            border-radius: 3px;
-        }
-
-        .modal-btn:hover {
-            background: rgb(30,30,30);
-            border-color: rgb(80,80,80);
-        }
-
-        .fab {
-            position: fixed;
-            bottom: 1.5rem;
-            right: 1.5rem;
-            width: 48px;
-            height: 48px;
-            background: rgb(25,25,25);
-            border: 1px solid rgb(45,45,45);
-            border-radius: 3px;
-            color: rgb(200,200,200);
-            font-size: 22px;
+        .config-slot {
             display: flex;
             align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.2s;
+            gap: 16px;
+            margin-bottom: 16px;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(30,30,34,0.3);
         }
 
-        .fab:hover {
-            background: rgb(30,30,30);
-            border-color: #888888;
+        .config-dropdown, .config-gameid {
+            flex: 1;
+            padding: 10px;
+            background: #0d0d0f;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 14px;
         }
 
-        .loading, .empty {
-            text-align: center;
-            padding: 2.5rem;
-            color: rgb(120,120,120);
-            grid-column: 1 / -1;
-            font-size: 13px;
+        .config-dropdown:focus, .config-gameid:focus {
+            outline: none;
+            border-color: #ABA3FF;
         }
 
-        .loading:after {
-            content: '';
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid rgb(45,45,45);
-            border-top-color: #888888;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-left: 8px;
-            vertical-align: middle;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .close-modal {
-            position: absolute;
-            top: 12px;
-            right: 15px;
-            background: none;
+        .new-slot-btn {
+            width: 100%;
+            padding: 12px;
+            background: transparent;
             border: none;
-            color: rgb(120,120,120);
-            font-size: 20px;
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: bold;
             cursor: pointer;
-        }
-        
-        .close-modal:hover {
-            color: rgb(200,200,200);
-        }
-        
-        .modal-error {
-            color: rgb(255, 80, 80);
-            font-size: 11px;
-            margin-top: 8px;
+            margin: 16px 0 24px;
+            transition: transform 0.2s ease;
             text-align: center;
         }
-        
-        .modal-success {
-            color: rgb(80, 255, 80);
-            font-size: 11px;
-            margin-top: 8px;
+
+        .new-slot-btn:hover { transform: scale(1.05); }
+
+        .save-btn {
+            width: 100%;
+            padding: 14px;
+            background: #ffffff;
+            color: #0a0a0c;
+            border: 1px solid #e0e0e8;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
             text-align: center;
         }
-        
-        .discord-link {
-            display: block;
-            text-align: center;
-            margin-top: 20px;
-            color: rgb(100,100,100);
-            font-size: 11px;
-            text-decoration: none;
-        }
-        
-        .discord-link:hover {
-            color: rgb(180,180,180);
-            text-decoration: underline;
-        }
-        
-        .client-id {
-            position: fixed;
-            bottom: 12px;
-            left: 12px;
-            font-size: 9px;
-            color: rgb(80,80,80);
-        }
+
+        .save-btn:hover { transform: scale(1.05); }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Community</h1>
-            <a href="/menu" class="nav-link">Login</a>
-        </header>
+    <div class="grid-overlay"></div>
 
-        <div class="stats" id="statsBar">
-            <div class="stat">
-                <div class="stat-value" id="totalConfigs">0</div>
-                <div class="stat-label">Configs</div>
-            </div>
-            <div class="stat">
-                <div class="stat-value" id="totalDownloads">0</div>
-                <div class="stat-label">Downloads</div>
-            </div>
-            <div class="stat">
-                <div class="stat-value" id="topGame">-</div>
-                <div class="stat-label">Top Game</div>
-            </div>
-        </div>
-
-        <input type="search" class="search" id="searchInput" placeholder="Search configs...">
-
-        <div class="config-grid" id="configsList">
-            <div class="loading">Loading configs</div>
-        </div>
-        
-        <a class="discord-link" href="https://discord.gg/celestialrbx" target="_blank">
-            Join our Discord
-        </a>
+    <div class="top-pill">
+        <div class="tab active" data-tab="home">Home</div>
+        <div class="tab" data-tab="external">External</div>
+        <div class="tab" data-tab="table">Table</div>
+        <div class="tab" data-tab="settings">Settings</div>
     </div>
 
-    <button class="fab" id="fabButton">+</button>
-    <div class="client-id" id="clientIdDisplay"></div>
+    <div id="home" class="content-wrapper active">
+        <div class="home-container">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-header">Total HWID Resets</div>
+                    <div class="stat-value" id="hwidResets">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-header">Subscription</div>
+                    <div class="stat-value lifetime-value" id="subscription">Lifetime</div>
+                </div>
+            </div>
+            <div class="license-grid">
+                <div class="license-card">
+                    <div class="license-header">EXTERNAL LICENSE</div>
+                    <div class="license-key" id="licenseKey">LUMINA-XXXX-XXXX-XXXX</div>
+                </div>
+                <div class="license-card">
+                    <div class="license-header">HWID</div>
+                    <div class="license-key" id="hwid">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    <div class="modal-overlay" id="loginModal">
+    <div id="external" class="content-wrapper">
+        <div class="external-container">
+            <div class="header-panel">
+                <div class="top-row">
+                    <div>
+                        <div class="title">Lumina External</div>
+                        <div class="version">Version 0.1.0</div>
+                    </div>
+                    <div class="buttons">
+                        <button class="btn btn-download" onclick="window.open('https://example.com/download', '_blank')">DOWNLOAD</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="table" class="content-wrapper">
+        <div class="table-tab-controls">
+            <button class="save-mask-btn" id="saveMaskBtn">Save</button>
+        </div>
+
+        <div class="table-container">
+            <div class="floating-panel">
+                <div class="header-area">
+                    <div class="configs-label">configs</div>
+                    <div class="plus-button" id="createConfigBtn">+</div>
+                </div>
+                <div class="configs-divider"></div>
+                <div class="configs-list" id="configsList"></div>
+                <div class="popup-menu" id="configMenu">
+                    <div class="popup-item" onclick="loadSelectedConfig()">Load</div>
+                    <div class="popup-item" onclick="renameSelectedConfig()">Rename</div>
+                    <div class="popup-item" onclick="deleteSelectedConfig()">Delete</div>
+                </div>
+            </div>
+            <div class="big-table-box">
+                <div id="monacoContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings" class="content-wrapper">
+        <div class="settings-container">
+            <div class="settings-section">
+                <div class="section-header">Loadup Settings</div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label"><span>Auto</span> <span>Validate</span></div>
+                        <div class="setting-desc">Automatically validate your license based on HWID</div>
+                    </div>
+                    <label class="square-toggle">
+                        <input type="checkbox" id="autoValidateToggle" checked>
+                        <span class="square"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label"><span>Panic</span> <span>Key</span></div>
+                        <div class="setting-desc">Enable quick shutdown / self-destruct key</div>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <label class="square-toggle">
+                            <input type="checkbox" id="panicKeyToggle">
+                            <span class="square"></span>
+                        </label>
+                        <input type="text" class="keybind-input" id="panicKeybind" value="C" maxlength="20" readonly>
+                    </div>
+                </div>
+
+                <div class="game-configs-row">
+                    <div class="setting-info">
+                        <div class="setting-label"><span>Game</span> <span>Configs</span></div>
+                        <div class="game-configs-desc">Add and manage game-specific configs (ID + preset)</div>
+                    </div>
+                    <div class="big-plus" id="openGameConfigs">+</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="gameConfigsModal">
         <div class="modal-content">
-            <button class="close-modal" onclick="hideLoginModal()">&times;</button>
-            <div class="modal-title">Login to Share</div>
-            <input type="text" class="modal-input" id="modalUsername" placeholder="Username">
-            <input type="password" class="modal-input" id="modalPassword" placeholder="Password">
-            <button class="modal-btn" id="modalLoginBtn" onclick="modalLogin()">Login</button>
-            <div class="modal-error" id="modalError"></div>
-            <div class="modal-success" id="modalSuccess"></div>
+            <h3 style="color: #ffffff; margin-bottom: 20px;">Game Configs</h3>
+            <div id="gameConfigSlots"></div>
+            <button class="new-slot-btn" id="newGameConfigBtn">+ Add Config</button>
+            <button class="save-btn" onclick="saveGameConfigs()">Save</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="createConfigModal">
+        <div class="modal-content">
+            <h3 style="color: #ffffff; margin-bottom: 20px;">Create Config</h3>
+            <input type="text" class="config-gameid" id="newConfigName" placeholder="Config name" style="width: 100%; margin-bottom: 20px;">
+            <div style="display: flex; gap: 10px;">
+                <button class="save-btn" onclick="createNewConfig()" style="flex: 1;">Create</button>
+                <button class="save-btn" onclick="closeCreateModal()" style="flex: 1; background: transparent; color: #ffffff;">Cancel</button>
+            </div>
         </div>
     </div>
 
     <script>
-        let allConfigs = [];
-        let currentSearch = '';
-        
-        const configsList = document.getElementById('configsList');
-        const loginModal = document.getElementById('loginModal');
-        const modalUsername = document.getElementById('modalUsername');
-        const modalPassword = document.getElementById('modalPassword');
-        const modalError = document.getElementById('modalError');
-        const modalSuccess = document.getElementById('modalSuccess');
-        const modalLoginBtn = document.getElementById('modalLoginBtn');
-        const searchInput = document.getElementById('searchInput');
-        const totalConfigsEl = document.getElementById('totalConfigs');
-        const totalDownloadsEl = document.getElementById('totalDownloads');
-        const topGameEl = document.getElementById('topGame');
-        const fabButton = document.getElementById('fabButton');
-        const clientIdDisplay = document.getElementById('clientIdDisplay');
-        
-        function getClientId() {
-            const urlParams = new URLSearchParams(window.location.search);
-            let clientId = urlParams.get('client');
-            
-            if (clientId) {
-                localStorage.setItem('axion_client_id', clientId);
-                clientIdDisplay.textContent = 'Client: ' + clientId.substring(0, 8) + '...';
-                return clientId;
-            }
-            
-            clientId = localStorage.getItem('axion_client_id');
-            if (clientId) {
-                clientIdDisplay.textContent = 'Client: ' + clientId.substring(0, 8) + '...';
-                return clientId;
-            }
-            
-            return null;
-        }
-        
-        function showLoginModal() {
-            loginModal.classList.add('active');
-            modalUsername.focus();
-        }
-        
-        function hideLoginModal() {
-            loginModal.classList.remove('active');
-            modalError.textContent = '';
-            modalSuccess.textContent = '';
-            modalUsername.value = '';
-            modalPassword.value = '';
-            modalLoginBtn.disabled = false;
-            modalLoginBtn.textContent = 'Login';
-        }
-        
-        fabButton.addEventListener('click', showLoginModal);
-        
-        loginModal.addEventListener('click', function(e) {
-            if (e.target === loginModal) {
-                hideLoginModal();
-            }
+        let licenseKey = '';
+        let currentConfig = {};
+        let editor = null;
+        let selectedConfig = null;
+        let configMenu = document.getElementById('configMenu');
+        let menuTarget = null;
+        let gameConfigs = [];
+
+        // Initialize Monaco
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs' }});
+        require(['vs/editor/editor.main'], function () {
+            monaco.editor.defineTheme('customDark', {
+                base: 'vs-dark',
+                inherit: true,
+                rules: [
+                    { token: 'string', foreground: 'CE9178' },
+                    { token: 'number', foreground: 'B5CEA8' },
+                    { token: 'keyword', foreground: '569CD6' },
+                ],
+                colors: {
+                    'editor.background': '#0d0d0f',
+                    'editor.foreground': '#d4d4d8',
+                    'editorLineNumber.foreground': '#444',
+                }
+            });
+
+            editor = monaco.editor.create(document.getElementById('monacoContainer'), {
+                value: JSON.stringify(currentConfig, null, 2),
+                language: 'json',
+                theme: 'customDark',
+                automaticLayout: true,
+                fontSize: 14,
+                minimap: { enabled: false }
+            });
+
+            editor.onDidChangeModelContent(() => {
+                document.getElementById('saveMaskBtn').classList.remove('disabled');
+            });
         });
-        
-        async function modalLogin() {
-            const username = modalUsername.value.trim();
-            const password = modalPassword.value;
-            const clientId = getClientId();
-            
-            if (!username || !password) {
-                modalError.textContent = 'All fields required';
-                return;
-            }
-            
-            modalError.textContent = '';
-            modalSuccess.textContent = '';
-            modalLoginBtn.disabled = true;
-            modalLoginBtn.textContent = 'Logging in...';
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.content-wrapper').forEach(w => w.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Load dashboard data
+        async function loadDashboard() {
+            const pathParts = window.location.pathname.split('/');
+            licenseKey = pathParts[pathParts.length - 1];
             
             try {
-                const res = await fetch('/api/user-login', {
+                const res = await fetch(`/api/dashboard/${licenseKey}`);
+                const data = await res.json();
+                
+                document.getElementById('hwidResets').textContent = data.hwid_resets || 0;
+                document.getElementById('subscription').textContent = data.subscription || 'Lifetime';
+                document.getElementById('licenseKey').textContent = data.license_key;
+                document.getElementById('hwid').textContent = data.hwid || 'Not bound';
+                
+                // Load config
+                const configRes = await fetch(`/api/config/${licenseKey}`);
+                currentConfig = await configRes.json();
+                if (editor) {
+                    editor.setValue(JSON.stringify(currentConfig, null, 2));
+                }
+                
+                // Load saved configs list
+                loadConfigsList();
+                
+                // Load game configs
+                loadGameConfigs();
+                
+                // Load loadup settings
+                const loadupRes = await fetch(`/api/loadup-settings/${licenseKey}`);
+                const loadupData = await loadupRes.json();
+                
+                document.getElementById('autoValidateToggle').checked = loadupData.auto_validate;
+                document.getElementById('panicKeyToggle').checked = loadupData.panic_key.enabled;
+                document.getElementById('panicKeybind').value = loadupData.panic_key.keybind;
+                
+            } catch (e) {
+                console.error('Failed to load dashboard:', e);
+            }
+        }
+
+        // Load configs list
+        async function loadConfigsList() {
+            try {
+                const res = await fetch(`/api/configs/${licenseKey}/list`);
+                const data = await res.json();
+                
+                const list = document.getElementById('configsList');
+                list.innerHTML = '';
+                
+                data.configs.forEach(config => {
+                    const div = document.createElement('div');
+                    div.className = 'config-item';
+                    div.innerHTML = `
+                        <div class="config-name">${config.name}</div>
+                        <div class="config-dots">•••</div>
+                    `;
+                    
+                    div.addEventListener('click', (e) => {
+                        if (!e.target.classList.contains('config-dots')) {
+                            loadConfigByName(config.name);
+                        }
+                    });
+                    
+                    div.querySelector('.config-dots').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        showConfigMenu(e, config.name);
+                    });
+                    
+                    list.appendChild(div);
+                });
+            } catch (e) {
+                console.error('Failed to load configs list:', e);
+            }
+        }
+
+        // Show config menu
+        function showConfigMenu(event, configName) {
+            const rect = event.target.getBoundingClientRect();
+            configMenu.style.top = rect.bottom + 5 + 'px';
+            configMenu.style.left = rect.left - 100 + 'px';
+            configMenu.classList.add('visible');
+            selectedConfig = configName;
+            
+            document.addEventListener('click', function closeMenu(e) {
+                if (!configMenu.contains(e.target) && !e.target.classList.contains('config-dots')) {
+                    configMenu.classList.remove('visible');
+                    document.removeEventListener('click', closeMenu);
+                }
+            });
+        }
+
+        // Load config by name
+        async function loadConfigByName(name) {
+            try {
+                const res = await fetch(`/api/configs/${licenseKey}/load/${name}`);
+                const config = await res.json();
+                currentConfig = config;
+                editor.setValue(JSON.stringify(config, null, 2));
+                document.getElementById('saveMaskBtn').classList.remove('disabled');
+            } catch (e) {
+                console.error('Failed to load config:', e);
+            }
+        }
+
+        function loadSelectedConfig() {
+            if (selectedConfig) {
+                loadConfigByName(selectedConfig);
+                configMenu.classList.remove('visible');
+            }
+        }
+
+        async function renameSelectedConfig() {
+            if (!selectedConfig) return;
+            
+            const newName = prompt('Enter new name:', selectedConfig);
+            if (newName && newName !== selectedConfig) {
+                try {
+                    await fetch(`/api/configs/${licenseKey}/rename`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ old_name: selectedConfig, new_name: newName })
+                    });
+                    await loadConfigsList();
+                } catch (e) {
+                    console.error('Failed to rename config:', e);
+                }
+            }
+            configMenu.classList.remove('visible');
+        }
+
+        async function deleteSelectedConfig() {
+            if (!selectedConfig) return;
+            
+            if (confirm(`Delete config "${selectedConfig}"?`)) {
+                try {
+                    await fetch(`/api/configs/${licenseKey}/delete/${selectedConfig}`, {
+                        method: 'DELETE'
+                    });
+                    await loadConfigsList();
+                } catch (e) {
+                    console.error('Failed to delete config:', e);
+                }
+            }
+            configMenu.classList.remove('visible');
+        }
+
+        // Save button
+        document.getElementById('saveMaskBtn').addEventListener('click', async () => {
+            if (document.getElementById('saveMaskBtn').classList.contains('disabled')) return;
+            
+            try {
+                const newConfig = JSON.parse(editor.getValue());
+                await fetch(`/api/config/${licenseKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        username: username, 
-                        password: password,
-                        redirect: 'community'
+                    body: JSON.stringify(newConfig)
+                });
+                
+                document.getElementById('saveMaskBtn').classList.add('disabled');
+                currentConfig = newConfig;
+            } catch (e) {
+                alert('Invalid JSON');
+            }
+        });
+
+        // Create config modal
+        document.getElementById('createConfigBtn').addEventListener('click', () => {
+            document.getElementById('createConfigModal').classList.add('show');
+        });
+
+        function closeCreateModal() {
+            document.getElementById('createConfigModal').classList.remove('show');
+            document.getElementById('newConfigName').value = '';
+        }
+
+        async function createNewConfig() {
+            const name = document.getElementById('newConfigName').value.trim();
+            if (!name) return;
+            
+            try {
+                await fetch(`/api/configs/${licenseKey}/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        config_name: name,
+                        config_data: currentConfig
                     })
                 });
                 
-                const data = await res.json();
-                
-                if (data.valid) {
-                    // If there's a pending client, authenticate it
-                    if (clientId) {
-                        try {
-                            await fetch('/api/client/authenticate', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    client_id: clientId,
-                                    license_key: data.license_key,
-                                    username: data.username
-                                })
-                            });
-                        } catch (e) {
-                            console.error('Failed to authenticate client:', e);
-                        }
-                    }
-                    
-                    modalSuccess.textContent = 'Login successful!';
-                    
-                    setTimeout(() => {
-                        hideLoginModal();
-                        window.location.reload();
-                    }, 1500);
-                } else {
-                    modalError.textContent = data.error || 'Login failed';
-                    modalLoginBtn.disabled = false;
-                    modalLoginBtn.textContent = 'Login';
-                }
+                closeCreateModal();
+                await loadConfigsList();
             } catch (e) {
-                modalError.textContent = 'Connection error';
-                modalLoginBtn.disabled = false;
-                modalLoginBtn.textContent = 'Login';
+                console.error('Failed to create config:', e);
             }
         }
-        
-        async function loadConfigs() {
+
+        // Game Configs
+        async function loadGameConfigs() {
             try {
-                configsList.innerHTML = '<div class="loading">Loading configs</div>';
-                
-                const res = await fetch('/api/public-configs');
+                const res = await fetch(`/api/game-configs/${licenseKey}`);
+                const data = await res.json();
+                gameConfigs = data.configs || [];
+                renderGameConfigs();
+            } catch (e) {
+                console.error('Failed to load game configs:', e);
+            }
+        }
+
+        async function loadConfigsList() {
+            try {
+                const res = await fetch(`/api/configs/${licenseKey}/list`);
                 const data = await res.json();
                 
-                allConfigs = data.configs || [];
+                const list = document.getElementById('configsList');
+                list.innerHTML = '';
                 
-                totalConfigsEl.textContent = allConfigs.length;
-                totalDownloadsEl.textContent = data.total_downloads || 0;
-                
-                const gameCounts = {};
-                allConfigs.forEach(config => {
-                    const game = config.game_name || 'Unknown';
-                    gameCounts[game] = (gameCounts[game] || 0) + 1;
+                data.configs.forEach(config => {
+                    const div = document.createElement('div');
+                    div.className = 'config-item';
+                    div.innerHTML = `
+                        <div class="config-name">${config.name}</div>
+                        <div class="config-dots">•••</div>
+                    `;
+                    
+                    div.addEventListener('click', (e) => {
+                        if (!e.target.classList.contains('config-dots')) {
+                            loadConfigByName(config.name);
+                        }
+                    });
+                    
+                    div.querySelector('.config-dots').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        showConfigMenu(e, config.name);
+                    });
+                    
+                    list.appendChild(div);
+                });
+            } catch (e) {
+                console.error('Failed to load configs list:', e);
+            }
+        }
+
+        // Show config menu
+        function showConfigMenu(event, configName) {
+            const rect = event.target.getBoundingClientRect();
+            configMenu.style.top = rect.bottom + 5 + 'px';
+            configMenu.style.left = rect.left - 100 + 'px';
+            configMenu.classList.add('visible');
+            selectedConfig = configName;
+            
+            document.addEventListener('click', function closeMenu(e) {
+                if (!configMenu.contains(e.target) && !e.target.classList.contains('config-dots')) {
+                    configMenu.classList.remove('visible');
+                    document.removeEventListener('click', closeMenu);
+                }
+            });
+        }
+
+        // Load config by name
+        async function loadConfigByName(name) {
+            try {
+                const res = await fetch(`/api/configs/${licenseKey}/load/${name}`);
+                const config = await res.json();
+                currentConfig = config;
+                editor.setValue(JSON.stringify(config, null, 2));
+                document.getElementById('saveMaskBtn').classList.remove('disabled');
+            } catch (e) {
+                console.error('Failed to load config:', e);
+            }
+        }
+
+        function loadSelectedConfig() {
+            if (selectedConfig) {
+                loadConfigByName(selectedConfig);
+                configMenu.classList.remove('visible');
+            }
+        }
+
+        async function renameSelectedConfig() {
+            if (!selectedConfig) return;
+            
+            const newName = prompt('Enter new name:', selectedConfig);
+            if (newName && newName !== selectedConfig) {
+                try {
+                    await fetch(`/api/configs/${licenseKey}/rename`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ old_name: selectedConfig, new_name: newName })
+                    });
+                    await loadConfigsList();
+                } catch (e) {
+                    console.error('Failed to rename config:', e);
+                }
+            }
+            configMenu.classList.remove('visible');
+        }
+
+        async function deleteSelectedConfig() {
+            if (!selectedConfig) return;
+            
+            if (confirm(`Delete config "${selectedConfig}"?`)) {
+                try {
+                    await fetch(`/api/configs/${licenseKey}/delete/${selectedConfig}`, {
+                        method: 'DELETE'
+                    });
+                    await loadConfigsList();
+                } catch (e) {
+                    console.error('Failed to delete config:', e);
+                }
+            }
+            configMenu.classList.remove('visible');
+        }
+
+        // Save button
+        document.getElementById('saveMaskBtn').addEventListener('click', async () => {
+            if (document.getElementById('saveMaskBtn').classList.contains('disabled')) return;
+            
+            try {
+                const newConfig = JSON.parse(editor.getValue());
+                await fetch(`/api/config/${licenseKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newConfig)
                 });
                 
-                let topGameName = '-';
-                let maxCount = 0;
-                for (const [game, count] of Object.entries(gameCounts)) {
-                    if (count > maxCount) {
-                        maxCount = count;
-                        topGameName = game;
+                document.getElementById('saveMaskBtn').classList.add('disabled');
+                currentConfig = newConfig;
+            } catch (e) {
+                alert('Invalid JSON');
+            }
+        });
+
+        // Create config modal
+        document.getElementById('createConfigBtn').addEventListener('click', () => {
+            document.getElementById('createConfigModal').classList.add('show');
+        });
+
+        window.closeCreateModal = function() {
+            document.getElementById('createConfigModal').classList.remove('show');
+            document.getElementById('newConfigName').value = '';
+        };
+
+        window.createNewConfig = async function() {
+            const name = document.getElementById('newConfigName').value.trim();
+            if (!name) return;
+            
+            try {
+                await fetch(`/api/configs/${licenseKey}/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        config_name: name,
+                        config_data: currentConfig
+                    })
+                });
+                
+                closeCreateModal();
+                await loadConfigsList();
+            } catch (e) {
+                console.error('Failed to create config:', e);
+            }
+        };
+
+        // Game Configs
+        document.getElementById('openGameConfigs').addEventListener('click', () => {
+            document.getElementById('gameConfigsModal').classList.add('show');
+        });
+
+        document.getElementById('gameConfigsModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('gameConfigsModal')) {
+                document.getElementById('gameConfigsModal').classList.remove('show');
+            }
+        });
+
+        async function loadGameConfigs() {
+            try {
+                const res = await fetch(`/api/game-configs/${licenseKey}`);
+                const data = await res.json();
+                gameConfigs = data.configs || [];
+                renderGameConfigs();
+            } catch (e) {
+                console.error('Failed to load game configs:', e);
+            }
+        }
+
+        async function loadConfigsList() {
+            try {
+                const res = await fetch(`/api/configs/${licenseKey}/list`);
+                const data = await res.json();
+                
+                const list = document.getElementById('configsList');
+                list.innerHTML = '';
+                
+                data.configs.forEach(config => {
+                    const div = document.createElement('div');
+                    div.className = 'config-item';
+                    div.innerHTML = `
+                        <div class="config-name">${config.name}</div>
+                        <div class="config-dots">•••</div>
+                    `;
+                    
+                    div.addEventListener('click', (e) => {
+                        if (!e.target.classList.contains('config-dots')) {
+                            loadConfigByName(config.name);
+                        }
+                    });
+                    
+                    div.querySelector('.config-dots').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        showConfigMenu(e, config.name);
+                    });
+                    
+                    list.appendChild(div);
+                });
+            } catch (e) {
+                console.error('Failed to load configs list:', e);
+            }
+        }
+
+        // Show config menu
+        function showConfigMenu(event, configName) {
+            const rect = event.target.getBoundingClientRect();
+            configMenu.style.top = rect.bottom + 5 + 'px';
+            configMenu.style.left = rect.left - 100 + 'px';
+            configMenu.classList.add('visible');
+            selectedConfig = configName;
+            
+            document.addEventListener('click', function closeMenu(e) {
+                if (!configMenu.contains(e.target) && !e.target.classList.contains('config-dots')) {
+                    configMenu.classList.remove('visible');
+                    document.removeEventListener('click', closeMenu);
+                }
+            });
+        }
+
+        // Load config by name
+        async function loadConfigByName(name) {
+            try {
+                const res = await fetch(`/api/configs/${licenseKey}/load/${name}`);
+                const config = await res.json();
+                currentConfig = config;
+                editor.setValue(JSON.stringify(config, null, 2));
+                document.getElementById('saveMaskBtn').classList.remove('disabled');
+            } catch (e) {
+                console.error('Failed to load config:', e);
+            }
+        }
+
+        function loadSelectedConfig() {
+            if (selectedConfig) {
+                loadConfigByName(selectedConfig);
+                configMenu.classList.remove('visible');
+            }
+        }
+
+        async function renameSelectedConfig() {
+            if (!selectedConfig) return;
+            
+            const newName = prompt('Enter new name:', selectedConfig);
+            if (newName && newName !== selectedConfig) {
+                try {
+                    await fetch(`/api/configs/${licenseKey}/rename`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ old_name: selectedConfig, new_name: newName })
+                    });
+                    await loadConfigsList();
+                } catch (e) {
+                    console.error('Failed to rename config:', e);
+                }
+            }
+            configMenu.classList.remove('visible');
+        }
+
+        async function deleteSelectedConfig() {
+            if (!selectedConfig) return;
+            
+            if (confirm(`Delete config "${selectedConfig}"?`)) {
+                try {
+                    await fetch(`/api/configs/${licenseKey}/delete/${selectedConfig}`, {
+                        method: 'DELETE'
+                    });
+                    await loadConfigsList();
+                } catch (e) {
+                    console.error('Failed to delete config:', e);
+                }
+            }
+            configMenu.classList.remove('visible');
+        }
+
+        // Save button
+        document.getElementById('saveMaskBtn').addEventListener('click', async () => {
+            if (document.getElementById('saveMaskBtn').classList.contains('disabled')) return;
+            
+            try {
+                const newConfig = JSON.parse(editor.getValue());
+                await fetch(`/api/config/${licenseKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newConfig)
+                });
+                
+                document.getElementById('saveMaskBtn').classList.add('disabled');
+                currentConfig = newConfig;
+            } catch (e) {
+                alert('Invalid JSON');
+            }
+        });
+
+        // Create config modal
+        document.getElementById('createConfigBtn').addEventListener('click', () => {
+            document.getElementById('createConfigModal').classList.add('show');
+        });
+
+        window.closeCreateModal = function() {
+            document.getElementById('createConfigModal').classList.remove('show');
+            document.getElementById('newConfigName').value = '';
+        };
+
+        window.createNewConfig = async function() {
+            const name = document.getElementById('newConfigName').value.trim();
+            if (!name) return;
+            
+            try {
+                await fetch(`/api/configs/${licenseKey}/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        config_name: name,
+                        config_data: currentConfig
+                    })
+                });
+                
+                closeCreateModal();
+                await loadConfigsList();
+            } catch (e) {
+                console.error('Failed to create config:', e);
+            }
+        };
+
+        // Game Configs
+        document.getElementById('openGameConfigs').addEventListener('click', () => {
+            document.getElementById('gameConfigsModal').classList.add('show');
+        });
+
+        document.getElementById('gameConfigsModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('gameConfigsModal')) {
+                document.getElementById('gameConfigsModal').classList.remove('show');
+            }
+        });
+
+        async function loadGameConfigs() {
+            try {
+                const res = await fetch(`/api/game-configs/${licenseKey}`);
+                const data = await res.json();
+                gameConfigs = data.configs || [];
+                renderGameConfigs();
+            } catch (e) {
+                console.error('Failed to load game configs:', e);
+            }
+        }
+
+        async function renderGameConfigs() {
+            const configsRes = await fetch(`/api/configs/${licenseKey}/list`);
+            const configsData = await configsRes.json();
+            const availableConfigs = configsData.configs || [];
+            
+            const slots = document.getElementById('gameConfigSlots');
+            slots.innerHTML = '';
+            
+            gameConfigs.forEach((config, index) => {
+                const slot = document.createElement('div');
+                slot.className = 'config-slot';
+                
+                const select = document.createElement('select');
+                select.className = 'config-dropdown';
+                select.id = `gameConfigSelect_${index}`;
+                
+                availableConfigs.forEach(c => {
+                    const option = document.createElement('option');
+                    option.value = c.name;
+                    option.textContent = c.name;
+                    if (c.name === config.config_name) option.selected = true;
+                    select.appendChild(option);
+                });
+                
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'config-gameid';
+                input.value = config.game_id;
+                input.placeholder = 'Game ID';
+                input.id = `gameConfigId_${index}`;
+                
+                slot.appendChild(select);
+                slot.appendChild(input);
+                slots.appendChild(slot);
+            });
+        }
+
+        document.getElementById('newGameConfigBtn').addEventListener('click', () => {
+            const slots = document.getElementById('gameConfigSlots');
+            const index = gameConfigs.length;
+            
+            fetch(`/api/configs/${licenseKey}/list`)
+                .then(res => res.json())
+                .then(data => {
+                    const slot = document.createElement('div');
+                    slot.className = 'config-slot';
+                    
+                    const select = document.createElement('select');
+                    select.className = 'config-dropdown';
+                    select.id = `gameConfigSelect_${index}`;
+                    
+                    data.configs.forEach(c => {
+                        const option = document.createElement('option');
+                        option.value = c.name;
+                        option.textContent = c.name;
+                        select.appendChild(option);
+                    });
+                    
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'config-gameid';
+                    input.id = `gameConfigId_${index}`;
+                    input.placeholder = 'Game ID';
+                    
+                    slot.appendChild(select);
+                    slot.appendChild(input);
+                    slots.appendChild(slot);
+                    
+                    gameConfigs.push({ game_id: '', config_name: data.configs[0]?.name || '' });
+                });
+        });
+
+        window.saveGameConfigs = async function() {
+            const newConfigs = [];
+            for (let i = 0; i <= gameConfigs.length; i++) {
+                const select = document.getElementById(`gameConfigSelect_${i}`);
+                const input = document.getElementById(`gameConfigId_${i}`);
+                
+                if (select && input && input.value.trim()) {
+                    newConfigs.push({
+                        game_id: input.value.trim(),
+                        config_name: select.value
+                    });
+                }
+            }
+            
+            try {
+                // Delete all existing first
+                for (const config of gameConfigs) {
+                    if (config.game_id) {
+                        await fetch(`/api/game-configs/${licenseKey}/${config.game_id}`, {
+                            method: 'DELETE'
+                        });
                     }
                 }
                 
-                topGameEl.textContent = topGameName;
-                
-                if (allConfigs.length === 0) {
-                    configsList.innerHTML = '<div class="empty">No configs yet. Be the first to share!</div>';
-                    return;
+                // Add new ones
+                for (const config of newConfigs) {
+                    await fetch(`/api/game-configs/${licenseKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(config)
+                    });
                 }
                 
-                filterConfigs();
-                
-            } catch(error) {
-                console.error('Error loading configs:', error);
-                configsList.innerHTML = '<div class="empty">Failed to load configs</div>';
+                gameConfigs = newConfigs;
+                document.getElementById('gameConfigsModal').classList.remove('show');
+            } catch (e) {
+                console.error('Failed to save game configs:', e);
             }
-        }
-        
-        function filterConfigs() {
-            if (!allConfigs || allConfigs.length === 0) {
-                return;
-            }
-            
-            const filtered = allConfigs.filter(config => {
-                if (!currentSearch) return true;
-                
-                const searchLower = currentSearch.toLowerCase();
-                return (
-                    (config.config_name || '').toLowerCase().includes(searchLower) ||
-                    (config.game_name || '').toLowerCase().includes(searchLower) ||
-                    (config.author_name || '').toLowerCase().includes(searchLower) ||
-                    (config.description || '').toLowerCase().includes(searchLower)
-                );
-            });
-            
-            displayConfigs(filtered);
-        }
-        
-        function displayConfigs(configs) {
-            if (configs.length === 0) {
-                configsList.innerHTML = '<div class="empty">No configs found</div>';
-                return;
-            }
-            
-            configsList.innerHTML = '';
-            
-            configs.forEach(config => {
-                const card = document.createElement('div');
-                card.className = 'config-card';
-                card.innerHTML = `
-                    <div class="config-name">${escapeHtml(config.config_name)}</div>
-                    <div class="config-game">${escapeHtml(config.game_name)}</div>
-                    <div class="config-description">${escapeHtml(config.description || 'No description')}</div>
-                    <div class="config-footer">
-                        <span class="config-author">by ${escapeHtml(config.author_name)}</span>
-                        <span class="config-downloads">${config.downloads || 0} ⬇️</span>
-                    </div>
-                    <button class="load-btn" onclick="viewConfig(${config.id})">View Config</button>
-                `;
-                configsList.appendChild(card);
-            });
-        }
-        
-        function viewConfig(configId) {
-            showLoginModal();
-            localStorage.setItem('pendingConfigId', configId);
-        }
-        
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        searchInput.addEventListener('input', function() {
-            currentSearch = this.value.trim();
-            filterConfigs();
-        });
-        
-        getClientId();
-        loadConfigs();
-        setInterval(loadConfigs, 30000);
-    </script>
+        };
 
-""" + ENHANCED_ANTI_DEVTOOLS_JS + """
+        // Panic key handling
+        const panicKeyInput = document.getElementById('panicKeybind');
+        panicKeyInput.addEventListener('click', function() {
+            this.value = 'Press any key...';
+            
+            const listener = (e) => {
+                e.preventDefault();
+                let keyName = '';
+                
+                if (e.button !== undefined) {
+                    keyName = e.button === 0 ? 'Left Mouse' :
+                             e.button === 2 ? 'Right Mouse' :
+                             e.button === 1 ? 'Middle Mouse' : `Mouse${e.button}`;
+                } else if (e.key) {
+                    keyName = e.key.toUpperCase();
+                    if (keyName === ' ') keyName = 'SPACE';
+                }
+                
+                panicKeyInput.value = keyName || 'C';
+                saveLoadupSettings();
+                
+                document.removeEventListener('keydown', listener);
+                document.removeEventListener('mousedown', listener);
+            };
+            
+            document.addEventListener('keydown', listener, { once: true });
+            document.addEventListener('mousedown', listener, { once: true });
+        });
+
+        // Save loadup settings
+        async function saveLoadupSettings() {
+            const settings = {
+                auto_validate: document.getElementById('autoValidateToggle').checked,
+                panic_key: {
+                    enabled: document.getElementById('panicKeyToggle').checked,
+                    keybind: document.getElementById('panicKeybind').value
+                },
+                silent_mode: false
+            };
+            
+            try {
+                await fetch(`/api/loadup-settings/${licenseKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+            } catch (e) {
+                console.error('Failed to save loadup settings:', e);
+            }
+        }
+
+        document.getElementById('autoValidateToggle').addEventListener('change', saveLoadupSettings);
+        document.getElementById('panicKeyToggle').addEventListener('change', saveLoadupSettings);
+
+        // Initialize
+        loadDashboard();
+    </script>
+    """ + ENHANCED_ANTI_DEVTOOLS_JS + """
 </body>
 </html>
 """
@@ -2532,592 +2893,12 @@ def serve_home():
     return HTMLResponse(content=LOGIN_HTML)
 
 @app.get("/menu", response_class=HTMLResponse)
-def serve_menu_login():
+def serve_menu():
     return HTMLResponse(content=LOGIN_HTML)
 
-@app.get("/community", response_class=HTMLResponse)
-def serve_community():
-    return HTMLResponse(content=COMMUNITY_HTML)
-
-@app.get("/config/{license_key}", response_class=HTMLResponse)
-def serve_config_dashboard(license_key: str):
-    try:
-        db = get_db()
-        cur = db.cursor()
-        query = q("SELECT * FROM keys WHERE key=%s")
-        cur.execute(query, (license_key,))
-        result = cur.fetchone()
-        db.close()
-        
-        if not result:
-            return f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Invalid • Axion</title>
-<meta name="theme-color" content="#0c0c0c">
-<style>
-body{{background:rgb(12,12,12);color:rgb(180,180,180);font-family:Arial,Helvetica,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
-.container{{text-align:center;padding:30px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:3px}}
-h1{{color:rgb(255,80,80);font-size:20px;font-weight:400;margin-bottom:15px}}
-p{{color:rgb(120,120,120);margin-bottom:20px}}
-button{{padding:10px 25px;background:rgb(20,20,20);border:1px solid rgb(40,40,40);color:rgb(200,200,200);cursor:pointer;border-radius:3px}}
-button:hover{{background:rgb(25,25,25);border-color:rgb(60,60,60)}}
-</style>
-</head>
-<body>
-<div class="container">
-<h1>Invalid License</h1>
-<p>License key not found or has expired</p>
-<button onclick="window.location.href='/menu'">Return to Login</button>
-</div>
-{ENHANCED_ANTI_DEVTOOLS_JS}
-</body>
-</html>"""
-        
-        return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<title>Config • Axion</title>
-<meta name="theme-color" content="#0c0c0c">
-<style>
-*{{margin:0;padding:0;box-sizing:border-box;user-select:none}}
-body{{height:100vh;background:rgb(12,12,12);font-family:Arial,Helvetica,sans-serif;color:rgb(180,180,180);display:flex;align-items:center;justify-content:center}}
-.window{{width:760px;height:520px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:3px;display:flex;flex-direction:column;overflow:hidden}}
-.topbar{{height:38px;background:rgb(20,20,20);border-bottom:1px solid rgb(28,28,28);display:flex;align-items:center;padding:0 12px;gap:16px}}
-.title{{font-size:13px;color:rgb(200,200,200);padding-right:16px;border-right:1px solid rgb(28,28,28)}}
-.tabs{{display:flex;gap:18px;font-size:12px}}
-.tab{{color:rgb(120,120,120);cursor:pointer;transition:color 0.2s}}
-.tab:hover,.tab.active{{color:rgb(200,200,200)}}
-.content{{flex:1;padding:10px;background:rgb(12,12,12);display:flex;align-items:center;justify-content:center}}
-.tab-content{{width:100%;height:100%;display:none}}
-.tab-content.active{{display:block}}
-.merged-panel{{width:100%;height:100%;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:3px;display:flex;align-items:center;justify-content:center}}
-.inner-container{{width:98%;height:96%;display:flex;gap:14px;overflow:hidden}}
-.half-panel{{flex:1;background:rgb(20,20,20);border:1px solid rgb(28,28,28);border-radius:3px;overflow-y:auto;padding:14px 16px;position:relative}}
-.panel-header{{position:absolute;top:10px;left:16px;color:rgb(200,200,200);font-size:11px}}
-.toggle-row{{position:absolute;left:16px;display:flex;align-items:center;gap:12px}}
-.toggle{{width:14px;height:14px;background:rgb(12,12,12);border:1px solid rgb(40,40,40);border-radius:2px;cursor:pointer}}
-.toggle.active{{background:#888888}}
-.enable-text{{color:rgb(120,120,120);font-size:11px}}
-.keybind-picker{{width:80px;height:20px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:2px;color:rgb(200,200,200);font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}}
-.slider-label{{position:absolute;left:16px;color:rgb(200,200,200);font-size:11px}}
-.slider-container{{position:absolute;left:16px;width:210px;height:14px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:2px;overflow:hidden}}
-.slider-fill{{position:absolute;top:0;left:0;height:100%;background:#888888}}
-.slider-value{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:9px;color:#fff}}
-.custom-dropdown{{position:absolute;left:16px;width:210px;z-index:100}}
-.dropdown-header{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);padding:2px 8px;cursor:pointer;font-size:10px;color:rgb(200,200,200)}}
-.dropdown-list{{position:absolute;top:100%;left:0;width:100%;background:rgb(20,20,20);border:1px solid rgb(28,28,28);display:none;max-height:160px;overflow-y:auto}}
-.dropdown-list.open{{display:block}}
-.dropdown-item{{padding:4px 8px;font-size:10px;color:rgb(200,200,200);cursor:pointer}}
-.dropdown-item:hover{{background:rgb(30,30,30)}}
-.dropdown-item.selected{{background:#888888}}
-.config-list{{position:absolute;top:32px;left:16px;right:16px;bottom:16px;overflow-y:auto}}
-.config-item{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);padding:6px 10px;margin-bottom:6px;display:flex;align-items:center}}
-.config-name{{flex:1;font-size:10px;color:rgb(200,200,200)}}
-.config-dots{{width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgb(120,120,120);font-size:16px}}
-.config-menu{{position:absolute;right:8px;top:28px;background:rgb(20,20,20);border:1px solid rgb(28,28,28);display:none;z-index:200}}
-.config-menu.open{{display:block}}
-.config-menu-item{{padding:6px 12px;font-size:10px;color:rgb(200,200,200);cursor:pointer}}
-.config-menu-item:hover{{background:rgb(30,30,30)}}
-.input-box{{width:100%;height:24px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);color:rgb(200,200,200);font-size:11px;padding:0 8px}}
-.config-btn{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);padding:6px 12px;font-size:11px;color:rgb(200,200,200);cursor:pointer;width:100%;margin-top:6px}}
-.config-btn:hover{{background:rgb(20,20,20)}}
-.modal-overlay{{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(12,12,12,0.95);display:none;align-items:center;justify-content:center;z-index:9999}}
-.modal-overlay.active{{display:flex}}
-.modal-box{{background:rgb(12,12,12);border:1px solid rgb(28,28,28);padding:24px;min-width:300px}}
-.modal-title{{color:rgb(200,200,200);font-size:13px;margin-bottom:16px}}
-.modal-input{{width:100%;height:28px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);color:rgb(200,200,200);font-size:11px;padding:0 10px;margin-bottom:12px}}
-.modal-buttons{{display:flex;gap:8px}}
-.modal-btn{{flex:1;height:28px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);color:rgb(200,200,200);font-size:11px;cursor:pointer}}
-.modal-btn:hover{{background:rgb(20,20,20)}}
-</style>
-</head>
-<body>
-<div class="window">
-    <div class="topbar">
-        <div class="title">Axion</div>
-        <div class="tabs">
-            <div class="tab active" data-tab="aimbot">Aimbot</div>
-            <div class="tab" data-tab="triggerbot">Triggerbot</div>
-            <div class="tab" data-tab="settings">Configs</div>
-        </div>
-    </div>
-    <div class="content">
-        <div class="tab-content active" id="aimbot">
-            <div class="merged-panel">
-                <div class="inner-container">
-                    <div class="half-panel">
-                        <div class="panel-header">Aimbot</div>
-                        <div class="toggle-row" style="top:32px">
-                            <div class="toggle active" data-setting="camlock.Enabled"></div>
-                            <span class="enable-text">Enable Aimbot</span>
-                            <div class="keybind-picker" data-setting="camlock.Keybind">Q</div>
-                        </div>
-                        <div class="toggle-row" style="top:58px">
-                            <div class="toggle" data-setting="camlock.UnlockOnDeath"></div>
-                            <span class="enable-text">Unlock On Death</span>
-                        </div>
-                        <div class="toggle-row" style="top:82px">
-                            <div class="toggle" data-setting="camlock.SelfDeathCheck"></div>
-                            <span class="enable-text">Self Death Check</span>
-                        </div>
-                        <div class="toggle-row" style="top:106px">
-                            <div class="toggle" data-setting="camlock.ClosestPart"></div>
-                            <span class="enable-text">Closest Part</span>
-                        </div>
-                        <div class="toggle-row" style="top:130px">
-                            <div class="toggle active" data-setting="camlock.EnableSmoothing"></div>
-                            <span class="enable-text">Enable Smoothing</span>
-                        </div>
-                        <div class="toggle-row" style="top:154px">
-                            <div class="toggle active" data-setting="camlock.EnablePrediction"></div>
-                            <span class="enable-text">Enable Prediction</span>
-                        </div>
-                        <div class="slider-label" style="top:180px">Body Part</div>
-                        <div class="custom-dropdown" style="top:194px">
-                            <div class="dropdown-header" id="bodyPartHeader">Head</div>
-                            <div class="dropdown-list" id="bodyPartList">
-                                <div class="dropdown-item selected" data-value="Head">Head</div>
-                                <div class="dropdown-item" data-value="UpperTorso">UpperTorso</div>
-                                <div class="dropdown-item" data-value="LowerTorso">LowerTorso</div>
-                                <div class="dropdown-item" data-value="HumanoidRootPart">Root</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="half-panel">
-                        <div class="panel-header">Aimbot Settings</div>
-                        <div class="slider-label" style="top:32px">FOV</div>
-                        <div class="slider-container" id="fovSlider" style="top:46px">
-                            <div class="slider-fill" id="fovFill" style="width:56%"></div>
-                            <div class="slider-value" id="fovValue">280</div>
-                        </div>
-                        <div class="slider-label" style="top:72px">Smooth X</div>
-                        <div class="slider-container" id="smoothXSlider" style="top:86px">
-                            <div class="slider-fill" id="smoothXFill" style="width:47%"></div>
-                            <div class="slider-value" id="smoothXValue">14</div>
-                        </div>
-                        <div class="slider-label" style="top:112px">Smooth Y</div>
-                        <div class="slider-container" id="smoothYSlider" style="top:126px">
-                            <div class="slider-fill" id="smoothYFill" style="width:47%"></div>
-                            <div class="slider-value" id="smoothYValue">14</div>
-                        </div>
-                        <div class="slider-label" style="top:152px">Prediction</div>
-                        <div class="slider-container" id="camlockPredSlider" style="top:166px">
-                            <div class="slider-fill" id="camlockPredFill" style="width:14%"></div>
-                            <div class="slider-value" id="camlockPredValue">0.14</div>
-                        </div>
-                        <div class="slider-label" style="top:192px">Max Studs</div>
-                        <div class="slider-container" id="camlockMaxStudsSlider" style="top:206px">
-                            <div class="slider-fill" id="camlockMaxStudsFill" style="width:40%"></div>
-                            <div class="slider-value" id="camlockMaxStudsValue">120</div>
-                        </div>
-                        <div class="slider-label" style="top:232px">Easing Style</div>
-                        <div class="custom-dropdown" style="top:246px">
-                            <div class="dropdown-header" id="easingHeader">Linear</div>
-                            <div class="dropdown-list" id="easingList">
-                                <div class="dropdown-item selected" data-value="Linear">Linear</div>
-                                <div class="dropdown-item" data-value="Sine">Sine</div>
-                                <div class="dropdown-item" data-value="Quad">Quad</div>
-                            </div>
-                        </div>
-                        <div class="toggle-row" style="top:272px">
-                            <div class="toggle active" data-setting="camlock.ScaleToggle"></div>
-                            <span class="enable-text">Scale Toggle</span>
-                        </div>
-                        <div class="slider-label" style="top:298px">Scale</div>
-                        <div class="slider-container" id="scaleSlider" style="top:312px">
-                            <div class="slider-fill" id="scaleFill" style="width:50%"></div>
-                            <div class="slider-value" id="scaleValue">1.0</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="tab-content" id="triggerbot">
-            <div class="merged-panel">
-                <div class="inner-container">
-                    <div class="half-panel">
-                        <div class="panel-header">Triggerbot</div>
-                        <div class="toggle-row" style="top:32px">
-                            <div class="toggle active" data-setting="triggerbot.Enabled"></div>
-                            <span class="enable-text">Enable Triggerbot</span>
-                            <div class="keybind-picker" data-setting="triggerbot.Keybind">Right Mouse</div>
-                        </div>
-                        <div class="toggle-row" style="top:58px">
-                            <div class="toggle" data-setting="triggerbot.TargetMode"></div>
-                            <span class="enable-text">Target Mode</span>
-                            <div class="keybind-picker" data-setting="triggerbot.TargetKeybind">Middle Mouse</div>
-                        </div>
-                    </div>
-                    <div class="half-panel">
-                        <div class="panel-header">Triggerbot Settings</div>
-                        <div class="toggle-row" style="top:32px">
-                            <div class="toggle active" data-setting="triggerbot.StudCheck"></div>
-                            <span class="enable-text">Stud Check</span>
-                        </div>
-                        <div class="toggle-row" style="top:56px">
-                            <div class="toggle active" data-setting="triggerbot.DeathCheck"></div>
-                            <span class="enable-text">Death Check</span>
-                        </div>
-                        <div class="toggle-row" style="top:80px">
-                            <div class="toggle active" data-setting="triggerbot.KnifeCheck"></div>
-                            <span class="enable-text">Knife Check</span>
-                        </div>
-                        <div class="toggle-row" style="top:104px">
-                            <div class="toggle active" data-setting="triggerbot.TeamCheck"></div>
-                            <span class="enable-text">Team Check</span>
-                        </div>
-                        <div class="slider-label" style="top:130px">Delay</div>
-                        <div class="slider-container" id="delaySlider" style="top:144px">
-                            <div class="slider-fill" id="delayFill" style="width:5%"></div>
-                            <div class="slider-value" id="delayValue">0.05</div>
-                        </div>
-                        <div class="slider-label" style="top:170px">Max Studs</div>
-                        <div class="slider-container" id="maxStudsSlider" style="top:184px">
-                            <div class="slider-fill" id="maxStudsFill" style="width:40%"></div>
-                            <div class="slider-value" id="maxStudsValue">120</div>
-                        </div>
-                        <div class="slider-label" style="top:210px">Prediction</div>
-                        <div class="slider-container" id="predSlider" style="top:224px">
-                            <div class="slider-fill" id="predFill" style="width:10%"></div>
-                            <div class="slider-value" id="predValue">0.10</div>
-                        </div>
-                        <div class="slider-label" style="top:250px">FOV</div>
-                        <div class="slider-container" id="trigFovSlider" style="top:264px">
-                            <div class="slider-fill" id="trigFovFill" style="width:25%"></div>
-                            <div class="slider-value" id="trigFovValue">25</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="tab-content" id="settings">
-            <div class="merged-panel">
-                <div class="inner-container">
-                    <div class="half-panel">
-                        <div class="panel-header">Saved Configs</div>
-                        <div class="config-list" id="configList"></div>
-                    </div>
-                    <div class="half-panel">
-                        <div class="panel-header">Actions</div>
-                        <div style="position:absolute;top:32px;left:16px;right:16px">
-                            <div style="margin-bottom:12px">
-                                <div style="font-size:11px;color:rgb(200,200,200);margin-bottom:4px">Save Current Config</div>
-                                <input type="text" id="saveConfigInput" class="input-box" placeholder="Config name...">
-                                <button class="config-btn" style="margin-top:4px" onclick="saveCurrentConfig()">Save</button>
-                            </div>
-                            <div style="margin-top:20px">
-                                <div style="font-size:11px;color:rgb(200,200,200);margin-bottom:4px">Quick Actions</div>
-                                <button class="config-btn" onclick="loadDefaultConfig()">Load Default</button>
-                                <button class="config-btn" style="margin-top:8px" onclick="window.location.href='/menu'">Logout</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal-overlay" id="renameModal">
-    <div class="modal-box">
-        <div class="modal-title">Rename Config</div>
-        <input type="text" id="renameInput" class="modal-input" placeholder="Enter new name...">
-        <div class="modal-buttons">
-            <button class="modal-btn" onclick="closeRenameModal()">Cancel</button>
-            <button class="modal-btn" onclick="confirmRename()">Rename</button>
-        </div>
-    </div>
-</div>
-
-<script>
-const key = "{license_key}";
-
-let config = {json.dumps(DEFAULT_CONFIG)};
-
-document.querySelectorAll('.tab').forEach(tab => {{
-    tab.addEventListener('click', () => {{
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById(tab.getAttribute('data-tab')).classList.add('active');
-    }});
-}});
-
-async function saveConfig() {{
-    try {{
-        await fetch(`/api/config/${{key}}`, {{
-            method: 'POST',
-            headers: {{'Content-Type': 'application/json'}},
-            body: JSON.stringify(config)
-        }});
-    }} catch(e) {{
-        console.error('Save failed:', e);
-    }}
-}}
-
-async function loadConfig() {{
-    try {{
-        const res = await fetch(`/api/config/${{key}}`);
-        const data = await res.json();
-        config = data;
-        applyConfigToUI();
-    }} catch(e) {{
-        console.error('Load failed:', e);
-    }}
-}}
-
-function applyConfigToUI() {{
-    document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
-        const setting = toggle.dataset.setting;
-        const [section, key] = setting.split('.');
-        if (config[section] && config[section][key] !== undefined) {{
-            toggle.classList.toggle('active', config[section][key]);
-        }}
-    }});
-    
-    document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
-        const setting = picker.dataset.setting;
-        const [section, key] = setting.split('.');
-        if (config[section] && config[section][key] !== undefined) {{
-            picker.textContent = config[section][key];
-        }}
-    }});
-    
-    if (config.camlock.BodyPart) {{
-        document.getElementById('bodyPartHeader').textContent = config.camlock.BodyPart;
-    }}
-    if (config.camlock.EasingStyle) {{
-        document.getElementById('easingHeader').textContent = config.camlock.EasingStyle;
-    }}
-}}
-
-document.querySelectorAll('.toggle[data-setting]').forEach(toggle => {{
-    toggle.addEventListener('click', () => {{
-        toggle.classList.toggle('active');
-        const setting = toggle.dataset.setting;
-        const [section, key] = setting.split('.');
-        config[section][key] = toggle.classList.contains('active');
-        saveConfig();
-    }});
-}});
-
-document.querySelectorAll('.keybind-picker[data-setting]').forEach(picker => {{
-    picker.addEventListener('click', () => {{
-        picker.textContent = '...';
-        const listener = (e) => {{
-            e.preventDefault();
-            let keyName = '';
-            if (e.button !== undefined) {{
-                keyName = e.button === 0 ? 'Left Mouse' :
-                          e.button === 2 ? 'Right Mouse' :
-                          e.button === 1 ? 'Middle Mouse' : `Mouse${{e.button}}`;
-            }} else if (e.key) {{
-                keyName = e.key.toUpperCase();
-                if (keyName === ' ') keyName = 'SPACE';
-            }}
-            picker.textContent = keyName || 'NONE';
-            const setting = picker.dataset.setting;
-            const [section, key] = setting.split('.');
-            config[section][key] = keyName;
-            saveConfig();
-            document.removeEventListener('keydown', listener);
-            document.removeEventListener('mousedown', listener);
-        }};
-        document.addEventListener('keydown', listener, {{once: true}});
-        document.addEventListener('mousedown', listener, {{once: true}});
-    }});
-}});
-
-document.getElementById('bodyPartHeader').addEventListener('click', () => {{
-    document.getElementById('bodyPartList').classList.toggle('open');
-}});
-
-document.querySelectorAll('#bodyPartList .dropdown-item').forEach(item => {{
-    item.addEventListener('click', () => {{
-        const value = item.dataset.value;
-        document.getElementById('bodyPartHeader').textContent = value;
-        document.querySelectorAll('#bodyPartList .dropdown-item').forEach(i => i.classList.remove('selected'));
-        item.classList.add('selected');
-        document.getElementById('bodyPartList').classList.remove('open');
-        config.camlock.BodyPart = value;
-        saveConfig();
-    }});
-}});
-
-document.getElementById('easingHeader').addEventListener('click', () => {{
-    document.getElementById('easingList').classList.toggle('open');
-}});
-
-document.querySelectorAll('#easingList .dropdown-item').forEach(item => {{
-    item.addEventListener('click', () => {{
-        const value = item.dataset.value;
-        document.getElementById('easingHeader').textContent = value;
-        document.querySelectorAll('#easingList .dropdown-item').forEach(i => i.classList.remove('selected'));
-        item.classList.add('selected');
-        document.getElementById('easingList').classList.remove('open');
-        config.camlock.EasingStyle = value;
-        saveConfig();
-    }});
-}});
-
-async function loadSavedConfigs() {{
-    try {{
-        const res = await fetch(`/api/configs/${{key}}/list`);
-        const data = await res.json();
-        const list = document.getElementById('configList');
-        list.innerHTML = '';
-        data.configs.forEach((cfg, idx) => {{
-            const div = document.createElement('div');
-            div.className = 'config-item';
-            div.innerHTML = `
-                <div class="config-name">${{cfg.name}}</div>
-                <div class="config-dots" onclick="toggleConfigMenu(event, ${{idx}})">⋮</div>
-                <div class="config-menu" id="configMenu${{idx}}">
-                    <div class="config-menu-item" onclick="loadConfigByName('${{cfg.name}}')">Load</div>
-                    <div class="config-menu-item" onclick="renameConfigPrompt('${{cfg.name}}')">Rename</div>
-                    <div class="config-menu-item" onclick="deleteConfigByName('${{cfg.name}}')">Delete</div>
-                </div>
-            `;
-            list.appendChild(div);
-        }});
-    }} catch(e) {{
-        console.error(e);
-    }}
-}}
-
-function toggleConfigMenu(e, idx) {{
-    e.stopPropagation();
-    const menu = document.getElementById(`configMenu${{idx}}`);
-    document.querySelectorAll('.config-menu').forEach(m => {{
-        if (m !== menu) m.classList.remove('open');
-    }});
-    menu.classList.toggle('open');
-}}
-
-document.addEventListener('click', () => {{
-    document.querySelectorAll('.config-menu').forEach(m => m.classList.remove('open'));
-}});
-
-async function saveCurrentConfig() {{
-    const name = document.getElementById('saveConfigInput').value.trim();
-    if (!name) return alert('Enter config name');
-    try {{
-        await fetch(`/api/configs/${{key}}/save`, {{
-            method: 'POST',
-            headers: {{'Content-Type': 'application/json'}},
-            body: JSON.stringify({{config_name: name, config_data: config}})
-        }});
-        document.getElementById('saveConfigInput').value = '';
-        await loadSavedConfigs();
-    }} catch(e) {{
-        alert('Failed to save');
-    }}
-}}
-
-async function loadConfigByName(name) {{
-    try {{
-        const res = await fetch(`/api/configs/${{key}}/load/${{name}}`);
-        config = await res.json();
-        applyConfigToUI();
-        await saveConfig();
-    }} catch(e) {{
-        alert('Failed to load');
-    }}
-}}
-
-async function loadDefaultConfig() {{
-    config = {json.dumps(DEFAULT_CONFIG)};
-    applyConfigToUI();
-    await saveConfig();
-    alert('Default config loaded');
-}}
-
-let currentRenameConfig = null;
-
-function renameConfigPrompt(oldName) {{
-    currentRenameConfig = oldName;
-    document.getElementById('renameInput').value = oldName;
-    document.getElementById('renameModal').classList.add('active');
-    document.getElementById('renameInput').focus();
-}}
-
-function closeRenameModal() {{
-    document.getElementById('renameModal').classList.remove('active');
-    currentRenameConfig = null;
-}}
-
-async function confirmRename() {{
-    const newName = document.getElementById('renameInput').value.trim();
-    if (!newName || newName === currentRenameConfig) {{
-        closeRenameModal();
-        return;
-    }}
-    try {{
-        await fetch(`/api/configs/${{key}}/rename`, {{
-            method: 'POST',
-            headers: {{'Content-Type': 'application/json'}},
-            body: JSON.stringify({{old_name: currentRenameConfig, new_name: newName}})
-        }});
-        await loadSavedConfigs();
-        closeRenameModal();
-    }} catch(e) {{
-        alert('Failed to rename');
-        closeRenameModal();
-    }}
-}}
-
-async function deleteConfigByName(name) {{
-    try {{
-        await fetch(`/api/configs/${{key}}/delete/${{name}}`, {{method: 'DELETE'}});
-        await loadSavedConfigs();
-    }} catch(e) {{
-        alert('Failed to delete');
-    }}
-}}
-
-loadSavedConfigs();
-loadConfig();
-setInterval(loadConfig, 5000);
-</script>
-
-{ENHANCED_ANTI_DEVTOOLS_JS}
-</body>
-</html>"""
-    
-    except Exception as e:
-        print(f"Error in serve_config_dashboard: {e}")
-        import traceback
-        traceback.print_exc()
-        return f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Error • Axion</title>
-<meta name="theme-color" content="#0c0c0c">
-<style>
-body{{background:rgb(12,12,12);color:rgb(180,180,180);font-family:Arial,Helvetica,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
-.container{{text-align:center;padding:30px;background:rgb(12,12,12);border:1px solid rgb(28,28,28);border-radius:3px}}
-h1{{color:rgb(255,80,80);font-size:20px;margin-bottom:15px}}
-.error-details{{color:rgb(255,120,120);font-size:12px;margin-top:15px;padding:12px;background:rgba(255,0,0,0.1);border:1px solid rgb(255,80,80);border-radius:3px}}
-button{{padding:10px 25px;background:rgb(20,20,20);border:1px solid rgb(40,40,40);color:rgb(200,200,200);cursor:pointer;border-radius:3px;margin-top:15px}}
-button:hover{{background:rgb(25,25,25)}}
-</style>
-</head>
-<body>
-<div class="container">
-<h1>Error</h1>
-<p>Failed to load config dashboard</p>
-<div class="error-details">{str(e)}</div>
-<button onclick="window.location.href='/menu'">Return to Login</button>
-</div>
-{ENHANCED_ANTI_DEVTOOLS_JS}
-</body>
-</html>"""
+@app.get("/dashboard/{license_key}", response_class=HTMLResponse)
+def serve_dashboard(license_key: str):
+    return HTMLResponse(content=DASHBOARD_HTML.replace('LUMINA-XXXX-XXXX-XXXX', license_key))
 
 if __name__ == "__main__":
     import uvicorn
