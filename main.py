@@ -36,104 +36,109 @@ app.add_middleware(
 )
 
 # Updated DEFAULT_CONFIG with correct structures
-DEFAULT_CONFIG = {
-    "triggerbot": {
-        "Enabled": True,
-        "Keybind": "Right Mouse",
-        "Delay": 0.0,
-        "MaxStuds": 120,
-        "StudCheck": True,
-        "DeathCheck": True,
-        "KnifeCheck": True,
-        "TeamCheck": True,
-        "VisibilityCheck": True,
-        "DistanceScale": {
-            "Enabled": True,
-            "Scale": [
-                {"range": "30+", "size": "1.4"},
-                {"range": "80-", "size": "0.9"},
-                {"range": "150+", "size": "2.0"}
-            ],
-            "DefaultSize": 1.2
-        }
+{
+  "triggerbot": {
+    "Enabled": true,
+    "Keybind": "Right Mouse",
+    "Delay": 0.0,
+    "MaxStuds": 120,
+    "StudCheck": true,
+    "DeathCheck": true,
+    "KnifeCheck": true,
+    "TeamCheck": true,
+    "VisibilityCheck": true,
+    "DistanceScale": {
+      "Enabled": true,
+      "Scale": [
+        {"range": "30+", "size": "1.4"},
+        {"range": "80-", "size": "0.9"},
+        {"range": "150+", "size": "2.0"}
+      ],
+      "DefaultSize": 1.2
+    }
+  },
+  "camlock": {
+    "Enabled": true,
+    "Keybind": "Q",
+    "BodyPart": "Head",
+    "FOV": 280.0,
+    "MaxStuds": 900.0,
+    "EnableSmoothing": true,
+    "SmoothX": 150,
+    "SmoothY": 150,
+    "EasingStyle": "Exponential",
+    "EnablePrediction": false,
+    "Prediction": 0.15,
+    "AssistMode": true,
+    "UnlockOutOfFOV": true,
+    "UnlockOnDeath": true,
+    "SelfDeathCheck": true,
+    "ClosestPart": false,
+    "ScaleToggle": true,
+    "Scale": 1.0,
+    "MustBeMoving": false,
+    "PanicKey": {
+      "Enabled": false,
+      "Keybind": "C"
     },
-    "camlock": {
-        "Enabled": True,
-        "Keybind": "Q",
-        "BodyPart": "Head",
-        "FOV": 280.0,
+    "StarTryouts": {
+      "Enabled": false,
+      "Keybind": "X",
+      "UnlockOnDeath": true
+    },
+    "StatusIndicator": {
+      "Enabled": true,
+      "Position": "top left"
+    },
+    "Koda": false,
+    "OffsetEnabled": false,
+    "OffsetX": 12.0,
+    "OffsetY": 12.0,
+    "ShakeEnabled": false,
+    "ShakeAmount": 2.0,
+    "DeadzoneEnabled": false,
+    "Deadzone": 5.0,
+    "WeaponScalingEnabled": false,
+    "WeaponProfiles": {
+      "Double-Barrel SG": {
+        "OffsetX": 8.0,
+        "OffsetY": 8.0,
+        "SmoothX": 120,
+        "SmoothY": 120,
+        "Prediction": 0.2,
         "MaxStuds": 900.0,
-        "EnableSmoothing": True,
-        "SmoothX": 150,
-        "SmoothY": 150,
-        "EasingStyle": "Exponential",
-        "EnablePrediction": False,
+        "ShakeAmount": 3.0,
+        "Deadzone": 8.0
+      },
+      "TacticalShotgun": {
+        "OffsetX": 15.0,
+        "OffsetY": 15.0,
+        "SmoothX": 80,
+        "SmoothY": 80,
         "Prediction": 0.15,
-        "AssistMode": True,
-        "UnlockOutOfFOV": True,
-        "UnlockOnDeath": True,
-        "SelfDeathCheck": True,
-        "ClosestPart": False,
-        "ScaleToggle": True,
-        "Scale": 1.0,
-        "MustBeMoving": False,
-        "PanicKey": {
-            "Enabled": False,
-            "Keybind": "C"
-        },
-        "StarTryouts": {
-            "Enabled": False,
-            "Keybind": "X",
-            "UnlockOnDeath": True
-        },
-        "StatusIndicator": {
-            "Enabled": True,
-            "Position": "top left"
-        },
-        "KodasEnabled": False,
-        "OffsetEnabled": False,
+        "MaxStuds": 300.0,
+        "ShakeAmount": 1.5,
+        "Deadzone": 6.0
+      },
+      "Revolver": {
         "OffsetX": 12.0,
         "OffsetY": 12.0,
-        "ShakeEnabled": False,
+        "SmoothX": 180,
+        "SmoothY": 180,
+        "Prediction": 0.12,
+        "MaxStuds": 500.0,
         "ShakeAmount": 2.0,
-        "WeaponScalingEnabled": False,
-        "WeaponProfiles": {
-            "Double-Barrel SG": {
-                "OffsetX": 8.0,
-                "OffsetY": 8.0,
-                "SmoothX": 120,
-                "SmoothY": 120,
-                "Prediction": 0.2,
-                "MaxStuds": 900.0,
-                "ShakeAmount": 3.0
-            },
-            "TacticalShotgun": {
-                "OffsetX": 15.0,
-                "OffsetY": 15.0,
-                "SmoothX": 80,
-                "SmoothY": 80,
-                "Prediction": 0.15,
-                "MaxStuds": 300.0,
-                "ShakeAmount": 1.5
-            },
-            "Revolver": {
-                "OffsetX": 12.0,
-                "OffsetY": 12.0,
-                "SmoothX": 180,
-                "SmoothY": 180,
-                "Prediction": 0.12,
-                "MaxStuds": 500.0,
-                "ShakeAmount": 2.0
-            }
-        },
-        "ShowFOV": True,
-        "FOVRadius": 140,
-        "FOVOutlineColor": [255, 255, 255],
-        "FOVFillColor": [255, 255, 255],
-        "FOVFillOpacity": 60,
-        "FOVRingColor": [0, 0, 0],
-        "FOVFill": True
-    }
+        "Deadzone": 4.0
+      }
+    },
+    "ShowFOV": true,
+    "FOVRadius": 140,
+    "FOVOutlineColor": [255, 255, 255],
+    "FOVFillColor": [255, 255, 255],
+    "FOVFillOpacity": 60,
+    "FOVRingColor": [0, 0, 0],
+    "FOVFill": true
+  }
 }
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -538,6 +543,38 @@ async def validate_user(request: Request, data: KeyValidate):
         create_web_session(data.key)
         return {"valid": True, "message": "Web login successful", "license_key": data.key}
         
+    except Exception as e:
+        db.close()
+        return {"valid": False, "error": f"Server error: {str(e)}"}
+
+@app.post("/api/check-hwid")
+@limiter.limit("10/minute")
+async def check_hwid(request: Request, data: dict):
+    """Check if a license exists with this HWID - for auto-validation"""
+    hwid = data.get("hwid")
+    
+    if not hwid:
+        return {"valid": False, "error": "HWID required"}
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Look for a key with this HWID that's active and not expired
+        cur.execute(q("SELECT key, username FROM keys LEFT JOIN user_accounts ON keys.key = user_accounts.license_key WHERE keys.hwid=%s AND keys.active=1 AND (keys.expires_at IS NULL OR keys.expires_at > %s)"), 
+                   (hwid, datetime.now().isoformat()))
+        result = cur.fetchone()
+        db.close()
+        
+        if result:
+            return {
+                "valid": True,
+                "license_key": result[0],
+                "username": result[1] or "HWID User"
+            }
+        else:
+            return {"valid": False, "error": "No license found with this HWID"}
+            
     except Exception as e:
         db.close()
         return {"valid": False, "error": f"Server error: {str(e)}"}
