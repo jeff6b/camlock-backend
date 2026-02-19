@@ -36,109 +36,109 @@ app.add_middleware(
 )
 
 # Updated DEFAULT_CONFIG with correct structures
-{
-  "triggerbot": {
-    "Enabled": true,
-    "Keybind": "Right Mouse",
-    "Delay": 0.0,
-    "MaxStuds": 120,
-    "StudCheck": true,
-    "DeathCheck": true,
-    "KnifeCheck": true,
-    "TeamCheck": true,
-    "VisibilityCheck": true,
-    "DistanceScale": {
-      "Enabled": true,
-      "Scale": [
-        {"range": "30+", "size": "1.4"},
-        {"range": "80-", "size": "0.9"},
-        {"range": "150+", "size": "2.0"}
-      ],
-      "DefaultSize": 1.2
-    }
-  },
-  "camlock": {
-    "Enabled": true,
-    "Keybind": "Q",
-    "BodyPart": "Head",
-    "FOV": 280.0,
-    "MaxStuds": 900.0,
-    "EnableSmoothing": true,
-    "SmoothX": 150,
-    "SmoothY": 150,
-    "EasingStyle": "Exponential",
-    "EnablePrediction": false,
-    "Prediction": 0.15,
-    "AssistMode": true,
-    "UnlockOutOfFOV": true,
-    "UnlockOnDeath": true,
-    "SelfDeathCheck": true,
-    "ClosestPart": false,
-    "ScaleToggle": true,
-    "Scale": 1.0,
-    "MustBeMoving": false,
-    "PanicKey": {
-      "Enabled": false,
-      "Keybind": "C"
+DEFAULT_CONFIG = {
+    "triggerbot": {
+        "Enabled": True,
+        "Keybind": "Right Mouse",
+        "Delay": 0.0,
+        "MaxStuds": 120,
+        "StudCheck": True,
+        "DeathCheck": True,
+        "KnifeCheck": True,
+        "TeamCheck": True,
+        "VisibilityCheck": True,
+        "DistanceScale": {
+            "Enabled": True,
+            "Scale": [
+                {"range": "30+", "size": "1.4"},
+                {"range": "80-", "size": "0.9"},
+                {"range": "150+", "size": "2.0"}
+            ],
+            "DefaultSize": 1.2
+        }
     },
-    "StarTryouts": {
-      "Enabled": false,
-      "Keybind": "X",
-      "UnlockOnDeath": true
-    },
-    "StatusIndicator": {
-      "Enabled": true,
-      "Position": "top left"
-    },
-    "Koda": false,
-    "OffsetEnabled": false,
-    "OffsetX": 12.0,
-    "OffsetY": 12.0,
-    "ShakeEnabled": false,
-    "ShakeAmount": 2.0,
-    "DeadzoneEnabled": false,
-    "Deadzone": 5.0,
-    "WeaponScalingEnabled": false,
-    "WeaponProfiles": {
-      "Double-Barrel SG": {
-        "OffsetX": 8.0,
-        "OffsetY": 8.0,
-        "SmoothX": 120,
-        "SmoothY": 120,
-        "Prediction": 0.2,
+    "camlock": {
+        "Enabled": True,
+        "Keybind": "Q",
+        "BodyPart": "Head",
+        "FOV": 280.0,
         "MaxStuds": 900.0,
-        "ShakeAmount": 3.0,
-        "Deadzone": 8.0
-      },
-      "TacticalShotgun": {
-        "OffsetX": 15.0,
-        "OffsetY": 15.0,
-        "SmoothX": 80,
-        "SmoothY": 80,
+        "EnableSmoothing": True,
+        "SmoothX": 150,
+        "SmoothY": 150,
+        "EasingStyle": "Exponential",
+        "EnablePrediction": False,
         "Prediction": 0.15,
-        "MaxStuds": 300.0,
-        "ShakeAmount": 1.5,
-        "Deadzone": 6.0
-      },
-      "Revolver": {
+        "AssistMode": True,
+        "UnlockOutOfFOV": True,
+        "UnlockOnDeath": True,
+        "SelfDeathCheck": True,
+        "ClosestPart": False,
+        "ScaleToggle": True,
+        "Scale": 1.0,
+        "MustBeMoving": False,
+        "PanicKey": {
+            "Enabled": False,
+            "Keybind": "C"
+        },
+        "StarTryouts": {
+            "Enabled": False,
+            "Keybind": "X",
+            "UnlockOnDeath": True
+        },
+        "StatusIndicator": {
+            "Enabled": True,
+            "Position": "top left"
+        },
+        "Koda": False,
+        "OffsetEnabled": False,
         "OffsetX": 12.0,
         "OffsetY": 12.0,
-        "SmoothX": 180,
-        "SmoothY": 180,
-        "Prediction": 0.12,
-        "MaxStuds": 500.0,
+        "ShakeEnabled": False,
         "ShakeAmount": 2.0,
-        "Deadzone": 4.0
-      }
-    },
-    "ShowFOV": true,
-    "FOVRadius": 140,
-    "FOVOutlineColor": [255, 255, 255],
-    "FOVFillColor": [255, 255, 255],
-    "FOVFillOpacity": 60,
-    "FOVRingColor": [0, 0, 0],
-    "FOVFill": true
-  }
+        "DeadzoneEnabled": False,
+        "Deadzone": 5.0,
+        "WeaponScalingEnabled": False,
+        "WeaponProfiles": {
+            "Double-Barrel SG": {
+                "OffsetX": 8.0,
+                "OffsetY": 8.0,
+                "SmoothX": 120,
+                "SmoothY": 120,
+                "Prediction": 0.2,
+                "MaxStuds": 900.0,
+                "ShakeAmount": 3.0,
+                "Deadzone": 8.0
+            },
+            "TacticalShotgun": {
+                "OffsetX": 15.0,
+                "OffsetY": 15.0,
+                "SmoothX": 80,
+                "SmoothY": 80,
+                "Prediction": 0.15,
+                "MaxStuds": 300.0,
+                "ShakeAmount": 1.5,
+                "Deadzone": 6.0
+            },
+            "Revolver": {
+                "OffsetX": 12.0,
+                "OffsetY": 12.0,
+                "SmoothX": 180,
+                "SmoothY": 180,
+                "Prediction": 0.12,
+                "MaxStuds": 500.0,
+                "ShakeAmount": 2.0,
+                "Deadzone": 4.0
+            }
+        },
+        "ShowFOV": True,
+        "FOVRadius": 140,
+        "FOVOutlineColor": [255, 255, 255],
+        "FOVFillColor": [255, 255, 255],
+        "FOVFillOpacity": 60,
+        "FOVRingColor": [0, 0, 0],
+        "FOVFill": True
+    }
 }
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -408,6 +408,9 @@ class ClientAuthenticate(BaseModel):
     license_key: str
     username: str
 
+class HWIDCheck(BaseModel):
+    hwid: str
+
 # Security middleware
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
@@ -549,9 +552,9 @@ async def validate_user(request: Request, data: KeyValidate):
 
 @app.post("/api/check-hwid")
 @limiter.limit("10/minute")
-async def check_hwid(request: Request, data: dict):
+async def check_hwid(request: Request, data: HWIDCheck):
     """Check if a license exists with this HWID - for auto-validation"""
-    hwid = data.get("hwid")
+    hwid = data.hwid
     
     if not hwid:
         return {"valid": False, "error": "HWID required"}
@@ -561,8 +564,13 @@ async def check_hwid(request: Request, data: dict):
     
     try:
         # Look for a key with this HWID that's active and not expired
-        cur.execute(q("SELECT key, username FROM keys LEFT JOIN user_accounts ON keys.key = user_accounts.license_key WHERE keys.hwid=%s AND keys.active=1 AND (keys.expires_at IS NULL OR keys.expires_at > %s)"), 
-                   (hwid, datetime.now().isoformat()))
+        cur.execute(q("""
+            SELECT k.key, ua.username 
+            FROM keys k 
+            LEFT JOIN user_accounts ua ON k.key = ua.license_key 
+            WHERE k.hwid=%s AND k.active=1 AND (k.expires_at IS NULL OR k.expires_at > %s)
+        """), (hwid, datetime.now().isoformat()))
+        
         result = cur.fetchone()
         db.close()
         
@@ -578,6 +586,59 @@ async def check_hwid(request: Request, data: dict):
     except Exception as e:
         db.close()
         return {"valid": False, "error": f"Server error: {str(e)}"}
+
+@app.post("/api/create-account")
+@limiter.limit("5/minute")
+async def create_account(request: Request, data: CreateAccount):
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT key, active, expires_at FROM keys WHERE key=%s"), (data.license_key,))
+        license_result = cur.fetchone()
+        
+        if not license_result:
+            db.close()
+            return {"success": False, "error": "Invalid license key"}
+        
+        key, active, expires_at = license_result
+        
+        if active == 0:
+            db.close()
+            return {"success": False, "error": "License inactive"}
+        
+        if expires_at:
+            try:
+                if datetime.now() > datetime.fromisoformat(expires_at):
+                    db.close()
+                    return {"success": False, "error": "License expired"}
+            except:
+                pass
+        
+        cur.execute(q("SELECT username FROM user_accounts WHERE username=%s"), (data.username,))
+        if cur.fetchone():
+            db.close()
+            return {"success": False, "error": "Username already exists"}
+        
+        cur.execute(q("SELECT license_key FROM user_accounts WHERE license_key=%s"), (data.license_key,))
+        if cur.fetchone():
+            db.close()
+            return {"success": False, "error": "Account already exists for this license"}
+        
+        password_hash, salt = hash_password(data.password)
+        
+        cur.execute(q("""
+            INSERT INTO user_accounts (license_key, username, password_hash, email, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+        """), (data.license_key, data.username, password_hash, data.email, datetime.now().isoformat()))
+        
+        db.commit()
+        db.close()
+        return {"success": True, "message": "Account created successfully"}
+        
+    except Exception as e:
+        db.close()
+        return {"success": False, "error": f"Server error: {str(e)}"}
 
 @app.post("/api/user-login")
 @limiter.limit("10/minute")
@@ -945,7 +1006,6 @@ async def set_config(request: Request, data: dict):
         db.close()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-# CLIENT-FRIENDLY CONFIG ENDPOINT - Uses client_id for auth
 @app.post("/api/client/config")
 @limiter.limit("30/minute")
 async def get_client_config(request: Request, data: dict):
@@ -984,6 +1044,82 @@ async def get_client_config(request: Request, data: dict):
     except Exception as e:
         db.close()
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@app.post("/api/client/loadup-settings")
+@limiter.limit("30/minute")
+async def get_client_loadup_settings(request: Request, data: dict):
+    """Get loadup settings for a client"""
+    client_id = data.get("client_id")
+    session_token = data.get("session_token")
+    
+    if not client_id or not session_token:
+        raise HTTPException(status_code=401, detail="Missing credentials")
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Get license_key from clients table
+        cur.execute(q("SELECT license_key FROM clients WHERE client_id=%s AND session_token=%s"),
+                   (client_id, session_token))
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            return {"auto_validate": False, "silent_mode": False}
+        
+        license_key = result[0]
+        
+        # Get loadup settings
+        cur.execute(q("SELECT config FROM settings WHERE key=%s"), (f"{license_key}_loadup",))
+        config_result = cur.fetchone()
+        db.close()
+        
+        if config_result:
+            return json.loads(config_result[0])
+        else:
+            return {"auto_validate": False, "silent_mode": False}
+            
+    except Exception as e:
+        db.close()
+        return {"auto_validate": False, "silent_mode": False}
+
+@app.post("/api/client/game-configs")
+@limiter.limit("30/minute")
+async def get_client_game_configs(request: Request, data: dict):
+    """Get game configs for a client"""
+    client_id = data.get("client_id")
+    session_token = data.get("session_token")
+    
+    if not client_id or not session_token:
+        raise HTTPException(status_code=401, detail="Missing credentials")
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Get license_key from clients table
+        cur.execute(q("SELECT license_key FROM clients WHERE client_id=%s AND session_token=%s"),
+                   (client_id, session_token))
+        result = cur.fetchone()
+        
+        if not result:
+            db.close()
+            return {"configs": []}
+        
+        license_key = result[0]
+        
+        # Get game configs
+        cur.execute(q("SELECT game_id, config_name FROM game_configs WHERE license_key=%s"), (license_key,))
+        rows = cur.fetchall()
+        db.close()
+        
+        configs = [{"game_id": row[0], "config_name": row[1]} for row in rows]
+        return {"configs": configs}
+            
+    except Exception as e:
+        db.close()
+        return {"configs": []}
 
 @app.get("/api/configs/list")
 @limiter.limit("30/minute")
@@ -1147,7 +1283,7 @@ async def get_loadup_settings(request: Request):
     
     if not result:
         return {
-            "auto_validate": True,
+            "auto_validate": False,
             "silent_mode": False
         }
     
@@ -1843,6 +1979,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             justify-content: space-between;
             padding: 0 16px;
             transition: color 0.15s ease;
+            z-index: 5;
         }
 
         .configs-label {
@@ -1872,7 +2009,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
         .configs-divider {
             position: absolute;
-            top: 32px;
+            top: 48px;
             left: 0;
             right: 0;
             height: 1px;
@@ -1882,7 +2019,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
         .configs-list {
             position: absolute;
-            top: 40px;
+            top: 56px;
             left: 0;
             right: 0;
             bottom: 0;
@@ -1894,9 +2031,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 8px 16px;
+            padding: 10px 16px;
             transition: background 0.15s ease;
             cursor: pointer;
+            position: relative;
         }
 
         .config-item:hover { background: var(--semi-bg); }
@@ -1915,14 +2053,15 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             font-size: 9px;
             line-height: 0.7;
             cursor: pointer;
-            padding: 2px 6px;
+            padding: 4px 8px;
             border-radius: 4px;
+            z-index: 10;
         }
 
         .config-item:hover .config-dots { display: flex; }
 
         .popup-menu {
-            position: absolute;
+            position: fixed;
             background: var(--popup-bg);
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -1931,7 +2070,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             transform: scale(0.95);
             transition: opacity 0.2s ease, transform 0.2s ease;
             pointer-events: none;
-            z-index: 10;
+            z-index: 1000;
             min-width: 120px;
         }
 
@@ -2355,9 +2494,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 const list = document.getElementById('configsList');
                 list.innerHTML = '';
                 
-                data.configs.forEach(config => {
+                data.configs.forEach((config, index) => {
                     const div = document.createElement('div');
                     div.className = 'config-item';
+                    div.id = `config-item-${index}`;
                     div.innerHTML = `
                         <div class="config-name">${config.name}</div>
                         <div class="config-dots">•••</div>
@@ -2369,7 +2509,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         }
                     });
                     
-                    div.querySelector('.config-dots').addEventListener('click', (e) => {
+                    const dots = div.querySelector('.config-dots');
+                    dots.addEventListener('click', (e) => {
                         e.stopPropagation();
                         showConfigMenu(e, config.name);
                     });
@@ -2383,18 +2524,27 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
         // Show config menu
         function showConfigMenu(event, configName) {
+            // Hide any other open menus
+            configMenu.classList.remove('visible');
+            
+            // Position the menu at the click location
             const rect = event.target.getBoundingClientRect();
-            configMenu.style.top = rect.bottom + 5 + 'px';
-            configMenu.style.left = rect.left - 100 + 'px';
+            configMenu.style.top = (rect.bottom + window.scrollY + 5) + 'px';
+            configMenu.style.left = (rect.left + window.scrollX - 100) + 'px';
+            
+            // Show the menu
             configMenu.classList.add('visible');
             selectedConfig = configName;
             
-            document.addEventListener('click', function closeMenu(e) {
-                if (!configMenu.contains(e.target) && !e.target.classList.contains('config-dots')) {
-                    configMenu.classList.remove('visible');
-                    document.removeEventListener('click', closeMenu);
-                }
-            });
+            // Close menu when clicking outside
+            setTimeout(() => {
+                document.addEventListener('click', function closeMenu(e) {
+                    if (!configMenu.contains(e.target) && !e.target.classList.contains('config-dots')) {
+                        configMenu.classList.remove('visible');
+                        document.removeEventListener('click', closeMenu);
+                    }
+                });
+            }, 10);
         }
 
         // Load config by name
@@ -2405,6 +2555,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 currentConfig = config;
                 editor.setValue(JSON.stringify(config, null, 2));
                 document.getElementById('saveMaskBtn').classList.remove('disabled');
+                configMenu.classList.remove('visible');
             } catch (e) {
                 console.error('Failed to load config:', e);
             }
@@ -2413,7 +2564,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         function loadSelectedConfig() {
             if (selectedConfig) {
                 loadConfigByName(selectedConfig);
-                configMenu.classList.remove('visible');
             }
         }
 
@@ -2429,11 +2579,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         body: JSON.stringify({ old_name: selectedConfig, new_name: newName })
                     });
                     await loadConfigsList();
+                    configMenu.classList.remove('visible');
                 } catch (e) {
                     console.error('Failed to rename config:', e);
                 }
             }
-            configMenu.classList.remove('visible');
         }
 
         async function deleteSelectedConfig() {
@@ -2445,11 +2595,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         method: 'DELETE'
                     });
                     await loadConfigsList();
+                    configMenu.classList.remove('visible');
                 } catch (e) {
                     console.error('Failed to delete config:', e);
                 }
             }
-            configMenu.classList.remove('visible');
         }
 
         // Save button
