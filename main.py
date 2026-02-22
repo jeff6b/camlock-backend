@@ -1339,6 +1339,42 @@ async def get_loadup_settings(request: Request):
     
     return json.loads(result[0])
 
+@app.get("/api/test/{key}")
+@limiter.limit("30/minute")
+async def test_key(request: Request, key: str):
+    """Check if a key exists and get its status (used by Discord bot)"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(q("SELECT key, active, expires_at FROM keys WHERE key=%s"), (key,))
+        result = cur.fetchone()
+        db.close()
+        
+        if not result:
+            return {"exists": False, "active": 0}
+        
+        key, active, expires_at = result
+        
+        # Check if expired
+        if expires_at:
+            try:
+                if datetime.now() > datetime.fromisoformat(expires_at):
+                    return {"exists": True, "active": 0, "expired": True}
+            except:
+                pass
+        
+        return {
+            "exists": True,
+            "active": active,
+            "expires_at": expires_at
+        }
+        
+    except Exception as e:
+        db.close()
+        print(f"Error in test_key: {e}")
+        return {"exists": False, "active": 0, "error": str(e)}
+
 @app.post("/api/loadup-settings")
 @limiter.limit("20/minute")
 async def set_loadup_settings(request: Request, data: dict):
