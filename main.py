@@ -2346,7 +2346,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 <div class="game-configs-row">
                     <div class="setting-info">
                         <div class="setting-label"><span>Game</span> <span>Configs</span></div>
-                        <div class="game-configs-desc">Add and manage game-specific configs (ID + preset)</div>
+                        <div class="game-configs-desc">Add a game specific config </div>
                     </div>
                     <div class="big-plus" id="openGameConfigs">+</div>
                 </div>
