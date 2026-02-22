@@ -582,9 +582,9 @@ async def create_key(request: Request, data: KeyCreate):
             """, (formatted_key, data.duration, created_at, expires_at, data.created_by))
         else:
             cur.execute("""
-                INSERT INTO keys (key, duration, created_at, expires_at, created_by, active)
-                VALUES (?, ?, ?, ?, ?, 1)
-            """, (formatted_key, data.duration, created_at, expires_at, data.created_by))
+            INSERT INTO keys (key, duration, created_at, expires_at, created_by, active)
+            VALUES (?, ?, ?, ?, ?, 0)  # ← active=0 means unredeemed/available
+        """, (formatted_key, data.duration, created_at, expires_at, data.created_by))
         
         db.commit()
         db.close()
