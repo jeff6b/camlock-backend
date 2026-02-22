@@ -550,6 +550,56 @@ async def validate_user(request: Request, data: KeyValidate):
         db.close()
         return {"valid": False, "error": f"Server error: {str(e)}"}
 
+@app.post("/api/keys/create")
+@limiter.limit("10/minute")
+async def create_key(request: Request, data: KeyCreate):
+    """Create a new license key (admin only)"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Generate a random key
+        key = secrets.token_hex(16).upper()
+        formatted_key = f"{key[:4]}-{key[4:8]}-{key[8:12]}-{key[12:16]}"
+        
+        created_at = datetime.now().isoformat()
+        
+        # Calculate expiry if not lifetime
+        expires_at = None
+        if data.duration != "lifetime":
+            days = {
+                "weekly": 7,
+                "monthly": 30,
+                "3monthly": 90
+            }.get(data.duration, 30)
+            expires_at = (datetime.now() + timedelta(days=days)).isoformat()
+        
+        # Insert into database
+        if USE_POSTGRES:
+            cur.execute("""
+                INSERT INTO keys (key, duration, created_at, expires_at, created_by, active)
+                VALUES (%s, %s, %s, %s, %s, 1)
+            """, (formatted_key, data.duration, created_at, expires_at, data.created_by))
+        else:
+            cur.execute("""
+                INSERT INTO keys (key, duration, created_at, expires_at, created_by, active)
+                VALUES (?, ?, ?, ?, ?, 1)
+            """, (formatted_key, data.duration, created_at, expires_at, data.created_by))
+        
+        db.commit()
+        db.close()
+        
+        return {
+            "key": formatted_key,
+            "duration": data.duration,
+            "expires_at": expires_at
+        }
+        
+    except Exception as e:
+        db.close()
+        print(f"Error creating key: {e}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
 @app.post("/api/check-hwid")
 @limiter.limit("10/minute")
 async def check_hwid(request: Request, data: HWIDCheck):
