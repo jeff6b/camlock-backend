@@ -519,7 +519,7 @@ async def validate_user(request: Request, data: KeyValidate):
         
         if active == 1:
             db.close()
-            return {"success": False, "error": "License already redeemed"}
+            return {"valid": False, "error": "License already redeemed"}
         
         if expires_at:
             try:
