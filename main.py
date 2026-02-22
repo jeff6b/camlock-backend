@@ -513,13 +513,13 @@ async def validate_user(request: Request, data: KeyValidate):
         
         if not result:
             db.close()
-            return {"valid": False, "error": "Invalid license key"}
+           return {"valid": False, "error": "Invalid license key"}
         
         key, active, expires_at, hwid, hwid_resets = result
         
-        if active == 0:
+        if active == 1:
             db.close()
-            return {"valid": False, "error": "License inactive"}
+            return {"success": False, "error": "License already redeemed"}
         
         if expires_at:
             try:
@@ -653,9 +653,10 @@ async def create_account(request: Request, data: CreateAccount):
         
         key, active, expires_at = license_result
         
-        if active == 0:
+        # FIXED: Check if already redeemed (active=1)
+        if active == 1:
             db.close()
-            return {"success": False, "error": "License inactive"}
+            return {"success": False, "error": "License already redeemed"}
         
         if expires_at:
             try:
@@ -681,6 +682,10 @@ async def create_account(request: Request, data: CreateAccount):
             INSERT INTO user_accounts (license_key, username, password_hash, email, created_at)
             VALUES (%s, %s, %s, %s, %s)
         """), (data.license_key, data.username, password_hash, data.email, datetime.now().isoformat()))
+
+        # Mark the key as redeemed
+        cur.execute(q("UPDATE keys SET active=1, redeemed_at=%s, redeemed_by=%s WHERE key=%s"),
+                   (datetime.now().isoformat(), "discord", data.license_key))
         
         db.commit()
         db.close()
