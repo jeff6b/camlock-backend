@@ -1581,7 +1581,6 @@ LOGIN_HTML = """<!DOCTYPE html>
 </html>
 """
 
-# ========== DASHBOARD PAGE ==========
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2381,7 +2380,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         let configMenu = document.getElementById('configMenu');
         let gameConfigs = [];
 
-        // Initialize Monaco
+        
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs' }});
         require(['vs/editor/editor.main'], function () {
             monaco.editor.defineTheme('customDark', {
@@ -2413,7 +2412,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             });
         });
 
-        // Tab switching
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -2423,7 +2421,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             });
         });
 
-        // Check authentication
+       
         async function checkAuth() {
             try {
                 const res = await fetch('/api/me');
@@ -2441,13 +2439,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         }
 
-        // Logout
+        
         async function logout() {
             await fetch('/api/logout', { method: 'POST' });
             window.location.href = '/menu';
         }
 
-        // Load dashboard data
+        
+        
         async function loadDashboard() {
             const auth = await checkAuth();
             if (!auth) return;
@@ -2461,20 +2460,24 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 document.getElementById('licenseKey').textContent = data.license_key;
                 document.getElementById('hwid').textContent = data.hwid || 'Not bound';
                 
-                // Load config
+                
+                
                 const configRes = await fetch('/api/config');
                 currentConfig = await configRes.json();
                 if (editor) {
                     editor.setValue(JSON.stringify(currentConfig, null, 2));
                 }
                 
-                // Load saved configs list
+                
+                
                 loadConfigsList();
                 
-                // Load game configs
+               
+                
                 loadGameConfigs();
                 
-                // Load loadup settings
+                
+                
                 const loadupRes = await fetch('/api/loadup-settings');
                 const loadupData = await loadupRes.json();
                 
@@ -2485,7 +2488,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         }
 
-        // Load configs list
+        
         async function loadConfigsList() {
             try {
                 const res = await fetch('/api/configs/list');
@@ -2522,21 +2525,21 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         }
 
-        // Show config menu
+        
         function showConfigMenu(event, configName) {
-            // Hide any other open menus
+            
             configMenu.classList.remove('visible');
             
-            // Position the menu at the click location
+            
             const rect = event.target.getBoundingClientRect();
             configMenu.style.top = (rect.bottom + window.scrollY + 5) + 'px';
             configMenu.style.left = (rect.left + window.scrollX - 100) + 'px';
             
-            // Show the menu
+            
             configMenu.classList.add('visible');
             selectedConfig = configName;
             
-            // Close menu when clicking outside
+            
             setTimeout(() => {
                 document.addEventListener('click', function closeMenu(e) {
                     if (!configMenu.contains(e.target) && !e.target.classList.contains('config-dots')) {
@@ -2547,7 +2550,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }, 10);
         }
 
-        // Load config by name
+        
         async function loadConfigByName(name) {
             try {
                 const res = await fetch(`/api/configs/load/${name}`);
@@ -2602,7 +2605,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         }
 
-        // Save button
+        
         document.getElementById('saveMaskBtn').addEventListener('click', async () => {
             if (document.getElementById('saveMaskBtn').classList.contains('disabled')) return;
             
@@ -2621,7 +2624,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         });
 
-        // Create config modal
+        
         document.getElementById('createConfigBtn').addEventListener('click', () => {
             document.getElementById('createConfigModal').classList.add('show');
         });
@@ -2652,7 +2655,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         };
 
-        // Game Configs
+        
         document.getElementById('openGameConfigs').addEventListener('click', () => {
             document.getElementById('gameConfigsModal').classList.add('show');
         });
@@ -2760,7 +2763,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
             
             try {
-                // Delete all existing first
+                
                 for (const config of gameConfigs) {
                     if (config.game_id) {
                         await fetch(`/api/game-configs/${config.game_id}`, {
@@ -2769,7 +2772,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     }
                 }
                 
-                // Add new ones
+                
                 for (const config of newConfigs) {
                     await fetch('/api/game-configs', {
                         method: 'POST',
@@ -2785,7 +2788,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         };
 
-        // Save loadup settings
+        
         async function saveLoadupSettings() {
             const settings = {
                 auto_validate: document.getElementById('autoValidateToggle').checked,
@@ -2805,7 +2808,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
         document.getElementById('autoValidateToggle').addEventListener('change', saveLoadupSettings);
 
-        // Initialize
+        
         loadDashboard();
     </script>
     """ + ENHANCED_ANTI_DEVTOOLS_JS + """
