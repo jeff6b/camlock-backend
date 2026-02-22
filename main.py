@@ -513,7 +513,7 @@ async def validate_user(request: Request, data: KeyValidate):
         
         if not result:
             db.close()
-           return {"valid": False, "error": "Invalid license key"}
+            return {"valid": False, "error": "Invalid license key"}
         
         key, active, expires_at, hwid, hwid_resets = result
         
