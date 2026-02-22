@@ -1329,7 +1329,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login • Axion</title>
+    <title>Login</title>
     <meta name="theme-color" content="#0a0a0c">
     <style>
         :root {
@@ -1477,7 +1477,7 @@ LOGIN_HTML = """<!DOCTYPE html>
     <div class="grid-overlay"></div>
     
     <div class="login-container">
-        <div class="logo">AXION</div>
+        <div class="logo">Lumina</div>
         
         <div class="input-group">
             <div class="input-label">Username</div>
@@ -1502,12 +1502,12 @@ LOGIN_HTML = """<!DOCTYPE html>
             let clientId = urlParams.get('client');
             
             if (clientId) {
-                localStorage.setItem('axion_client_id', clientId);
+                localStorage.setItem('lumina_client_id', clientId);
                 document.getElementById('clientId').textContent = 'Client: ' + clientId.substring(0, 8) + '...';
                 return clientId;
             }
             
-            clientId = localStorage.getItem('axion_client_id');
+            clientId = localStorage.getItem('lumina_client_id');
             if (clientId) {
                 document.getElementById('clientId').textContent = 'Client: ' + clientId.substring(0, 8) + '...';
                 return clientId;
@@ -1587,7 +1587,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prada Panel • Axion</title>
+    <title>lumina</title>
     <meta name="theme-color" content="#0a0a0c">
     <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs/editor/editor.main.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs/loader.min.js"></script>
