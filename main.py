@@ -578,7 +578,7 @@ async def create_key(request: Request, data: KeyCreate):
         if USE_POSTGRES:
             cur.execute("""
                 INSERT INTO keys (key, duration, created_at, expires_at, created_by, active)
-                VALUES (%s, %s, %s, %s, %s, 1)
+                VALUES (%s, %s, %s, %s, %s, 0)
             """, (formatted_key, data.duration, created_at, expires_at, data.created_by))
         else:
             cur.execute("""
