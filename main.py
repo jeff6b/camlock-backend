@@ -2281,7 +2281,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         <div class="version">Version 0.1.0</div>
                     </div>
                     <div class="buttons">
-                        <button class="btn btn-download" onclick="window.open('https://files.catbox.moe/snu60j.zip', '_blank')">DOWNLOAD</button>
+                        <button class="btn btn-download" onclick="window.open('no', '_blank')">DOWNLOAD</button>
                     </div>
                 </div>
             </div>
