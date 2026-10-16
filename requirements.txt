@@ -3,7 +3,6 @@ uvicorn
 pydantic
 psycopg2-binary
 requests
-psycopg2
 bcrypt
 slowapi
 httpx
