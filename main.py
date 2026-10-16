@@ -1,5 +1,5 @@
-# main.py — single file, FastAPI + login page + auto-migrate + bootstrap
-from fastapi import FastAPI, HTTPException, Request, Response
+# main.py — Full backend + fullscreen login + fullscreen dashboard + HWID binding
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -31,7 +31,7 @@ if HAS_LIMITER:
     app.add_middleware(SlowAPIMiddleware)
 
 # ═══════════════════════════════════════════════════════════
-# DATABASE  (hardcoded — no env var needed)
+# DATABASE
 # ═══════════════════════════════════════════════════════════
 
 DATABASE_URL = "postgresql://neondb_owner:npg_S7hoDMeaw2cQ@ep-wandering-dream-ah21egpt-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
@@ -86,10 +86,9 @@ def init_db():
             authenticated INTEGER DEFAULT 0)""")
         db.commit()
         db.close()
-        print("DB initialized. Using: PostgreSQL")
+        print("DB initialized. Using: PostgreSQL", flush=True)
     except Exception as e:
-        print(f"DB init error: {e}")
-
+        print(f"DB init error: {e}", flush=True)
 
 def migrate_db():
     try:
@@ -124,58 +123,49 @@ def migrate_db():
             try:
                 cur.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {definition}')
             except Exception as e:
-                print(f"[MIGRATE] {table}.{col} skip: {e}")
+                print(f"[MIGRATE] {table}.{col} skip: {e}", flush=True)
         db.commit()
         db.close()
-        print("[MIGRATE] Schema migration complete.")
+        print("[MIGRATE] Schema migration complete.", flush=True)
     except Exception as e:
-        print(f"[MIGRATE] Error: {e}")
+        print(f"[MIGRATE] Error: {e}", flush=True)
 
 init_db()
 migrate_db()
 
 # ═══════════════════════════════════════════════════════════
-# BOOTSTRAP TEST ACCOUNT  (username: light, password: light)
+# BOOTSTRAP TEST ACCOUNT
 # ═══════════════════════════════════════════════════════════
 
 def bootstrap_test_account():
     try:
         db = get_db()
         cur = db.cursor()
-
         cur.execute("SELECT username FROM user_accounts WHERE username=%s", ("light",))
         if cur.fetchone():
-            print("[BOOTSTRAP] Account 'light' already exists — skipping.")
+            print("[BOOTSTRAP] Account 'light' already exists — skipping.", flush=True)
             db.close()
             return
-
         license_key = "LIGHT-LIFE-TIME-0001"
         now = datetime.now().isoformat()
-
         cur.execute("SELECT key FROM keys WHERE key=%s", (license_key,))
         if not cur.fetchone():
             cur.execute("""INSERT INTO keys
                 (key, duration, created_at, expires_at, active, redeemed_by, hwid_resets)
                 VALUES (%s, %s, %s, %s, 1, %s, 0)""",
                 (license_key, "lifetime", now, None, "bootstrap"))
-            print(f"[BOOTSTRAP] Created key: {license_key}")
-
         pw_hash, _ = hash_password("light")
         cur.execute("""INSERT INTO user_accounts
             (license_key, username, password_hash, email, created_at)
             VALUES (%s, %s, %s, %s, %s)""",
             (license_key, "light", pw_hash, "light@local", now))
-
         cur.execute("UPDATE keys SET active=1, redeemed_at=%s, redeemed_by=%s WHERE key=%s",
                     (now, "light", license_key))
-
         db.commit()
         db.close()
-        print("[BOOTSTRAP] ✅ Test account created!")
-        print("[BOOTSTRAP]    Username: light")
-        print("[BOOTSTRAP]    Password: light")
+        print("[BOOTSTRAP] ✅ Test account created! user=light pass=light", flush=True)
     except Exception as e:
-        print(f"[BOOTSTRAP] Error: {e}")
+        print(f"[BOOTSTRAP] Error: {e}", flush=True)
 
 bootstrap_test_account()
 
@@ -186,6 +176,7 @@ bootstrap_test_account()
 class UserLogin(BaseModel):
     username: str
     password: str
+    client_id: Optional[str] = None
 
 class SavedConfigRequest(BaseModel):
     config_name: str
@@ -205,7 +196,7 @@ class ClientAuthenticate(BaseModel):
     username: str
 
 # ═══════════════════════════════════════════════════════════
-# API — USER AUTH
+# API — USER LOGIN (with HWID binding)
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/api/user-login")
@@ -214,7 +205,7 @@ async def user_login(request: Request, data: UserLogin):
     cur = db.cursor()
     try:
         cur.execute("""SELECT ua.username, ua.password_hash, ua.license_key,
-                       k.active, k.expires_at, k.hwid_resets
+                       k.active, k.expires_at, k.hwid_resets, k.hwid
                        FROM user_accounts ua JOIN keys k ON ua.license_key = k.key
                        WHERE ua.username=%s""", (data.username,))
         result = cur.fetchone()
@@ -222,7 +213,7 @@ async def user_login(request: Request, data: UserLogin):
             db.close()
             return {"valid": False, "error": "Invalid username or password"}
 
-        username, password_hash, license_key, active, expires_at, hwid_resets = result
+        username, password_hash, license_key, active, expires_at, hwid_resets, bound_hwid = result
 
         if active == 0:
             db.close()
@@ -237,6 +228,23 @@ async def user_login(request: Request, data: UserLogin):
         if not verify_password(password_hash, data.password):
             db.close()
             return {"valid": False, "error": "Invalid username or password"}
+
+        # ── HWID binding ──
+        if data.client_id:
+            cur.execute("SELECT hwid FROM clients WHERE client_id=%s", (data.client_id,))
+            crow = cur.fetchone()
+            if not crow:
+                db.close()
+                return {"valid": False, "error": "Client not registered"}
+            client_hwid = crow[0]
+
+            if bound_hwid is None:
+                # First login — bind HWID
+                cur.execute("UPDATE keys SET hwid=%s WHERE key=%s", (client_hwid, license_key))
+                print(f"[HWID] Bound {client_hwid[:12]}... to {license_key}", flush=True)
+            elif bound_hwid != client_hwid:
+                db.close()
+                return {"valid": False, "error": "HWID mismatch — license bound to another PC"}
 
         cur.execute("UPDATE user_accounts SET last_login=%s WHERE username=%s",
                     (datetime.now().isoformat(), username))
@@ -369,76 +377,8 @@ async def set_config(request: Request, data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/configs/list")
-async def list_configs(request: Request):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT config_name, created_at FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC",
-                (license_key,))
-    rows = cur.fetchall()
-    db.close()
-    return {"configs": [{"name": r[0], "created_at": r[1]} for r in rows]}
-
-
-@app.post("/api/configs/save")
-async def save_config(request: Request, data: SavedConfigRequest):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s",
-                    (license_key, data.config_name))
-        if cur.fetchone():
-            cur.execute("UPDATE saved_configs SET config_data=%s WHERE license_key=%s AND config_name=%s",
-                        (json.dumps(data.config_data), license_key, data.config_name))
-        else:
-            cur.execute("INSERT INTO saved_configs (license_key, config_name, config_data, created_at) VALUES (%s, %s, %s, %s)",
-                        (license_key, data.config_name, json.dumps(data.config_data), datetime.now().isoformat()))
-        db.commit()
-        db.close()
-        return {"success": True}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/configs/load/{config_name}")
-async def load_config(request: Request, config_name: str):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s",
-                (license_key, config_name))
-    row = cur.fetchone()
-    db.close()
-    if not row:
-        raise HTTPException(status_code=404, detail="Config not found")
-    return json.loads(row[0])
-
-
-@app.delete("/api/configs/delete/{config_name}")
-async def delete_config(request: Request, config_name: str):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("DELETE FROM saved_configs WHERE license_key=%s AND config_name=%s",
-                (license_key, config_name))
-    db.commit()
-    db.close()
-    return {"success": True}
-
-
 # ═══════════════════════════════════════════════════════════
-# API — CLIENT (for the Python cheat client)
+# API — CLIENT (for Python cheat)
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/api/client/register")
@@ -545,7 +485,7 @@ def keepalive():
 
 
 # ═══════════════════════════════════════════════════════════
-# HTML — LOGIN PAGE
+# HTML — LOGIN PAGE (FULLSCREEN)
 # ═══════════════════════════════════════════════════════════
 
 LOGIN_HTML = """<!DOCTYPE html>
@@ -553,81 +493,109 @@ LOGIN_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Login</title>
+<title>Lumina — Login</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
   body {
-    min-height: 100vh;
-    background: linear-gradient(160deg, rgba(6,10,14,0.75), rgba(6,10,14,0.55)),
+    background:
+      linear-gradient(160deg, rgba(6,10,14,0.82), rgba(6,10,14,0.65)),
       url('https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=2000&q=80');
     background-size: cover; background-position: center; background-attachment: fixed;
+    display: flex; align-items: center; justify-content: center;
   }
-  #login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; opacity: 0; animation: fadeUp 0.6s ease forwards; }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
-  .panel-wrap { width: 100%; max-width: 460px; border-radius: 18px; box-shadow: 0 20px 50px rgba(0,0,0,0.55); }
-  .panel { width: 100%; display: flex; border-radius: 18px; overflow: hidden;
-    background: radial-gradient(120% 140% at 100% 0%, rgba(142,203,255,0.14), transparent 60%), #0a0a0c; }
-  .panel-left { position: relative; flex: 1.1; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; padding: 34px 26px 30px; }
-  .form-heading { color: #f5f5f6; font-size: 15px; font-weight: 700; margin-bottom: 3px; }
+  .panel-wrap {
+    width: 100%; max-width: 900px;
+    border-radius: 22px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.7);
+    padding: 24px;
+    opacity: 0; animation: fadeUp 0.6s ease forwards;
+  }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+  .panel {
+    width: 100%; display: flex;
+    border-radius: 20px; overflow: hidden;
+    background: radial-gradient(120% 140% at 100% 0%, rgba(142,203,255,0.16), transparent 60%), #0a0a0c;
+    min-height: 520px;
+    border: 1px solid #1a1a1d;
+  }
+  .panel-left { flex: 1; display: flex; flex-direction: column; padding: 60px 56px; }
+  .form-heading { color: #f5f5f6; font-size: 26px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.4px; }
   .form-heading .highlight { color: #8ecbff; }
-  .form-sub { color: rgba(230,230,232,0.5); font-size: 11px; margin-bottom: 18px; }
-  .field-group { width: 100%; margin-bottom: 11px; }
-  .field-group label { display: block; color: rgba(230,230,232,0.55); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+  .form-sub { color: rgba(230,230,232,0.5); font-size: 14px; margin-bottom: 36px; }
+  .field-group { width: 100%; margin-bottom: 20px; }
+  .field-group label { display: block; color: rgba(230,230,232,0.6); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
   .input-shell { position: relative; display: flex; align-items: center; }
-  .input-shell svg { position: absolute; left: 10px; width: 12px; height: 12px; opacity: 0.4; }
-  .field-group input { width: 100%; background: transparent; border: 1px solid #1a1a1d; border-radius: 8px; padding: 8px 11px 8px 28px; color: #f2f2f3; font-size: 12px; font-family: inherit; outline: none; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
-  .field-group input:focus { border-color: #8ecbff; box-shadow: 0 0 0 3px rgba(142,203,255,0.12); }
-  .login-btn { position: relative; width: 100%; margin-top: 8px; padding: 9px 0; border: none; border-radius: 8px; background: #ffffff; color: #0a0a0d; font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer; overflow: hidden; transition: transform 0.15s ease, opacity 0.15s ease; }
+  .input-shell svg { position: absolute; left: 14px; width: 16px; height: 16px; opacity: 0.45; }
+  .field-group input {
+    width: 100%; background: rgba(20,20,23,0.6);
+    border: 1px solid #1a1a1d; border-radius: 10px;
+    padding: 14px 16px 14px 42px;
+    color: #f2f2f3; font-size: 14px; font-family: inherit;
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .field-group input:focus { border-color: #8ecbff; box-shadow: 0 0 0 4px rgba(142,203,255,0.12); }
+  .login-btn {
+    width: 100%; margin-top: 12px; padding: 14px 0;
+    border: none; border-radius: 10px;
+    background: #ffffff; color: #0a0a0d;
+    font-size: 14px; font-weight: 700; font-family: inherit;
+    cursor: pointer; transition: transform 0.15s, opacity 0.15s;
+  }
   .login-btn:hover { transform: translateY(-1px); opacity: 0.92; }
   .login-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-  .error-msg { color: #ff8080; font-size: 11px; margin-top: 10px; min-height: 14px; text-align: left; width: 100%; }
-  .panel-right { flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; padding: 34px 22px 30px; text-align: left; }
-  .panel-right h1 { font-size: 15px; font-weight: 700; line-height: 1.25; color: #f2f2f3; letter-spacing: -0.3px; margin-bottom: 3px; }
+  .error-msg { color: #ff8080; font-size: 13px; margin-top: 16px; min-height: 18px; }
+  .panel-right {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+    padding: 60px 56px; text-align: left; border-left: 1px solid #1a1a1d;
+  }
+  .panel-right h1 { font-size: 30px; font-weight: 700; line-height: 1.2; color: #f2f2f3; letter-spacing: -0.6px; margin-bottom: 12px; }
   .panel-right h1 .highlight { background: linear-gradient(100deg, #8ecbff, #cfe9ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .panel-right .form-sub { color: rgba(230,230,232,0.5); font-size: 11px; margin-bottom: 18px; }
-  .stats { display: flex; flex-direction: column; gap: 11px; width: 100%; }
-  .stat-box { background: transparent; border: 1px solid #1a1a1d; border-radius: 8px; padding: 8px 11px; display: flex; align-items: center; justify-content: space-between; min-height: 34px; }
-  .stat-label { font-size: 10px; font-weight: 600; color: rgba(230,230,232,0.55); text-transform: uppercase; letter-spacing: 0.04em; }
-  .stat-value { font-size: 12px; font-weight: 700; color: #8ecbff; font-family: 'JetBrains Mono', monospace; }
-  @media (max-width: 420px) { .panel { flex-direction: column; } .panel-right { padding: 26px 20px; } .panel-left { padding-top: 30px; } }
+  .panel-right .desc { color: rgba(230,230,232,0.55); font-size: 14px; line-height: 1.6; margin-bottom: 32px; }
+  .stats { display: flex; flex-direction: column; gap: 14px; width: 100%; }
+  .stat-box { background: rgba(20,20,23,0.6); border: 1px solid #1a1a1d; border-radius: 10px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; }
+  .stat-label { font-size: 11px; font-weight: 600; color: rgba(230,230,232,0.55); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat-value { font-size: 14px; font-weight: 700; color: #8ecbff; font-family: 'JetBrains Mono', monospace; }
+  @media (max-width: 760px) {
+    .panel { flex-direction: column; min-height: unset; }
+    .panel-left, .panel-right { padding: 40px 32px; }
+    .panel-right { border-left: none; border-top: 1px solid #1a1a1d; }
+  }
 </style>
 </head>
 <body>
-  <div id="login">
-    <div class="panel-wrap">
-      <div class="panel">
-        <div class="panel-left">
-          <div class="form-heading">Welcome, <span class="highlight">User</span></div>
-          <div class="form-sub">Sign in to continue</div>
-          <div class="field-group">
-            <label for="username">Username</label>
-            <div class="input-shell">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
-              <input type="text" id="username" autocomplete="username">
-            </div>
+  <div class="panel-wrap">
+    <div class="panel">
+      <div class="panel-left">
+        <div class="form-heading">Welcome, <span class="highlight">Back</span></div>
+        <div class="form-sub">Sign in to continue</div>
+        <div class="field-group">
+          <label for="username">Username</label>
+          <div class="input-shell">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+            <input type="text" id="username" autocomplete="username">
           </div>
-          <div class="field-group">
-            <label for="password">Password</label>
-            <div class="input-shell">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-              <input type="password" id="password" autocomplete="current-password">
-            </div>
-          </div>
-          <button class="login-btn" id="loginBtn">Log in</button>
-          <div class="error-msg" id="errorMsg"></div>
         </div>
-        <div class="panel-right">
-          <h1>Closet Cheating<br>Made <span class="highlight">Easy</span></h1>
-          <div class="form-sub">&nbsp;</div>
-          <div class="stats">
-            <div class="stat-box"><span class="stat-label">Online Now</span><span class="stat-value">0</span></div>
-            <div class="stat-box"><span class="stat-label">Sessions</span><span class="stat-value">0</span></div>
-            <div class="stat-box"><span class="stat-label">Uptime</span><span class="stat-value">0%</span></div>
+        <div class="field-group">
+          <label for="password">Password</label>
+          <div class="input-shell">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            <input type="password" id="password" autocomplete="current-password">
           </div>
+        </div>
+        <button class="login-btn" id="loginBtn">Sign In</button>
+        <div class="error-msg" id="errorMsg"></div>
+      </div>
+      <div class="panel-right">
+        <h1>Closet Cheating<br>Made <span class="highlight">Easy</span></h1>
+        <div class="desc">The simplest, cleanest camlock for Roblox. Hardware-locked. Cloud-synced. Config in the browser, aim in-game.</div>
+        <div class="stats">
+          <div class="stat-box"><span class="stat-label">Online Now</span><span class="stat-value">0</span></div>
+          <div class="stat-box"><span class="stat-label">Active Sessions</span><span class="stat-value">0</span></div>
+          <div class="stat-box"><span class="stat-label">Uptime</span><span class="stat-value">99.9%</span></div>
         </div>
       </div>
     </div>
@@ -648,14 +616,14 @@ LOGIN_HTML = """<!DOCTYPE html>
     if (!u || !p) { err.textContent = 'Please enter username and password'; return; }
     btn.disabled = true; btn.textContent = 'Signing in...';
     try {
+      const clientId = getClientId();
       const r = await fetch('/api/user-login', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         credentials: 'include',
-        body: JSON.stringify({ username: u, password: p })
+        body: JSON.stringify({ username: u, password: p, client_id: clientId })
       });
       const data = await r.json();
       if (data.valid) {
-        const clientId = getClientId();
         if (clientId) {
           try {
             await fetch('/api/client/authenticate', {
@@ -672,11 +640,11 @@ LOGIN_HTML = """<!DOCTYPE html>
         window.location.href = '/dashboard';
       } else {
         err.textContent = data.error || 'Login failed';
-        btn.disabled = false; btn.textContent = 'Log in';
+        btn.disabled = false; btn.textContent = 'Sign In';
       }
     } catch (e) {
       err.textContent = 'Connection error';
-      btn.disabled = false; btn.textContent = 'Log in';
+      btn.disabled = false; btn.textContent = 'Sign In';
     }
   }
   document.getElementById('loginBtn').addEventListener('click', login);
@@ -695,7 +663,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 
 
 # ═══════════════════════════════════════════════════════════
-# HTML — DASHBOARD
+# HTML — DASHBOARD (FULLSCREEN + MONACO + SAVE)
 # ═══════════════════════════════════════════════════════════
 
 DASHBOARD_HTML = """<!DOCTYPE html>
@@ -703,55 +671,262 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard</title>
+<title>Lumina — Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs/editor/editor.main.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs/loader.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { min-height: 100vh; background: #0a0a0c; color: #e0e0e8; font-family: 'Inter', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
-  .header { width: 100%; max-width: 900px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
-  .header h1 { font-size: 24px; color: #fff; }
-  .logout { padding: 8px 16px; background: transparent; border: 1px solid #252529; border-radius: 6px; color: #888890; font-size: 12px; cursor: pointer; }
-  .logout:hover { color: #fff; border-color: #fff; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; width: 100%; max-width: 900px; }
-  .card { background: rgba(17,17,19,0.65); border: 1px solid #1e1e22; border-radius: 10px; padding: 24px; }
-  .card-header { font-size: 12px; color: #888890; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
-  .card-value { font-size: 20px; color: #fff; font-family: 'JetBrains Mono', monospace; word-break: break-all; }
-  .card-value.blur { filter: blur(6px); transition: filter 0.2s; user-select: none; }
-  .card-value.blur:hover { filter: blur(0); user-select: text; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body { background: #0a0a0c; color: #e0e0e8; font-family: 'Inter', sans-serif; display: flex; flex-direction: column; }
+  .topbar {
+    height: 60px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 28px; border-bottom: 1px solid #1a1a1d;
+    background: #0a0a0c;
+  }
+  .brand { font-size: 16px; font-weight: 700; color: #f5f5f6; letter-spacing: -0.3px; }
+  .brand span { color: #8ecbff; }
+  .topbar-right { display: flex; align-items: center; gap: 16px; }
+  .user-badge { font-size: 13px; color: rgba(230,230,232,0.55); font-family: 'JetBrains Mono', monospace; }
+  .user-badge strong { color: #fff; }
+  .logout-btn {
+    padding: 8px 16px; background: transparent; border: 1px solid #252529;
+    border-radius: 8px; color: #888890; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: 0.15s;
+  }
+  .logout-btn:hover { color: #fff; border-color: #fff; }
+  .main { flex: 1; display: flex; min-height: 0; }
+  .sidebar {
+    width: 300px; flex-shrink: 0; padding: 24px;
+    border-right: 1px solid #1a1a1d; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 22px;
+  }
+  .section-label { font-size: 10px; font-weight: 600; color: rgba(230,230,232,0.4); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 10px; }
+  .stat-box { background: rgba(20,20,23,0.6); border: 1px solid #1a1a1d; border-radius: 10px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .stat-label { font-size: 11px; color: rgba(230,230,232,0.55); font-weight: 500; }
+  .stat-value { font-size: 12px; color: #8ecbff; font-family: 'JetBrains Mono', monospace; font-weight: 700; word-break: break-all; text-align: right; max-width: 160px; }
+  .stat-value.blur { filter: blur(6px); user-select: none; cursor: default; transition: filter 0.2s; }
+  .stat-value.blur:hover { filter: blur(0); user-select: text; cursor: text; }
+  .client-status { display: flex; align-items: center; gap: 8px; background: rgba(20,20,23,0.6); border: 1px solid #1a1a1d; border-radius: 10px; padding: 12px 14px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #ff8080; box-shadow: 0 0 8px rgba(255,128,128,0.6); }
+  .dot.connected { background: #8effb0; box-shadow: 0 0 8px rgba(142,255,176,0.6); }
+  .client-status-label { font-size: 12px; color: rgba(230,230,232,0.7); font-weight: 500; }
+  .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #editor { flex: 1; width: 100%; }
+  .editor-bar {
+    height: 56px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; border-top: 1px solid #1a1a1d;
+    background: #0d0d0f;
+  }
+  .editor-bar-left { display: flex; align-items: center; gap: 10px; }
+  .editor-bar-label { font-size: 12px; color: rgba(230,230,232,0.45); font-family: 'JetBrains Mono', monospace; }
+  .save-btn {
+    padding: 10px 24px; background: #ffffff; color: #0a0a0c;
+    border: none; border-radius: 8px; font-weight: 700; font-size: 13px;
+    cursor: pointer; transition: 0.15s; font-family: inherit;
+  }
+  .save-btn:hover:not(:disabled) { transform: scale(1.03); }
+  .save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .save-btn.saved { background: #8effb0; }
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: #1a1a1d; border: 1px solid #252529; color: #fff;
+    padding: 14px 20px; border-radius: 10px; font-size: 13px;
+    opacity: 0; transform: translateY(10px); transition: 0.25s;
+    pointer-events: none; z-index: 1000;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
 </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Dashboard</h1>
-    <button class="logout" onclick="logout()">Logout</button>
+  <div class="topbar">
+    <div class="brand">Lumina<span>.</span> Dashboard</div>
+    <div class="topbar-right">
+      <div class="user-badge">Signed in as <strong id="tbUser">...</strong></div>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
   </div>
-  <div class="grid">
-    <div class="card"><div class="card-header">Username</div><div class="card-value" id="username">-</div></div>
-    <div class="card"><div class="card-header">License Key</div><div class="card-value blur" id="licenseKey">-</div></div>
-    <div class="card"><div class="card-header">Subscription</div><div class="card-value" id="subscription">-</div></div>
-    <div class="card"><div class="card-header">HWID</div><div class="card-value" id="hwid">-</div></div>
-    <div class="card"><div class="card-header">HWID Resets</div><div class="card-value" id="hwidResets">0</div></div>
+
+  <div class="main">
+    <div class="sidebar">
+      <div>
+        <div class="section-label">Client Status</div>
+        <div class="client-status">
+          <div class="dot" id="clientDot"></div>
+          <div class="client-status-label" id="clientLabel">Disconnected</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-label">Account</div>
+        <div class="stat-box"><span class="stat-label">Username</span><span class="stat-value" id="sUser">-</span></div>
+        <div class="stat-box"><span class="stat-label">License</span><span class="stat-value blur" id="sLicense">-</span></div>
+        <div class="stat-box"><span class="stat-label">Subscription</span><span class="stat-value" id="sSub">-</span></div>
+      </div>
+
+      <div>
+        <div class="section-label">Hardware</div>
+        <div class="stat-box"><span class="stat-label">HWID</span><span class="stat-value blur" id="sHwid">-</span></div>
+        <div class="stat-box"><span class="stat-label">Resets</span><span class="stat-value" id="sResets">0</span></div>
+      </div>
+
+      <div>
+        <div class="section-label">Tips</div>
+        <div style="font-size: 11px; color: rgba(230,230,232,0.4); line-height: 1.6;">
+          Edit the JSON on the right and hit <strong style="color:#fff;">Save Config</strong>.<br>
+          The cheat polls every 2 seconds and picks up changes live.
+        </div>
+      </div>
+    </div>
+
+    <div class="editor-area">
+      <div id="editor"></div>
+      <div class="editor-bar">
+        <div class="editor-bar-left">
+          <span class="editor-bar-label">config.json</span>
+        </div>
+        <button class="save-btn" id="saveBtn" disabled>Save Config</button>
+      </div>
+    </div>
   </div>
+
+  <div class="toast" id="toast"></div>
+
 <script>
-  async function load() {
+  let editor = null;
+  let dirty = false;
+  let currentUser = null;
+
+  require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs' }});
+  require(['vs/editor/editor.main'], function () {
+    monaco.editor.defineTheme('lumina', {
+      base: 'vs-dark', inherit: true,
+      rules: [
+        { token: 'string', foreground: '8ecbff' },
+        { token: 'number', foreground: 'c3e88d' },
+        { token: 'keyword', foreground: 'c792ea' },
+      ],
+      colors: {
+        'editor.background': '#0d0d0f',
+        'editor.foreground': '#d4d4d8',
+        'editorLineNumber.foreground': '#3a3a3f',
+        'editorLineNumber.activeForeground': '#8ecbff',
+        'editorCursor.foreground': '#8ecbff',
+        'editor.selectionBackground': '#8ecbff30',
+        'editor.lineHighlightBackground': '#ffffff05',
+      }
+    });
+    editor = monaco.editor.create(document.getElementById('editor'), {
+      value: '{}',
+      language: 'json',
+      theme: 'lumina',
+      automaticLayout: true,
+      fontSize: 14,
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      tabSize: 2,
+    });
+    editor.onDidChangeModelContent(() => {
+      if (!dirty) { dirty = true; document.getElementById('saveBtn').disabled = false; }
+    });
+    loadAll();
+  });
+
+  function toast(msg, ok) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.borderColor = ok ? '#2a4a2e' : '#4a2a2a';
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  async function loadAll() {
+    // auth check
     const meRes = await fetch('/api/me', { credentials: 'include' });
     const me = await meRes.json();
     if (!me.authenticated) { window.location.href = '/'; return; }
-    document.getElementById('username').textContent = me.username;
+    currentUser = me.username;
+    document.getElementById('tbUser').textContent = me.username;
+    document.getElementById('sUser').textContent = me.username;
+
+    // dashboard data
     const dRes = await fetch('/api/dashboard', { credentials: 'include' });
     if (dRes.ok) {
       const d = await dRes.json();
-      document.getElementById('licenseKey').textContent = d.license_key;
-      document.getElementById('subscription').textContent = d.subscription;
-      document.getElementById('hwid').textContent = d.hwid || 'Not bound';
-      document.getElementById('hwidResets').textContent = d.hwid_resets;
+      document.getElementById('sLicense').textContent = d.license_key;
+      document.getElementById('sSub').textContent = d.subscription;
+      document.getElementById('sHwid').textContent = d.hwid || 'Not bound';
+      document.getElementById('sResets').textContent = d.hwid_resets;
     }
+
+    // config
+    const cRes = await fetch('/api/config', { credentials: 'include' });
+    const cfg = await cRes.json();
+    const pretty = JSON.stringify(cfg, null, 2);
+    editor.setValue(pretty);
+    dirty = false;
+    document.getElementById('saveBtn').disabled = true;
+
+    pollClientStatus();
+    setInterval(pollClientStatus, 3000);
   }
+
+  async function pollClientStatus() {
+    if (!currentUser) return;
+    try {
+      const r = await fetch(`/api/client/status-by-user/${currentUser}`, { credentials: 'include' });
+      if (!r.ok) return;
+      const d = await r.json();
+      const dot = document.getElementById('clientDot');
+      const lbl = document.getElementById('clientLabel');
+      if (d.connected) {
+        dot.classList.add('connected');
+        lbl.textContent = 'Connected';
+      } else {
+        dot.classList.remove('connected');
+        lbl.textContent = 'Disconnected';
+      }
+    } catch (e) {}
+  }
+
+  document.getElementById('saveBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('saveBtn');
+    let parsed;
+    try { parsed = JSON.parse(editor.getValue()); }
+    catch (e) { toast('Invalid JSON: ' + e.message, false); return; }
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    try {
+      const r = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(parsed)
+      });
+      if (r.ok) {
+        btn.textContent = 'Saved ✓';
+        btn.classList.add('saved');
+        toast('Config saved', true);
+        dirty = false;
+        setTimeout(() => { btn.textContent = 'Save Config'; btn.classList.remove('saved'); }, 1500);
+      } else {
+        btn.textContent = 'Save Config';
+        btn.disabled = false;
+        toast('Save failed', false);
+      }
+    } catch (e) {
+      btn.textContent = 'Save Config';
+      btn.disabled = false;
+      toast('Connection error', false);
+    }
+  });
+
   async function logout() {
     await fetch('/api/logout', { method: 'POST' });
     window.location.href = '/';
   }
-  load();
 </script>
 </body>
 </html>"""
