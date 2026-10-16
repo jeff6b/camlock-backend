@@ -1,4 +1,4 @@
-# main.py — single file, FastAPI + login page + auto-bootstrap test account
+# main.py — single file, FastAPI + login page + auto-migrate + bootstrap
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
@@ -63,6 +63,7 @@ def verify_password(stored_hash: str, password: str) -> bool:
         return False
 
 def init_db():
+    """Create tables if they don't exist. Fresh installs get the right schema."""
     try:
         db = get_db()
         cur = db.cursor()
@@ -122,11 +123,56 @@ def init_db():
     except Exception as e:
         print(f"DB init error: {e}")
 
+def migrate_db():
+    """Add any missing columns to existing tables. Safe to run every startup."""
+    try:
+        db = get_db()
+        cur = db.cursor()
+
+        if USE_POSTGRES:
+            migrations = [
+                # table, column, postgres definition
+                ("keys", "active", "INTEGER DEFAULT 0"),
+                ("keys", "hwid", "TEXT"),
+                ("keys", "hwid_resets", "INTEGER DEFAULT 0"),
+                ("keys", "expires_at", "TEXT"),
+                ("keys", "redeemed_at", "TEXT"),
+                ("keys", "redeemed_by", "TEXT"),
+                ("keys", "created_by", "TEXT"),
+                ("keys", "duration", "TEXT DEFAULT 'lifetime'"),
+                ("keys", "created_at", "TEXT DEFAULT ''"),
+                ("user_accounts", "email", "TEXT"),
+                ("user_accounts", "last_login", "TEXT"),
+                ("user_accounts", "created_at", "TEXT DEFAULT ''"),
+                ("login_sessions", "ip_address", "TEXT"),
+                ("login_sessions", "expires_at", "TEXT"),
+                ("login_sessions", "created_at", "TEXT DEFAULT ''"),
+                ("clients", "authenticated", "INTEGER DEFAULT 0"),
+                ("clients", "license_key", "TEXT"),
+                ("clients", "username", "TEXT"),
+                ("clients", "last_ping", "TEXT"),
+                ("clients", "session_token", "TEXT"),
+                ("clients", "created_at", "TEXT DEFAULT ''"),
+                ("saved_configs", "created_at", "TEXT DEFAULT ''"),
+                ("settings", "config", "TEXT DEFAULT '{}'"),
+            ]
+            for table, col, definition in migrations:
+                try:
+                    cur.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {definition}')
+                except Exception as e:
+                    print(f"[MIGRATE] {table}.{col} skip: {e}")
+            db.commit()
+
+        db.close()
+        print("[MIGRATE] Schema migration complete.")
+    except Exception as e:
+        print(f"[MIGRATE] Error: {e}")
+
 init_db()
+migrate_db()
 
 # ═══════════════════════════════════════════════════════════
 # BOOTSTRAP TEST ACCOUNT  (username: light, password: light)
-# Runs once at startup. If the account already exists, skips.
 # ═══════════════════════════════════════════════════════════
 
 def bootstrap_test_account():
@@ -134,18 +180,15 @@ def bootstrap_test_account():
         db = get_db()
         cur = db.cursor()
 
-        # Check if user already exists
         cur.execute(q("SELECT username FROM user_accounts WHERE username=%s"), ("light",))
         if cur.fetchone():
             print("[BOOTSTRAP] Account 'light' already exists — skipping.")
             db.close()
             return
 
-        # Create a license key for this account
         license_key = "LIGHT-LIFE-TIME-0001"
         now = datetime.now().isoformat()
 
-        # Check if key exists
         cur.execute(q("SELECT key FROM keys WHERE key=%s"), (license_key,))
         if not cur.fetchone():
             cur.execute(q("""INSERT INTO keys
@@ -154,14 +197,12 @@ def bootstrap_test_account():
                 (license_key, "lifetime", now, None, "bootstrap"))
             print(f"[BOOTSTRAP] Created key: {license_key}")
 
-        # Create the account
         pw_hash, _ = hash_password("light")
         cur.execute(q("""INSERT INTO user_accounts
             (license_key, username, password_hash, email, created_at)
             VALUES (%s, %s, %s, %s, %s)"""),
             (license_key, "light", pw_hash, "light@local", now))
 
-        # Mark key as redeemed
         cur.execute(q("UPDATE keys SET active=1, redeemed_at=%s, redeemed_by=%s WHERE key=%s"),
                     (now, "light", license_key))
 
@@ -480,7 +521,6 @@ async def client_auth_status(data: ClientAuthStatus):
             db.close()
             return {"authenticated": False, "error": "Invalid credentials"}
         authenticated, license_key, username, hwid = result
-        # Touch last_ping
         cur.execute(q("UPDATE clients SET last_ping=%s WHERE client_id=%s"),
                     (datetime.now().isoformat(), data.client_id))
         db.commit()
@@ -494,7 +534,6 @@ async def client_auth_status(data: ClientAuthStatus):
 
 @app.post("/api/client/authenticate")
 async def client_authenticate(data: ClientAuthenticate):
-    """Called by the browser after successful user-login to bind the client."""
     db = get_db()
     cur = db.cursor()
     try:
