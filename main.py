@@ -1,4 +1,4 @@
-# main.py — single file, FastAPI + login page
+# main.py — single file, FastAPI + login page + auto-bootstrap test account
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
@@ -86,6 +86,11 @@ def init_db():
                 created_at TEXT NOT NULL, UNIQUE(license_key, config_name))""")
             cur.execute("""CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY, config TEXT NOT NULL)""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS clients (
+                client_id TEXT PRIMARY KEY, hwid TEXT NOT NULL,
+                session_token TEXT, license_key TEXT, username TEXT,
+                created_at TEXT NOT NULL, last_ping TEXT,
+                authenticated INTEGER DEFAULT 0)""")
         else:
             cur.execute("""CREATE TABLE IF NOT EXISTS keys (
                 key TEXT PRIMARY KEY, duration TEXT NOT NULL,
@@ -106,6 +111,11 @@ def init_db():
                 created_at TEXT NOT NULL, UNIQUE(license_key, config_name))""")
             cur.execute("""CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY, config TEXT NOT NULL)""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS clients (
+                client_id TEXT PRIMARY KEY, hwid TEXT NOT NULL,
+                session_token TEXT, license_key TEXT, username TEXT,
+                created_at TEXT NOT NULL, last_ping TEXT,
+                authenticated INTEGER DEFAULT 0)""")
         db.commit()
         db.close()
         print(f"DB initialized. Using: {'PostgreSQL' if USE_POSTGRES else 'SQLite'}")
@@ -113,6 +123,57 @@ def init_db():
         print(f"DB init error: {e}")
 
 init_db()
+
+# ═══════════════════════════════════════════════════════════
+# BOOTSTRAP TEST ACCOUNT  (username: light, password: light)
+# Runs once at startup. If the account already exists, skips.
+# ═══════════════════════════════════════════════════════════
+
+def bootstrap_test_account():
+    try:
+        db = get_db()
+        cur = db.cursor()
+
+        # Check if user already exists
+        cur.execute(q("SELECT username FROM user_accounts WHERE username=%s"), ("light",))
+        if cur.fetchone():
+            print("[BOOTSTRAP] Account 'light' already exists — skipping.")
+            db.close()
+            return
+
+        # Create a license key for this account
+        license_key = "LIGHT-LIFE-TIME-0001"
+        now = datetime.now().isoformat()
+
+        # Check if key exists
+        cur.execute(q("SELECT key FROM keys WHERE key=%s"), (license_key,))
+        if not cur.fetchone():
+            cur.execute(q("""INSERT INTO keys
+                (key, duration, created_at, expires_at, active, redeemed_by, hwid_resets)
+                VALUES (%s, %s, %s, %s, 1, %s, 0)"""),
+                (license_key, "lifetime", now, None, "bootstrap"))
+            print(f"[BOOTSTRAP] Created key: {license_key}")
+
+        # Create the account
+        pw_hash, _ = hash_password("light")
+        cur.execute(q("""INSERT INTO user_accounts
+            (license_key, username, password_hash, email, created_at)
+            VALUES (%s, %s, %s, %s, %s)"""),
+            (license_key, "light", pw_hash, "light@local", now))
+
+        # Mark key as redeemed
+        cur.execute(q("UPDATE keys SET active=1, redeemed_at=%s, redeemed_by=%s WHERE key=%s"),
+                    (now, "light", license_key))
+
+        db.commit()
+        db.close()
+        print("[BOOTSTRAP] ✅ Test account created!")
+        print("[BOOTSTRAP]    Username: light")
+        print("[BOOTSTRAP]    Password: light")
+    except Exception as e:
+        print(f"[BOOTSTRAP] Error: {e}")
+
+bootstrap_test_account()
 
 # ═══════════════════════════════════════════════════════════
 # MODELS
@@ -126,8 +187,21 @@ class SavedConfigRequest(BaseModel):
     config_name: str
     config_data: dict
 
+class ClientRegister(BaseModel):
+    client_id: str
+    hwid: str
+
+class ClientAuthStatus(BaseModel):
+    client_id: str
+    session_token: Optional[str] = None
+
+class ClientAuthenticate(BaseModel):
+    client_id: str
+    license_key: str
+    username: str
+
 # ═══════════════════════════════════════════════════════════
-# API ENDPOINTS
+# API — USER AUTH
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/api/user-login")
@@ -179,7 +253,6 @@ async def user_login(request: Request, data: UserLogin):
             "username": username, "license_key": license_key,
             "subscription": subscription, "hwid_resets": hwid_resets or 0
         })
-        # Same-origin cookies — no need for SameSite=None
         resp.set_cookie("session_id", session_id, httponly=True, max_age=2592000, samesite="lax")
         resp.set_cookie("license_key", license_key, httponly=True, max_age=2592000, samesite="lax")
         resp.set_cookie("username", username, httponly=True, max_age=2592000, samesite="lax")
@@ -246,6 +319,10 @@ async def get_dashboard(request: Request):
         db.close()
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ═══════════════════════════════════════════════════════════
+# API — CONFIG
+# ═══════════════════════════════════════════════════════════
 
 @app.get("/api/config")
 async def get_config(request: Request):
@@ -360,13 +437,117 @@ async def delete_config(request: Request, config_name: str):
     return {"success": True}
 
 
+# ═══════════════════════════════════════════════════════════
+# API — CLIENT (for the Python cheat client)
+# ═══════════════════════════════════════════════════════════
+
+@app.post("/api/client/register")
+async def register_client(data: ClientRegister):
+    db = get_db()
+    cur = db.cursor()
+    try:
+        session_token = secrets.token_hex(32)
+        now = datetime.now().isoformat()
+        cur.execute(q("SELECT client_id FROM clients WHERE client_id=%s"), (data.client_id,))
+        if cur.fetchone():
+            cur.execute(q("""UPDATE clients SET hwid=%s, session_token=%s, last_ping=%s, authenticated=0
+                           WHERE client_id=%s"""),
+                        (data.hwid, session_token, now, data.client_id))
+        else:
+            cur.execute(q("""INSERT INTO clients
+                           (client_id, hwid, session_token, created_at, last_ping, authenticated)
+                           VALUES (%s, %s, %s, %s, %s, 0)"""),
+                        (data.client_id, data.hwid, session_token, now, now))
+        db.commit()
+        db.close()
+        return {"success": True, "session_token": session_token,
+                "client_id": data.client_id, "authenticated": False}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/client/auth-status")
+async def client_auth_status(data: ClientAuthStatus):
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute(q("""SELECT authenticated, license_key, username, hwid
+                       FROM clients WHERE client_id=%s AND session_token=%s"""),
+                    (data.client_id, data.session_token))
+        result = cur.fetchone()
+        if not result:
+            db.close()
+            return {"authenticated": False, "error": "Invalid credentials"}
+        authenticated, license_key, username, hwid = result
+        # Touch last_ping
+        cur.execute(q("UPDATE clients SET last_ping=%s WHERE client_id=%s"),
+                    (datetime.now().isoformat(), data.client_id))
+        db.commit()
+        db.close()
+        return {"authenticated": bool(authenticated), "license_key": license_key,
+                "username": username, "hwid": hwid}
+    except Exception as e:
+        db.close()
+        return {"authenticated": False, "error": str(e)}
+
+
+@app.post("/api/client/authenticate")
+async def client_authenticate(data: ClientAuthenticate):
+    """Called by the browser after successful user-login to bind the client."""
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute(q("""UPDATE clients
+                       SET authenticated=1, license_key=%s, username=%s, last_ping=%s
+                       WHERE client_id=%s"""),
+                    (data.license_key, data.username, datetime.now().isoformat(), data.client_id))
+        db.commit()
+        db.close()
+        return {"success": True}
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/client/config")
+async def get_client_config(data: dict):
+    client_id = data.get("client_id")
+    session_token = data.get("session_token")
+    if not client_id or not session_token:
+        raise HTTPException(status_code=401, detail="Missing credentials")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute(q("SELECT license_key FROM clients WHERE client_id=%s AND session_token=%s AND authenticated=1"),
+                    (client_id, session_token))
+        result = cur.fetchone()
+        if not result:
+            db.close()
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        license_key = result[0]
+        cur.execute(q("SELECT config FROM settings WHERE key=%s"), (license_key,))
+        cfg = cur.fetchone()
+        db.close()
+        return json.loads(cfg[0]) if cfg else {}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════
+# KEEPALIVE
+# ═══════════════════════════════════════════════════════════
+
 @app.get("/api/keepalive")
 def keepalive():
     return {"status": "alive", "timestamp": datetime.now().isoformat()}
 
 
 # ═══════════════════════════════════════════════════════════
-# HTML PAGES
+# HTML — LOGIN PAGE
 # ═══════════════════════════════════════════════════════════
 
 LOGIN_HTML = """<!DOCTYPE html>
@@ -454,6 +635,12 @@ LOGIN_HTML = """<!DOCTYPE html>
     </div>
   </div>
 <script>
+  function getClientId() {
+    const p = new URLSearchParams(window.location.search);
+    const fromUrl = p.get('client');
+    if (fromUrl) { localStorage.setItem('client_id', fromUrl); return fromUrl; }
+    return localStorage.getItem('client_id');
+  }
   async function login() {
     const u = document.getElementById('username').value.trim();
     const p = document.getElementById('password').value;
@@ -470,6 +657,20 @@ LOGIN_HTML = """<!DOCTYPE html>
       });
       const data = await r.json();
       if (data.valid) {
+        const clientId = getClientId();
+        if (clientId) {
+          try {
+            await fetch('/api/client/authenticate', {
+              method: 'POST', headers: {'Content-Type': 'application/json'},
+              credentials: 'include',
+              body: JSON.stringify({
+                client_id: clientId,
+                license_key: data.license_key,
+                username: data.username
+              })
+            });
+          } catch (e) { console.warn('Client auth failed:', e); }
+        }
         window.location.href = '/dashboard';
       } else {
         err.textContent = data.error || 'Login failed';
@@ -494,6 +695,10 @@ LOGIN_HTML = """<!DOCTYPE html>
 </body>
 </html>"""
 
+
+# ═══════════════════════════════════════════════════════════
+# HTML — DASHBOARD
+# ═══════════════════════════════════════════════════════════
 
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -553,6 +758,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 </body>
 </html>"""
 
+
+# ═══════════════════════════════════════════════════════════
+# ROUTES
+# ═══════════════════════════════════════════════════════════
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_login():
