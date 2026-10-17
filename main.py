@@ -72,7 +72,6 @@ def init_db():
     try:
         db = get_db()
         cur = db.cursor()
-        # Ensure schema is correct (safe to run every startup)
         cur.execute("""CREATE TABLE IF NOT EXISTS user_accounts (
             id SERIAL PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
@@ -124,14 +123,13 @@ def migrate_db():
                 cur.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {definition}')
             except Exception as e:
                 print(f"[MIGRATE] {table}.{col} skip: {e}", flush=True)
-        # Drop NOT NULL on license_key if still present
         try:
             cur.execute("ALTER TABLE user_accounts ALTER COLUMN license_key DROP NOT NULL")
-        except Exception as e:
+        except Exception:
             pass
         try:
             cur.execute("ALTER TABLE login_sessions ALTER COLUMN license_key DROP NOT NULL")
-        except Exception as e:
+        except Exception:
             pass
         db.commit()
         db.close()
@@ -147,7 +145,7 @@ migrate_db()
 # ═══════════════════════════════════════════════════════════
 
 DEFAULT_CONFIG = {
-    "Enabled": True, "Keybind": "Q",
+    "Enabled": True, "Keybind": "Q", "WebviewKeybind": "F8",
     "PredictTarget": True, "Prediction": 0.10,
     "ClosestPart": True, "FixedPart": "Head",
     "Smoothness": 0.35,
@@ -179,7 +177,7 @@ class ClientAuthenticate(BaseModel):
     username: str
 
 # ═══════════════════════════════════════════════════════════
-# API — USER LOGIN (username/password, no license)
+# API — USER LOGIN
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/api/user-login")
@@ -206,7 +204,6 @@ async def user_login(request: Request, data: UserLogin):
             db.close()
             return {"valid": False, "error": "Invalid username or password"}
 
-        # HWID binding on first login
         if data.client_id:
             cur.execute("SELECT hwid FROM clients WHERE client_id=%s", (data.client_id,))
             crow = cur.fetchone()
@@ -307,7 +304,7 @@ async def get_dashboard(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ═══════════════════════════════════════════════════════════
-# API — CONFIG (keyed by username, not license)
+# API — CONFIG
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/api/config")
@@ -451,6 +448,23 @@ async def get_client_config(data: dict):
             return DEFAULT_CONFIG
     except HTTPException:
         raise
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/client/shutdown")
+async def client_shutdown(request: Request):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("UPDATE clients SET session_token = NULL WHERE username = %s", (username,))
+        db.commit()
+        db.close()
+        return {"ok": True}
     except Exception as e:
         db.close()
         raise HTTPException(status_code=500, detail=str(e))
