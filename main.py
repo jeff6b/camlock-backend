@@ -1,589 +1,1194 @@
-# main.py — FastAPI backend with HTML served from separate files
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from pydantic import BaseModel
-from typing import Optional
-import psycopg2
-import os
-import json
-import secrets
-import pathlib
-from datetime import datetime, timedelta
-import hashlib
-import hmac
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lumina</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #09090b;
+  --text: #ededf0;
+  --muted: #777780;
+  --accent: #ffffff;
+  --border: #252529;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, sans-serif;
+  font-size: 11px;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; }
+button:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
 
-try:
-    from slowapi import Limiter, _rate_limit_exceeded_handler
-    from slowapi.util import get_remote_address
-    from slowapi.errors import RateLimitExceeded
-    from slowapi.middleware import SlowAPIMiddleware
-    limiter = Limiter(key_func=get_remote_address)
-    HAS_LIMITER = True
-except ImportError:
-    limiter = None
-    HAS_LIMITER = False
+.header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  padding: 8px 10px 0;
+  height: 36px;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid #242429;
+  border-radius: 7px;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #777780;
+  cursor: pointer;
+  transition: color .16s ease;
+}
+.tab svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tab:hover { color: #d5d5db; }
+.tab.active { color: var(--accent); }
 
-app = FastAPI()
+.status-badge {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  color: #6a6a75;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.status-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6a6a75;
+  transition: background 0.2s;
+}
+.status-badge.saving .dot { background: #f0b060; box-shadow: 0 0 6px rgba(240,176,96,0.5); }
+.status-badge.saved .dot { background: #8effb0; box-shadow: 0 0 6px rgba(142,255,176,0.5); }
+.status-badge.error .dot { background: #ff8080; box-shadow: 0 0 6px rgba(255,128,128,0.5); }
 
-if HAS_LIMITER:
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-    app.add_middleware(SlowAPIMiddleware)
+main {
+  width: 100%;
+  height: calc(100% - 36px);
+  margin: 0;
+  padding: 10px 14px 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.page { display: none; }
+.page.active { display: block; }
 
-# ═══════════════════════════════════════════════════════════
-# HTML TEMPLATES
-# ═══════════════════════════════════════════════════════════
-
-BASE_DIR = pathlib.Path(__file__).parent
-
-def load_html(filename: str) -> str:
-    path = BASE_DIR / filename
-    if not path.exists():
-        return f"<h1 style='color:#fff;background:#000;padding:40px'>Missing: {filename}</h1>"
-    return path.read_text(encoding="utf-8")
-
-LOGIN_HTML = load_html("login.html")
-DASHBOARD_HTML = load_html("dashboard.html")
-
-# ═══════════════════════════════════════════════════════════
-# DATABASE
-# ═══════════════════════════════════════════════════════════
-
-DATABASE_URL = "postgresql://neondb_owner:npg_S7hoDMeaw2cQ@ep-wandering-dream-ah21egpt-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
-
-def get_db():
-    return psycopg2.connect(DATABASE_URL)
-
-def q(query):
-    return query
-
-def hash_password(password: str, salt: str = None):
-    if salt is None:
-        salt = secrets.token_hex(16)
-    key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
-    return f"{salt}:{key.hex()}", salt
-
-def verify_password(stored_hash: str, password: str) -> bool:
-    try:
-        salt, stored_key = stored_hash.split(':')
-        key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
-        return hmac.compare_digest(key.hex(), stored_key)
-    except:
-        return False
-
-def init_db():
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("""CREATE TABLE IF NOT EXISTS keys (
-            key TEXT PRIMARY KEY, duration TEXT NOT NULL,
-            created_at TEXT NOT NULL, expires_at TEXT, redeemed_at TEXT,
-            redeemed_by TEXT, hwid TEXT, hwid_resets INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 0, created_by TEXT)""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS user_accounts (
-            id SERIAL PRIMARY KEY, license_key TEXT UNIQUE NOT NULL,
-            username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
-            email TEXT, created_at TEXT NOT NULL, last_login TEXT)""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS login_sessions (
-            session_id TEXT PRIMARY KEY, username TEXT NOT NULL,
-            license_key TEXT NOT NULL, created_at TEXT NOT NULL,
-            expires_at TEXT NOT NULL, ip_address TEXT)""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
-            id SERIAL PRIMARY KEY, license_key TEXT NOT NULL,
-            config_name TEXT NOT NULL, config_data TEXT NOT NULL,
-            created_at TEXT NOT NULL, UNIQUE(license_key, config_name))""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY, config TEXT NOT NULL)""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS clients (
-            client_id TEXT PRIMARY KEY, hwid TEXT NOT NULL,
-            session_token TEXT, license_key TEXT, username TEXT,
-            created_at TEXT NOT NULL, last_ping TEXT,
-            authenticated INTEGER DEFAULT 0)""")
-        db.commit()
-        db.close()
-        print("DB initialized. Using: PostgreSQL", flush=True)
-    except Exception as e:
-        print(f"DB init error: {e}", flush=True)
-
-def migrate_db():
-    try:
-        db = get_db()
-        cur = db.cursor()
-        migrations = [
-            ("keys", "active", "INTEGER DEFAULT 0"),
-            ("keys", "hwid", "TEXT"),
-            ("keys", "hwid_resets", "INTEGER DEFAULT 0"),
-            ("keys", "expires_at", "TEXT"),
-            ("keys", "redeemed_at", "TEXT"),
-            ("keys", "redeemed_by", "TEXT"),
-            ("keys", "created_by", "TEXT"),
-            ("keys", "duration", "TEXT DEFAULT 'lifetime'"),
-            ("keys", "created_at", "TEXT DEFAULT ''"),
-            ("user_accounts", "email", "TEXT"),
-            ("user_accounts", "last_login", "TEXT"),
-            ("user_accounts", "created_at", "TEXT DEFAULT ''"),
-            ("login_sessions", "ip_address", "TEXT"),
-            ("login_sessions", "expires_at", "TEXT"),
-            ("login_sessions", "created_at", "TEXT DEFAULT ''"),
-            ("clients", "authenticated", "INTEGER DEFAULT 0"),
-            ("clients", "license_key", "TEXT"),
-            ("clients", "username", "TEXT"),
-            ("clients", "last_ping", "TEXT"),
-            ("clients", "session_token", "TEXT"),
-            ("clients", "created_at", "TEXT DEFAULT ''"),
-            ("saved_configs", "created_at", "TEXT DEFAULT ''"),
-            ("settings", "config", "TEXT DEFAULT '{}'"),
-        ]
-        for table, col, definition in migrations:
-            try:
-                cur.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {definition}')
-            except Exception as e:
-                print(f"[MIGRATE] {table}.{col} skip: {e}", flush=True)
-        db.commit()
-        db.close()
-        print("[MIGRATE] Schema migration complete.", flush=True)
-    except Exception as e:
-        print(f"[MIGRATE] Error: {e}", flush=True)
-
-init_db()
-migrate_db()
-
-# ═══════════════════════════════════════════════════════════
-# DEFAULT CONFIG — served when a user has no config yet
-# ═══════════════════════════════════════════════════════════
-
-DEFAULT_CONFIG = {
-    "Enabled": True,
-    "Keybind": "Q",
-    "PredictTarget": True,
-    "Prediction": 0.10,
-    "ClosestPart": True,
-    "FixedPart": "Head",
-    "Smoothness": 0.35,
-    "MaxStudsCheck": True,
-    "MaxStuds": 500,
-    "UnlockOnDeath": True,
-    "SelfDeathCheck": True,
-    "CurveP1": {"x": 180, "y": 200},
-    "CurveP2": {"x": 420, "y": 80},
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.stat {
+  padding: 9px 10px;
+  border: 1px solid #222226;
+  border-radius: 7px;
+}
+.stat-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #85858e;
+  font-size: 9px;
+}
+.stat-top svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: #777780;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.stat-value {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -.3px;
+}
+.stat-value.accent { color: var(--accent); }
+.stat-foot {
+  margin-top: 3px;
+  color: #62626b;
+  font-size: 8px;
 }
 
-# ═══════════════════════════════════════════════════════════
-# BOOTSTRAP
-# ═══════════════════════════════════════════════════════════
+.overview-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.overview-tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #222226;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color .15s ease;
+}
+.overview-tool:hover { border-color: #41414a; }
+.tool-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #c8c8d0;
+  border: 1px solid #292930;
+  border-radius: 6px;
+}
+.tool-icon svg, .tool-arrow {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.overview-tool span:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.overview-tool strong { font-size: 10px; font-weight: 500; }
+.overview-tool small { color: #777780; font-size: 8px; }
+.tool-arrow { color: #66666f; flex-shrink: 0; }
 
-def bootstrap_test_account():
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("SELECT username FROM user_accounts WHERE username=%s", ("light",))
-        if cur.fetchone():
-            print("[BOOTSTRAP] Account 'light' already exists — skipping.", flush=True)
-            db.close()
-            return
-        license_key = "LIGHT-LIFE-TIME-0001"
-        now = datetime.now().isoformat()
-        cur.execute("SELECT key FROM keys WHERE key=%s", (license_key,))
-        if not cur.fetchone():
-            cur.execute("""INSERT INTO keys
-                (key, duration, created_at, expires_at, active, redeemed_by, hwid_resets)
-                VALUES (%s, %s, %s, %s, 1, %s, 0)""",
-                (license_key, "lifetime", now, None, "bootstrap"))
-        pw_hash, _ = hash_password("light")
-        cur.execute("""INSERT INTO user_accounts
-            (license_key, username, password_hash, email, created_at)
-            VALUES (%s, %s, %s, %s, %s)""",
-            (license_key, "light", pw_hash, "light@local", now))
-        cur.execute("UPDATE keys SET active=1, redeemed_at=%s, redeemed_by=%s WHERE key=%s",
-                    (now, "light", license_key))
-        db.commit()
-        db.close()
-        print("[BOOTSTRAP] Test account created! user=light pass=light", flush=True)
-    except Exception as e:
-        print(f"[BOOTSTRAP] Error: {e}", flush=True)
+.content-panel {
+  padding: 10px 12px;
+  border: 1px solid #242428;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.content-panel h2 {
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.info-row,
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #202024;
+}
+.info-row:first-of-type,
+.setting-row:first-of-type { margin-top: 2px; }
+.info-row:last-child,
+.setting-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.info-label { color: #85858e; font-size: 10px; }
+.info-value {
+  max-width: 60%;
+  color: #dedee3;
+  font-size: 10px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.setting-title { font-size: 10px; font-weight: 500; }
+.setting-description { margin-top: 2px; color: #777780; font-size: 8px; }
 
-bootstrap_test_account()
+.toggle {
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid #3a3a42;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .12s ease, border-color .12s ease;
+}
+.toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toggle:hover { border-color: #5a5a64; }
 
-# ═══════════════════════════════════════════════════════════
-# MODELS
-# ═══════════════════════════════════════════════════════════
+.text-button {
+  padding: 5px 9px;
+  border: 1px solid #303036;
+  border-radius: 5px;
+  background: transparent;
+  color: #c7c7ce;
+  font-size: 9px;
+  cursor: pointer;
+}
+.text-button:hover {
+  border-color: #55555e;
+  color: white;
+}
 
-class UserLogin(BaseModel):
-    username: str
-    password: str
-    client_id: Optional[str] = None
+.config-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.config-layout > .curve-panel { margin-bottom: 0; }
+.config-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: start;
+}
+.config-options .content-panel {
+  margin-bottom: 0;
+  height: 100%;
+  padding: 9px 10px;
+}
 
-class SavedConfigRequest(BaseModel):
-    config_name: str
-    config_data: dict
+.curve-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.curve-heading h2 { margin-bottom: 0; font-size: 11px; }
+.curve-wrap { width: 100%; overflow: hidden; }
+#bezierSvg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 118px;
+  overflow: visible;
+  touch-action: none;
+  user-select: none;
+}
+.axis-label { fill: #777780; font-size: 8px; }
+.handle-line {
+  stroke: #3a3a42;
+  stroke-width: 1.2;
+  stroke-dasharray: 3 4;
+}
+.curve-path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.curve-end {
+  fill: #09090b;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.control-point {
+  fill: var(--accent);
+  stroke: #09090b;
+  stroke-width: 2;
+  cursor: grab;
+}
+.control-point:hover,
+.control-point:focus { r: 8; outline: none; }
+.control-point:active { cursor: grabbing; }
+.curve-values {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #202024;
+  color: #777780;
+  font-size: 8px;
+}
+.curve-values span { display: flex; flex-direction: column; gap: 2px; }
+.curve-values b { color: #d6d6dd; font-weight: 500; }
 
-class ClientRegister(BaseModel):
-    client_id: str
-    hwid: str
+.field-label {
+  display: block;
+  margin: 8px 0 4px;
+  color: #9a9aa3;
+  font-size: 8px;
+}
+.field-label:first-child { margin-top: 4px; }
 
-class ClientAuthStatus(BaseModel):
-    client_id: str
-    session_token: Optional[str] = None
+.dark-input {
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid #2a2a31;
+  border-radius: 5px;
+  outline: none;
+  background: transparent;
+  color: #dedee4;
+  font: inherit;
+  font-size: 10px;
+}
+.dark-input:focus { border-color: #55555e; }
+.keybind-input {
+  width: 42px;
+  text-align: center;
+  letter-spacing: .4px;
+  font-weight: 500;
+  cursor: pointer;
+}
 
-class ClientAuthenticate(BaseModel):
-    client_id: str
-    license_key: str
-    username: str
+/* ── Fill slider (fixed: single visible number via clip-path) ── */
+.fill-slider {
+  position: relative;
+  width: 100%;
+  height: 22px;
+  border: 1px solid #2a2a31;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+}
+.fill-slider-fill {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 0%;
+  background: #ffffff;
+  pointer-events: none;
+}
+.fill-slider-value {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  letter-spacing: -.2px;
+  white-space: nowrap;
+  color: #dedee4;
+}
+.fill-slider-value-inverse {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  letter-spacing: -.2px;
+  white-space: nowrap;
+  color: #09090b;
+  clip-path: inset(0 calc(100% - var(--fill-pct, 0%)) 0 0);
+}
+.fill-slider:hover { border-color: #3a3a44; }
 
-# ═══════════════════════════════════════════════════════════
-# API — USER
-# ═══════════════════════════════════════════════════════════
+.custom-select {
+  position: relative;
+  width: 100%;
+  user-select: none;
+}
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid #2a2a31;
+  border-radius: 5px;
+  background: transparent;
+  color: #dedee4;
+  font-size: 10px;
+  cursor: pointer;
+}
+.custom-select-trigger:hover { border-color: #3a3a44; }
+.custom-select.open .custom-select-trigger { border-color: #55555e; }
+.custom-select-trigger .value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.custom-select-trigger .chevron {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  margin-left: 6px;
+  color: #6b6b76;
+  transition: transform .18s ease, color .15s ease;
+}
+.custom-select.open .custom-select-trigger .chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+.custom-select-options {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0; right: 0;
+  z-index: 50;
+  max-height: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--bg);
+  opacity: 0;
+  transform: translateY(-3px);
+  pointer-events: none;
+  transition: max-height .2s ease, opacity .16s ease, transform .16s ease, border-color .16s ease;
+}
+.custom-select.open .custom-select-options {
+  max-height: 140px;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  border-color: #2e2e36;
+  overflow-y: auto;
+}
+.custom-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  color: #b8b8c0;
+  font-size: 9px;
+  cursor: pointer;
+}
+.custom-option:hover {
+  background: #16161c;
+  color: #ededf0;
+}
+.custom-option.selected {
+  color: var(--accent);
+  background: transparent;
+}
+.custom-option .check {
+  width: 10px;
+  height: 10px;
+  opacity: 0;
+  color: var(--accent);
+}
+.custom-option.selected .check { opacity: 1; }
 
-@app.post("/api/user-login")
-async def user_login(request: Request, data: UserLogin):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("""SELECT ua.username, ua.password_hash, ua.license_key,
-                       k.active, k.expires_at, k.hwid_resets, k.hwid
-                       FROM user_accounts ua JOIN keys k ON ua.license_key = k.key
-                       WHERE ua.username=%s""", (data.username,))
-        result = cur.fetchone()
-        if not result:
-            db.close()
-            return {"valid": False, "error": "Invalid username or password"}
+.config-actions {
+  display: flex;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #202024;
+}
 
-        username, password_hash, license_key, active, expires_at, hwid_resets, bound_hwid = result
+#toast {
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  max-width: 220px;
+  padding: 8px 10px;
+  border: 1px solid #303036;
+  border-radius: 6px;
+  background: #131316;
+  color: #dedee3;
+  font-size: 9px;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: .2s ease;
+  z-index: 100;
+}
+#toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
 
-        if active == 0:
-            db.close()
-            return {"valid": False, "error": "License inactive"}
-        if expires_at:
-            try:
-                if datetime.now() > datetime.fromisoformat(expires_at):
-                    db.close()
-                    return {"valid": False, "error": "License expired"}
-            except:
-                pass
-        if not verify_password(password_hash, data.password):
-            db.close()
-            return {"valid": False, "error": "Invalid username or password"}
+main::-webkit-scrollbar { width: 4px; }
+main::-webkit-scrollbar-track { background: transparent; }
+main::-webkit-scrollbar-thumb {
+  background: #2a2a31;
+  border-radius: 4px;
+}
+</style>
+</head>
+<body>
+<header class="header">
+  <nav class="tabs" aria-label="Main navigation">
+    <button class="tab active" data-page="overview" title="Overview" aria-label="Overview">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    </button>
+    <button class="tab" data-page="account" title="Account" aria-label="Account">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+    </button>
+    <button class="tab" data-page="configuration" title="Configuration" aria-label="Configuration">
+      <svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+    </button>
+  </nav>
+  <div class="status-badge" id="saveStatus"><span class="dot"></span><span id="saveLabel">Ready</span></div>
+</header>
+<main>
+  <section class="page active" id="page-overview">
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-top">
+          Account status
+          <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z"/><path d="m9 12 2 2 4-4"/></svg>
+        </div>
+        <div class="stat-value accent" id="accountStatus">Checking</div>
+        <div class="stat-foot">Current account session</div>
+      </div>
+      <div class="stat">
+        <div class="stat-top">
+          Client
+          <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 22h8"/></svg>
+        </div>
+        <div class="stat-value" id="clientStatus">—</div>
+        <div class="stat-foot">Cheat connection</div>
+      </div>
+      <div class="stat">
+        <div class="stat-top">
+          Signed in as
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+        </div>
+        <div class="stat-value" id="statUsername">—</div>
+        <div class="stat-foot">Your account</div>
+      </div>
+    </div>
+    <div class="overview-tools">
+      <button class="overview-tool" data-go="account">
+        <span class="tool-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
+        <span><strong>Account details</strong><small>View your account and session</small></span>
+        <svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+      <button class="overview-tool" data-go="configuration">
+        <span class="tool-icon"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span>
+        <span><strong>Configuration</strong><small>Adjust curve and targeting</small></span>
+        <svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    </div>
+  </section>
 
-        if data.client_id:
-            cur.execute("SELECT hwid FROM clients WHERE client_id=%s", (data.client_id,))
-            crow = cur.fetchone()
-            if not crow:
-                db.close()
-                return {"valid": False, "error": "Client not registered"}
-            client_hwid = crow[0]
+  <section class="page" id="page-account">
+    <div class="content-panel">
+      <h2>Account</h2>
+      <div class="info-row">
+        <span class="info-label">Username</span>
+        <span class="info-value" id="accountUsername">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Session status</span>
+        <span class="info-value" id="accountSession">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">License</span>
+        <span class="info-value" id="accountLicense">—</span>
+      </div>
+    </div>
+    <div class="content-panel">
+      <h2>Security</h2>
+      <div style="margin-top:10px">
+        <button class="text-button" id="logoutBtn">Sign out</button>
+      </div>
+    </div>
+  </section>
 
-            if bound_hwid is None:
-                cur.execute("UPDATE keys SET hwid=%s WHERE key=%s", (client_hwid, license_key))
-                print(f"[HWID] Bound {client_hwid[:12]}... to {license_key}", flush=True)
-            elif bound_hwid != client_hwid:
-                db.close()
-                return {"valid": False, "error": "HWID mismatch — license bound to another PC"}
+  <section class="page" id="page-configuration">
+    <div class="config-layout">
+      <div class="content-panel curve-panel">
+        <div class="curve-heading">
+          <h2>Bezier curve</h2>
+          <button class="text-button" id="resetCurveBtn">Reset</button>
+        </div>
+        <div class="curve-wrap">
+          <svg id="bezierSvg" viewBox="0 0 600 310" role="img" aria-label="Bezier curve editor">
+            <defs>
+              <pattern id="curveGrid" width="30" height="30" patternUnits="userSpaceOnUse">
+                <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#25252c" stroke-width="1"/>
+              </pattern>
+            </defs>
+            <rect x="34" y="18" width="548" height="260" fill="url(#curveGrid)" rx="8"/>
+            <path d="M34 278H582 M34 18V278" stroke="#45454e" stroke-width="1.2"/>
+            <text x="34" y="299" class="axis-label">0</text>
+            <text x="572" y="299" class="axis-label">1</text>
+            <text x="15" y="28" class="axis-label">1</text>
+            <text x="15" y="281" class="axis-label">0</text>
+            <path id="handleLine1" class="handle-line" d="M34 278 L180 200"/>
+            <path id="handleLine2" class="handle-line" d="M420 80 L582 18"/>
+            <path id="curvePath" class="curve-path" d="M34 278 C180 200 420 80 582 18"/>
+            <circle class="curve-end" cx="34" cy="278" r="5"/>
+            <circle class="curve-end" cx="582" cy="18" r="5"/>
+            <circle class="control-point" id="control1" data-point="1" cx="180" cy="200" r="7" tabindex="0" role="slider" aria-label="Control point 1"/>
+            <circle class="control-point" id="control2" data-point="2" cx="420" cy="80" r="7" tabindex="0" role="slider" aria-label="Control point 2"/>
+          </svg>
+        </div>
+        <div class="curve-values">
+          <span>Point 1 <b id="point1Value">27%, 30%</b></span>
+          <span>Point 2 <b id="point2Value">71%, 76%</b></span>
+        </div>
+      </div>
 
-        cur.execute("UPDATE user_accounts SET last_login=%s WHERE username=%s",
-                    (datetime.now().isoformat(), username))
+      <div class="config-options">
+        <div class="content-panel">
+          <h2>General</h2>
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Enabled</div>
+              <div class="setting-description">System on / off</div>
+            </div>
+            <button class="toggle on" id="cfgEnabled" role="switch" aria-checked="true" aria-label="Enabled"></button>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Keybind</div>
+              <div class="setting-description">Click then press a key</div>
+            </div>
+            <input class="dark-input keybind-input" id="cfgKeybind" type="text" value="Q" maxlength="8" readonly spellcheck="false">
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Unlock on death</div>
+              <div class="setting-description">Release when you die</div>
+            </div>
+            <button class="toggle on" id="cfgUnlockOnDeath" role="switch" aria-checked="true" aria-label="Unlock on death"></button>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Self death check</div>
+              <div class="setting-description">Check local death state</div>
+            </div>
+            <button class="toggle on" id="cfgSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button>
+          </div>
+        </div>
 
-        session_id = secrets.token_hex(16)
-        now = datetime.now().isoformat()
-        exp = (datetime.now() + timedelta(days=30)).isoformat()
-        cur.execute("""INSERT INTO login_sessions
-                       (session_id, username, license_key, created_at, expires_at, ip_address)
-                       VALUES (%s, %s, %s, %s, %s, %s)""",
-                    (session_id, username, license_key, now, exp, request.client.host))
-        db.commit()
-        db.close()
+        <div class="content-panel">
+          <h2>Targeting</h2>
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Predict target</div>
+              <div class="setting-description">Lead moving targets</div>
+            </div>
+            <button class="toggle on" id="cfgPredictTarget" role="switch" aria-checked="true" aria-label="Predict target"></button>
+          </div>
+          <label class="field-label">Prediction</label>
+          <div class="fill-slider" id="slPrediction" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.10">
+            <div class="fill-slider-fill"></div>
+            <div class="fill-slider-value">0.10</div>
+            <div class="fill-slider-value-inverse">0.10</div>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Closest part</div>
+              <div class="setting-description">Aim nearest body part</div>
+            </div>
+            <button class="toggle on" id="cfgClosestPart" role="switch" aria-checked="true" aria-label="Closest part"></button>
+          </div>
+          <label class="field-label">Fixed part</label>
+          <div class="custom-select" id="cfgFixedPartSelect" data-value="Head">
+            <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="value">Head</span>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="custom-select-options" role="listbox">
+              <div class="custom-option selected" data-value="Head" role="option"><span>Head</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+              <div class="custom-option" data-value="Torso" role="option"><span>Torso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+              <div class="custom-option" data-value="HumanoidRootPart" role="option"><span>HumanoidRootPart</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+              <div class="custom-option" data-value="UpperTorso" role="option"><span>UpperTorso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+              <div class="custom-option" data-value="LowerTorso" role="option"><span>LowerTorso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+            </div>
+          </div>
+        </div>
 
-        subscription = "Lifetime" if expires_at is None else "Temporary"
-        resp = JSONResponse({
-            "valid": True, "message": "Login successful",
-            "username": username, "license_key": license_key,
-            "subscription": subscription, "hwid_resets": hwid_resets or 0
-        })
-        resp.set_cookie("session_id", session_id, httponly=True, max_age=2592000, samesite="lax")
-        resp.set_cookie("license_key", license_key, httponly=True, max_age=2592000, samesite="lax")
-        resp.set_cookie("username", username, httponly=True, max_age=2592000, samesite="lax")
-        return resp
-    except Exception as e:
-        db.close()
-        return {"valid": False, "error": f"Server error: {str(e)}"}
+        <div class="content-panel">
+          <h2>Smoothing & range</h2>
+          <label class="field-label">Smoothness</label>
+          <div class="fill-slider" id="slSmoothness" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.35">
+            <div class="fill-slider-fill"></div>
+            <div class="fill-slider-value">0.35</div>
+            <div class="fill-slider-value-inverse">0.35</div>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Max studs check</div>
+              <div class="setting-description">Limit targeting distance</div>
+            </div>
+            <button class="toggle on" id="cfgMaxStudsCheck" role="switch" aria-checked="true" aria-label="Max studs check"></button>
+          </div>
+          <label class="field-label">Max studs</label>
+          <div class="fill-slider" id="slMaxStuds" data-min="0" data-max="2000" data-step="10" data-decimals="0" data-value="500">
+            <div class="fill-slider-fill"></div>
+            <div class="fill-slider-value">500</div>
+            <div class="fill-slider-value-inverse">500</div>
+          </div>
+          <div class="config-actions">
+            <button class="text-button" id="cfgResetBtn">Reset</button>
+            <button class="text-button" id="cfgCopyBtn">Copy config</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast" role="status"></div>
+<script>
+const pages = ["overview", "account", "configuration"];
+let toastTimer;
+let currentUser = null;
+let saveTimer = null;
+let isDirty = false;
 
+const saveStatus = document.getElementById("saveStatus");
+const saveLabel = document.getElementById("saveLabel");
 
-@app.get("/api/me")
-async def get_current_user(request: Request):
-    license_key = request.cookies.get("license_key")
-    session_id = request.cookies.get("session_id")
-    if not license_key or not session_id:
-        return {"authenticated": False}
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT username, license_key FROM login_sessions WHERE session_id=%s AND expires_at > %s",
-                    (session_id, datetime.now().isoformat()))
-        result = cur.fetchone()
-        db.close()
-        if result:
-            return {"authenticated": True, "username": result[0], "license_key": result[1]}
-        return {"authenticated": False}
-    except:
-        db.close()
-        return {"authenticated": False}
+function setSaveStatus(state, label) {
+  saveStatus.classList.remove("saving", "saved", "error");
+  if (state) saveStatus.classList.add(state);
+  saveLabel.textContent = label;
+}
 
+function showToast(message) {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 2500);
+}
 
-@app.post("/api/logout")
-async def logout():
-    resp = JSONResponse({"success": True})
-    resp.delete_cookie("session_id")
-    resp.delete_cookie("license_key")
-    resp.delete_cookie("username")
-    return resp
+function navigate(page) {
+  if (!pages.includes(page)) return;
+  document.querySelectorAll(".page").forEach(s => {
+    s.classList.toggle("active", s.id === "page-" + page);
+  });
+  document.querySelectorAll(".tab").forEach(t => {
+    t.classList.toggle("active", t.dataset.page === page);
+  });
+}
 
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => navigate(t.dataset.page)));
+document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => navigate(b.dataset.go)));
 
-@app.get("/api/dashboard")
-async def get_dashboard(request: Request):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT key, duration, expires_at, active, hwid, redeemed_by, hwid_resets FROM keys WHERE key=%s",
-                    (license_key,))
-        result = cur.fetchone()
-        db.close()
-        if not result:
-            raise HTTPException(status_code=404, detail="Not found")
-        key, duration, expires_at, active, hwid, discord_id, hwid_resets = result
-        subscription = "Lifetime" if expires_at is None else "Temporary"
-        return {
-            "license_key": key, "duration": duration, "expires_at": expires_at,
-            "active": active, "hwid": hwid, "discord_id": discord_id,
-            "hwid_resets": hwid_resets or 0, "subscription": subscription
+async function refreshSession() {
+  try {
+    const response = await fetch("/api/me", { credentials: "include" });
+    if (!response.ok) throw new Error("fail");
+    const data = await response.json();
+    if (!data.authenticated) { window.location.href = "/"; return; }
+    const username = data.username || "User";
+    currentUser = username;
+    document.getElementById("statUsername").textContent = username;
+    document.getElementById("accountUsername").textContent = username;
+    document.getElementById("accountStatus").textContent = "Active";
+    document.getElementById("accountSession").textContent = "Authenticated";
+    document.getElementById("accountLicense").textContent = data.license_key || "—";
+
+    try {
+      const dRes = await fetch("/api/dashboard", { credentials: "include" });
+      if (dRes.ok) {
+        const d = await dRes.json();
+        document.getElementById("accountLicense").textContent = d.license_key || "—";
+      }
+    } catch (e) {}
+
+    refreshClientStatus();
+    setInterval(refreshClientStatus, 3000);
+  } catch {
+    document.getElementById("accountStatus").textContent = "Unknown";
+    document.getElementById("accountSession").textContent = "Unable to verify";
+    showToast("Couldn't verify the session.");
+  }
+}
+
+async function refreshClientStatus() {
+  if (!currentUser) return;
+  try {
+    const r = await fetch(`/api/client/status-by-user/${currentUser}`, { credentials: "include" });
+    if (!r.ok) return;
+    const d = await r.json();
+    const el = document.getElementById("clientStatus");
+    if (d.connected) {
+      el.textContent = "Connected";
+      el.style.color = "#8effb0";
+    } else {
+      el.textContent = "Offline";
+      el.style.color = "";
+    }
+  } catch (e) {}
+}
+
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  try {
+    const r = await fetch("/api/logout", { method: "POST", credentials: "include" });
+    if (r.ok) window.location.href = "/";
+  } catch {
+    showToast("Couldn't contact the server to sign out.");
+  }
+});
+
+function setupToggle(id) {
+  const button = document.getElementById(id);
+  const initial = button.classList.contains("on");
+  function setState(enabled) {
+    button.classList.toggle("on", enabled);
+    button.setAttribute("aria-checked", String(enabled));
+  }
+  setState(initial);
+  button.addEventListener("click", () => {
+    setState(!button.classList.contains("on"));
+    queueSave();
+  });
+  return { get: () => button.classList.contains("on"), set: setState };
+}
+
+function initCustomSelect(root) {
+  const trigger = root.querySelector(".custom-select-trigger");
+  const options = root.querySelectorAll(".custom-option");
+  const valueEl = trigger.querySelector(".value");
+  function close() {
+    root.classList.remove("open");
+    trigger.setAttribute("aria-expanded", "false");
+  }
+  function open() {
+    root.classList.add("open");
+    trigger.setAttribute("aria-expanded", "true");
+  }
+  function select(option) {
+    options.forEach(o => o.classList.remove("selected"));
+    option.classList.add("selected");
+    root.dataset.value = option.dataset.value;
+    valueEl.textContent = option.querySelector("span").textContent;
+    close();
+    queueSave();
+  }
+  trigger.addEventListener("click", e => {
+    e.stopPropagation();
+    if (root.classList.contains("open")) close();
+    else {
+      document.querySelectorAll(".custom-select.open").forEach(s => {
+        if (s !== root) {
+          s.classList.remove("open");
+          s.querySelector(".custom-select-trigger").setAttribute("aria-expanded", "false");
         }
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+      });
+      open();
+    }
+  });
+  options.forEach(o => o.addEventListener("click", e => { e.stopPropagation(); select(o); }));
+  document.addEventListener("click", e => { if (!root.contains(e.target)) close(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+}
+document.querySelectorAll(".custom-select").forEach(initCustomSelect);
 
+function initFillSlider(el) {
+  const min = Number(el.dataset.min);
+  const max = Number(el.dataset.max);
+  const step = Number(el.dataset.step) || 1;
+  const decimals = Number(el.dataset.decimals) || 0;
+  const fill = el.querySelector(".fill-slider-fill");
+  const label = el.querySelector(".fill-slider-value");
+  const labelInv = el.querySelector(".fill-slider-value-inverse");
+  let value = Number(el.dataset.value);
+  let dragging = false;
 
-# ═══════════════════════════════════════════════════════════
-# API — CONFIG
-# ═══════════════════════════════════════════════════════════
+  function fmt(v) {
+    return decimals === 0 ? String(Math.round(v)) : v.toFixed(decimals);
+  }
+  function set(v, silent) {
+    v = Math.min(max, Math.max(min, v));
+    const steps = Math.round((v - min) / step);
+    v = min + steps * step;
+    if (decimals === 0) v = Math.round(v);
+    else v = Math.round(v * Math.pow(10, decimals)) / Math.pow(10, decimals);
+    value = v;
+    el.dataset.value = String(v);
+    const pct = ((v - min) / (max - min)) * 100;
+    fill.style.width = pct + "%";
+    el.style.setProperty("--fill-pct", pct + "%");
+    const text = fmt(v);
+    label.textContent = text;
+    labelInv.textContent = text;
+    if (!silent) {
+      queueSave();
+    }
+  }
+  function fromEvent(e) {
+    const rect = el.getBoundingClientRect();
+    const x = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
+    set(min + Math.min(1, Math.max(0, x / rect.width)) * (max - min));
+  }
 
-@app.get("/api/config")
-async def get_config(request: Request):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT config FROM settings WHERE key=%s", (license_key,))
-        result = cur.fetchone()
-        if not result:
-            cur.execute("INSERT INTO settings (key, config) VALUES (%s, %s)",
-                        (license_key, json.dumps(DEFAULT_CONFIG)))
-            db.commit()
-            db.close()
-            return DEFAULT_CONFIG
-        db.close()
-        try:
-            return json.loads(result[0])
-        except:
-            return DEFAULT_CONFIG
-    except Exception as e:
-        db.close()
-        return DEFAULT_CONFIG
+  el.addEventListener("pointerdown", e => {
+    dragging = true;
+    el.setPointerCapture?.(e.pointerId);
+    fromEvent(e);
+  });
+  el.addEventListener("pointermove", e => { if (dragging) fromEvent(e); });
+  el.addEventListener("pointerup", () => { dragging = false; });
+  el.addEventListener("pointercancel", () => { dragging = false; });
 
+  set(value, true);
+  return { get: () => value, set: v => set(v, true) };
+}
 
-@app.post("/api/config")
-async def set_config(request: Request, data: dict):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config",
-                    (license_key, json.dumps(data)))
-        db.commit()
-        db.close()
-        return {"status": "ok"}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+const curveSvg = document.getElementById("bezierSvg");
+const curvePath = document.getElementById("curvePath");
+const control1 = document.getElementById("control1");
+const control2 = document.getElementById("control2");
+const curveBounds = { left: 34, right: 582, top: 18, bottom: 278 };
+const curveState = {
+  p1: { x: 180, y: 200 },
+  p2: { x: 420, y: 80 },
+  dragging: null
+};
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
+function curvePointFromEvent(event) {
+  const point = curveSvg.createSVGPoint();
+  point.x = event.clientX;
+  point.y = event.clientY;
+  const matrix = curveSvg.getScreenCTM();
+  if (!matrix) return null;
+  const local = point.matrixTransform(matrix.inverse());
+  return {
+    x: clamp(local.x, curveBounds.left, curveBounds.right),
+    y: clamp(local.y, curveBounds.top, curveBounds.bottom)
+  };
+}
 
-# ═══════════════════════════════════════════════════════════
-# API — CLIENT
-# ═══════════════════════════════════════════════════════════
+function drawCurve() {
+  const p1 = curveState.p1, p2 = curveState.p2;
+  curvePath.setAttribute("d",
+    "M " + curveBounds.left + " " + curveBounds.bottom +
+    " C " + p1.x + " " + p1.y + " " + p2.x + " " + p2.y + " " +
+    curveBounds.right + " " + curveBounds.top);
+  document.getElementById("handleLine1").setAttribute("d",
+    "M " + curveBounds.left + " " + curveBounds.bottom + " L " + p1.x + " " + p1.y);
+  document.getElementById("handleLine2").setAttribute("d",
+    "M " + p2.x + " " + p2.y + " L " + curveBounds.right + " " + curveBounds.top);
+  control1.setAttribute("cx", p1.x); control1.setAttribute("cy", p1.y);
+  control2.setAttribute("cx", p2.x); control2.setAttribute("cy", p2.y);
+  document.getElementById("point1Value").textContent =
+    Math.round((p1.x - 34) / 548 * 100) + "%, " + Math.round((278 - p1.y) / 260 * 100) + "%";
+  document.getElementById("point2Value").textContent =
+    Math.round((p2.x - 34) / 548 * 100) + "%, " + Math.round((278 - p2.y) / 260 * 100) + "%";
+}
 
-@app.post("/api/client/register")
-async def register_client(data: ClientRegister):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        session_token = secrets.token_hex(32)
-        now = datetime.now().isoformat()
-        cur.execute("SELECT client_id FROM clients WHERE client_id=%s", (data.client_id,))
-        if cur.fetchone():
-            cur.execute("""UPDATE clients SET hwid=%s, session_token=%s, last_ping=%s, authenticated=0
-                           WHERE client_id=%s""",
-                        (data.hwid, session_token, now, data.client_id))
-        else:
-            cur.execute("""INSERT INTO clients
-                           (client_id, hwid, session_token, created_at, last_ping, authenticated)
-                           VALUES (%s, %s, %s, %s, %s, 0)""",
-                        (data.client_id, data.hwid, session_token, now, now))
-        db.commit()
-        db.close()
-        return {"success": True, "session_token": session_token,
-                "client_id": data.client_id, "authenticated": False}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+curveSvg.addEventListener("pointermove", event => {
+  if (!curveState.dragging) return;
+  const p = curvePointFromEvent(event);
+  if (!p) return;
+  curveState[curveState.dragging] = p;
+  drawCurve();
+});
+curveSvg.addEventListener("pointerup", () => {
+  if (curveState.dragging) {
+    curveState.dragging = null;
+    queueSave();
+  }
+});
+curveSvg.addEventListener("pointercancel", () => { curveState.dragging = null; });
 
+[control1, control2].forEach(point => {
+  point.addEventListener("pointerdown", event => {
+    curveState.dragging = point.dataset.point === "1" ? "p1" : "p2";
+    point.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+  point.addEventListener("keydown", event => {
+    const key = event.key;
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return;
+    event.preventDefault();
+    const p = curveState[point.dataset.point === "1" ? "p1" : "p2"];
+    const step = event.shiftKey ? 10 : 3;
+    if (key === "ArrowUp") p.y -= step;
+    if (key === "ArrowDown") p.y += step;
+    if (key === "ArrowLeft") p.x -= step;
+    if (key === "ArrowRight") p.x += step;
+    p.x = clamp(p.x, curveBounds.left, curveBounds.right);
+    p.y = clamp(p.y, curveBounds.top, curveBounds.bottom);
+    drawCurve();
+    queueSave();
+  });
+});
 
-@app.post("/api/client/auth-status")
-async def client_auth_status(data: ClientAuthStatus):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("""SELECT authenticated, license_key, username, hwid
-                       FROM clients WHERE client_id=%s AND session_token=%s""",
-                    (data.client_id, data.session_token))
-        result = cur.fetchone()
-        if not result:
-            db.close()
-            return {"authenticated": False, "error": "Invalid credentials"}
-        authenticated, license_key, username, hwid = result
-        cur.execute("UPDATE clients SET last_ping=%s WHERE client_id=%s",
-                    (datetime.now().isoformat(), data.client_id))
-        db.commit()
-        db.close()
-        return {"authenticated": bool(authenticated), "license_key": license_key,
-                "username": username, "hwid": hwid}
-    except Exception as e:
-        db.close()
-        return {"authenticated": False, "error": str(e)}
+document.getElementById("resetCurveBtn").addEventListener("click", () => {
+  curveState.p1 = { x: 180, y: 200 };
+  curveState.p2 = { x: 420, y: 80 };
+  drawCurve();
+  queueSave();
+});
 
+const defaults = {
+  Enabled: true, Keybind: "Q", PredictTarget: true, Prediction: 0.10,
+  ClosestPart: true, FixedPart: "Head", Smoothness: 0.35,
+  MaxStudsCheck: true, MaxStuds: 500, UnlockOnDeath: true, SelfDeathCheck: true,
+  CurveP1: { x: 180, y: 200 }, CurveP2: { x: 420, y: 80 }
+};
 
-@app.post("/api/client/authenticate")
-async def client_authenticate(data: ClientAuthenticate):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("""UPDATE clients
-                       SET authenticated=1, license_key=%s, username=%s, last_ping=%s
-                       WHERE client_id=%s""",
-                    (data.license_key, data.username, datetime.now().isoformat(), data.client_id))
-        db.commit()
-        db.close()
-        return {"success": True}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+function queueSave() {
+  isDirty = true;
+  setSaveStatus("saving", "Saving...");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveConfig, 500);
+}
 
+async function saveConfig() {
+  try {
+    const payload = readConfigFromUI();
+    const r = await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    if (r.ok) {
+      isDirty = false;
+      setSaveStatus("saved", "Saved");
+      setTimeout(() => {
+        if (!isDirty) setSaveStatus("", "Ready");
+      }, 1500);
+    } else {
+      setSaveStatus("error", "Save failed");
+    }
+  } catch (e) {
+    setSaveStatus("error", "Error");
+  }
+}
 
-@app.post("/api/client/config")
-async def get_client_config(data: dict):
-    client_id = data.get("client_id")
-    session_token = data.get("session_token")
-    if not client_id or not session_token:
-        raise HTTPException(status_code=401, detail="Missing credentials")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT license_key FROM clients WHERE client_id=%s AND session_token=%s AND authenticated=1",
-                    (client_id, session_token))
-        result = cur.fetchone()
-        if not result:
-            db.close()
-            raise HTTPException(status_code=401, detail="Not authenticated")
-        license_key = result[0]
-        cur.execute("SELECT config FROM settings WHERE key=%s", (license_key,))
-        cfg = cur.fetchone()
-        db.close()
-        if not cfg:
-            return DEFAULT_CONFIG
-        try:
-            return json.loads(cfg[0])
-        except:
-            return DEFAULT_CONFIG
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+const cfgToggles = {
+  Enabled: setupToggle("cfgEnabled"),
+  PredictTarget: setupToggle("cfgPredictTarget"),
+  ClosestPart: setupToggle("cfgClosestPart"),
+  MaxStudsCheck: setupToggle("cfgMaxStudsCheck"),
+  UnlockOnDeath: setupToggle("cfgUnlockOnDeath"),
+  SelfDeathCheck: setupToggle("cfgSelfDeathCheck")
+};
 
+const keybindInput = document.getElementById("cfgKeybind");
+let capturingKey = false;
+keybindInput.addEventListener("click", () => {
+  capturingKey = true;
+  keybindInput.value = "…";
+  keybindInput.style.borderColor = "#55555e";
+});
+document.addEventListener("keydown", e => {
+  if (!capturingKey) return;
+  e.preventDefault();
+  const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+  if (key === "Escape") keybindInput.value = readConfigFromUI().Keybind || "Q";
+  else keybindInput.value = key;
+  capturingKey = false;
+  keybindInput.style.borderColor = "";
+  queueSave();
+});
 
-@app.get("/api/client/status-by-user/{username}")
-async def client_status_by_user(request: Request, username: str):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("""SELECT last_ping FROM clients
-                       WHERE license_key=%s AND authenticated=1
-                       ORDER BY last_ping DESC LIMIT 1""", (license_key,))
-        row = cur.fetchone()
-        db.close()
-        if not row or not row[0]:
-            return {"connected": False}
-        try:
-            last = datetime.fromisoformat(row[0])
-            connected = (datetime.now() - last).total_seconds() < 15
-        except:
-            connected = False
-        return {"connected": connected}
-    except Exception as e:
-        db.close()
-        return {"connected": False, "error": str(e)}
+const sliders = {
+  Prediction: initFillSlider(document.getElementById("slPrediction")),
+  Smoothness: initFillSlider(document.getElementById("slSmoothness")),
+  MaxStuds: initFillSlider(document.getElementById("slMaxStuds"))
+};
 
+function readConfigFromUI() {
+  return {
+    Enabled: cfgToggles.Enabled.get(),
+    Keybind: keybindInput.value || "Q",
+    PredictTarget: cfgToggles.PredictTarget.get(),
+    Prediction: sliders.Prediction.get(),
+    ClosestPart: cfgToggles.ClosestPart.get(),
+    FixedPart: document.getElementById("cfgFixedPartSelect").dataset.value || "Head",
+    Smoothness: sliders.Smoothness.get(),
+    MaxStudsCheck: cfgToggles.MaxStudsCheck.get(),
+    MaxStuds: sliders.MaxStuds.get(),
+    UnlockOnDeath: cfgToggles.UnlockOnDeath.get(),
+    SelfDeathCheck: cfgToggles.SelfDeathCheck.get(),
+    CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
+    CurveP2: { x: curveState.p2.x, y: curveState.p2.y }
+  };
+}
 
-# ═══════════════════════════════════════════════════════════
-# KEEPALIVE
-# ═══════════════════════════════════════════════════════════
+function applyConfigToUI(c) {
+  if (!c || typeof c !== "object") return;
+  cfgToggles.Enabled.set(c.Enabled !== false);
+  keybindInput.value = c.Keybind || "Q";
+  cfgToggles.PredictTarget.set(c.PredictTarget !== false);
+  sliders.Prediction.set(c.Prediction !== undefined ? c.Prediction : 0.10);
+  cfgToggles.ClosestPart.set(c.ClosestPart !== false);
+  const fixedPart = c.FixedPart || "Head";
+  const select = document.getElementById("cfgFixedPartSelect");
+  select.dataset.value = fixedPart;
+  select.querySelector(".value").textContent = fixedPart;
+  select.querySelectorAll(".custom-option").forEach(o => {
+    o.classList.toggle("selected", o.dataset.value === fixedPart);
+  });
+  sliders.Smoothness.set(c.Smoothness !== undefined ? c.Smoothness : 0.35);
+  cfgToggles.MaxStudsCheck.set(c.MaxStudsCheck !== false);
+  sliders.MaxStuds.set(c.MaxStuds !== undefined ? c.MaxStuds : 500);
+  cfgToggles.UnlockOnDeath.set(c.UnlockOnDeath !== false);
+  cfgToggles.SelfDeathCheck.set(c.SelfDeathCheck !== false);
+  if (c.CurveP1) curveState.p1 = { x: c.CurveP1.x, y: c.CurveP1.y };
+  if (c.CurveP2) curveState.p2 = { x: c.CurveP2.x, y: c.CurveP2.y };
+  drawCurve();
+}
 
-@app.get("/api/keepalive")
-def keepalive():
-    return {"status": "alive", "timestamp": datetime.now().isoformat()}
+async function loadConfig() {
+  try {
+    const r = await fetch("/api/config", { credentials: "include" });
+    if (!r.ok) return;
+    const cfg = await r.json();
+    if (cfg && Object.keys(cfg).length > 0) {
+      applyConfigToUI(cfg);
+    }
+    setSaveStatus("", "Ready");
+  } catch (e) {
+    setSaveStatus("error", "Load failed");
+  }
+}
 
+document.getElementById("cfgResetBtn").addEventListener("click", () => {
+  applyConfigToUI(defaults);
+  queueSave();
+  showToast("Config reset to defaults.");
+});
+document.getElementById("cfgCopyBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(readConfigFromUI(), null, 2));
+    showToast("Config copied.");
+  } catch {
+    showToast("Couldn't copy.");
+  }
+});
 
-# ═══════════════════════════════════════════════════════════
-# ROUTES
-# ═══════════════════════════════════════════════════════════
+async function boot() {
+  await refreshSession();
+  await loadConfig();
+}
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_login():
-    return HTMLResponse(content=LOGIN_HTML)
-
-@app.get("/menu", response_class=HTMLResponse)
-async def serve_menu():
-    return HTMLResponse(content=LOGIN_HTML)
-
-@app.get("/dashboard", response_class=HTMLResponse)
-async def serve_dashboard(request: Request):
-    license_key = request.cookies.get("license_key")
-    session_id = request.cookies.get("session_id")
-    if not license_key or not session_id:
-        return RedirectResponse(url="/")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT username FROM login_sessions WHERE session_id=%s AND license_key=%s AND expires_at > %s",
-                    (session_id, license_key, datetime.now().isoformat()))
-        result = cur.fetchone()
-        db.close()
-        if not result:
-            return RedirectResponse(url="/")
-        return HTMLResponse(content=DASHBOARD_HTML)
-    except:
-        db.close()
-        return RedirectResponse(url="/")
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+drawCurve();
+boot();
+</script>
+</body>
+</html>
