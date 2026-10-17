@@ -1,4 +1,4 @@
-# main.py — FastAPI backend with HTML served from separate files
+# main.py — backend for username/password accounts (no licenses)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
@@ -54,9 +54,6 @@ DATABASE_URL = "postgresql://neondb_owner:npg_S7hoDMeaw2cQ@ep-wandering-dream-ah
 def get_db():
     return psycopg2.connect(DATABASE_URL)
 
-def q(query):
-    return query
-
 def hash_password(password: str, salt: str = None):
     if salt is None:
         salt = secrets.token_hex(16)
@@ -75,23 +72,27 @@ def init_db():
     try:
         db = get_db()
         cur = db.cursor()
-        cur.execute("""CREATE TABLE IF NOT EXISTS keys (
-            key TEXT PRIMARY KEY, duration TEXT NOT NULL,
-            created_at TEXT NOT NULL, expires_at TEXT, redeemed_at TEXT,
-            redeemed_by TEXT, hwid TEXT, hwid_resets INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 0, created_by TEXT)""")
+        # Ensure schema is correct (safe to run every startup)
         cur.execute("""CREATE TABLE IF NOT EXISTS user_accounts (
-            id SERIAL PRIMARY KEY, license_key TEXT UNIQUE NOT NULL,
-            username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
-            email TEXT, created_at TEXT NOT NULL, last_login TEXT)""")
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            license_key TEXT,
+            email TEXT,
+            discord_id TEXT,
+            hwid TEXT,
+            hwid_resets INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL,
+            last_login TEXT)""")
         cur.execute("""CREATE TABLE IF NOT EXISTS login_sessions (
             session_id TEXT PRIMARY KEY, username TEXT NOT NULL,
-            license_key TEXT NOT NULL, created_at TEXT NOT NULL,
+            license_key TEXT, created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL, ip_address TEXT)""")
         cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
-            id SERIAL PRIMARY KEY, license_key TEXT NOT NULL,
+            id SERIAL PRIMARY KEY, username TEXT NOT NULL,
             config_name TEXT NOT NULL, config_data TEXT NOT NULL,
-            created_at TEXT NOT NULL, UNIQUE(license_key, config_name))""")
+            created_at TEXT NOT NULL, UNIQUE(username, config_name))""")
         cur.execute("""CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY, config TEXT NOT NULL)""")
         cur.execute("""CREATE TABLE IF NOT EXISTS clients (
@@ -101,7 +102,7 @@ def init_db():
             authenticated INTEGER DEFAULT 0)""")
         db.commit()
         db.close()
-        print("DB initialized. Using: PostgreSQL", flush=True)
+        print("DB initialized", flush=True)
     except Exception as e:
         print(f"DB init error: {e}", flush=True)
 
@@ -110,38 +111,31 @@ def migrate_db():
         db = get_db()
         cur = db.cursor()
         migrations = [
-            ("keys", "active", "INTEGER DEFAULT 0"),
-            ("keys", "hwid", "TEXT"),
-            ("keys", "hwid_resets", "INTEGER DEFAULT 0"),
-            ("keys", "expires_at", "TEXT"),
-            ("keys", "redeemed_at", "TEXT"),
-            ("keys", "redeemed_by", "TEXT"),
-            ("keys", "created_by", "TEXT"),
-            ("keys", "duration", "TEXT DEFAULT 'lifetime'"),
-            ("keys", "created_at", "TEXT DEFAULT ''"),
+            ("user_accounts", "discord_id", "TEXT"),
+            ("user_accounts", "hwid", "TEXT"),
+            ("user_accounts", "hwid_resets", "INTEGER DEFAULT 0"),
+            ("user_accounts", "active", "INTEGER DEFAULT 1"),
             ("user_accounts", "email", "TEXT"),
             ("user_accounts", "last_login", "TEXT"),
-            ("user_accounts", "created_at", "TEXT DEFAULT ''"),
-            ("login_sessions", "ip_address", "TEXT"),
-            ("login_sessions", "expires_at", "TEXT"),
-            ("login_sessions", "created_at", "TEXT DEFAULT ''"),
-            ("clients", "authenticated", "INTEGER DEFAULT 0"),
-            ("clients", "license_key", "TEXT"),
-            ("clients", "username", "TEXT"),
-            ("clients", "last_ping", "TEXT"),
-            ("clients", "session_token", "TEXT"),
-            ("clients", "created_at", "TEXT DEFAULT ''"),
-            ("saved_configs", "created_at", "TEXT DEFAULT ''"),
-            ("settings", "config", "TEXT DEFAULT '{}'"),
+            ("saved_configs", "username", "TEXT"),
         ]
         for table, col, definition in migrations:
             try:
                 cur.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {definition}')
             except Exception as e:
                 print(f"[MIGRATE] {table}.{col} skip: {e}", flush=True)
+        # Drop NOT NULL on license_key if still present
+        try:
+            cur.execute("ALTER TABLE user_accounts ALTER COLUMN license_key DROP NOT NULL")
+        except Exception as e:
+            pass
+        try:
+            cur.execute("ALTER TABLE login_sessions ALTER COLUMN license_key DROP NOT NULL")
+        except Exception as e:
+            pass
         db.commit()
         db.close()
-        print("[MIGRATE] Schema migration complete.", flush=True)
+        print("[MIGRATE] Done", flush=True)
     except Exception as e:
         print(f"[MIGRATE] Error: {e}", flush=True)
 
@@ -149,60 +143,18 @@ init_db()
 migrate_db()
 
 # ═══════════════════════════════════════════════════════════
-# DEFAULT CONFIG — served when a user has no config yet
+# DEFAULT CONFIG
 # ═══════════════════════════════════════════════════════════
 
 DEFAULT_CONFIG = {
-    "Enabled": True,
-    "Keybind": "Q",
-    "PredictTarget": True,
-    "Prediction": 0.10,
-    "ClosestPart": True,
-    "FixedPart": "Head",
+    "Enabled": True, "Keybind": "Q",
+    "PredictTarget": True, "Prediction": 0.10,
+    "ClosestPart": True, "FixedPart": "Head",
     "Smoothness": 0.35,
-    "MaxStudsCheck": True,
-    "MaxStuds": 500,
-    "UnlockOnDeath": True,
-    "SelfDeathCheck": True,
-    "CurveP1": {"x": 180, "y": 200},
-    "CurveP2": {"x": 420, "y": 80},
+    "MaxStudsCheck": True, "MaxStuds": 500,
+    "UnlockOnDeath": True, "SelfDeathCheck": True,
+    "CurveP1": {"x": 180, "y": 200}, "CurveP2": {"x": 420, "y": 80},
 }
-
-# ═══════════════════════════════════════════════════════════
-# BOOTSTRAP
-# ═══════════════════════════════════════════════════════════
-
-def bootstrap_test_account():
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("SELECT username FROM user_accounts WHERE username=%s", ("light",))
-        if cur.fetchone():
-            print("[BOOTSTRAP] Account 'light' already exists — skipping.", flush=True)
-            db.close()
-            return
-        license_key = "LIGHT-LIFE-TIME-0001"
-        now = datetime.now().isoformat()
-        cur.execute("SELECT key FROM keys WHERE key=%s", (license_key,))
-        if not cur.fetchone():
-            cur.execute("""INSERT INTO keys
-                (key, duration, created_at, expires_at, active, redeemed_by, hwid_resets)
-                VALUES (%s, %s, %s, %s, 1, %s, 0)""",
-                (license_key, "lifetime", now, None, "bootstrap"))
-        pw_hash, _ = hash_password("light")
-        cur.execute("""INSERT INTO user_accounts
-            (license_key, username, password_hash, email, created_at)
-            VALUES (%s, %s, %s, %s, %s)""",
-            (license_key, "light", pw_hash, "light@local", now))
-        cur.execute("UPDATE keys SET active=1, redeemed_at=%s, redeemed_by=%s WHERE key=%s",
-                    (now, "light", license_key))
-        db.commit()
-        db.close()
-        print("[BOOTSTRAP] Test account created! user=light pass=light", flush=True)
-    except Exception as e:
-        print(f"[BOOTSTRAP] Error: {e}", flush=True)
-
-bootstrap_test_account()
 
 # ═══════════════════════════════════════════════════════════
 # MODELS
@@ -212,10 +164,6 @@ class UserLogin(BaseModel):
     username: str
     password: str
     client_id: Optional[str] = None
-
-class SavedConfigRequest(BaseModel):
-    config_name: str
-    config_data: dict
 
 class ClientRegister(BaseModel):
     client_id: str
@@ -227,11 +175,11 @@ class ClientAuthStatus(BaseModel):
 
 class ClientAuthenticate(BaseModel):
     client_id: str
-    license_key: str
+    license_key: Optional[str] = None
     username: str
 
 # ═══════════════════════════════════════════════════════════
-# API — USER
+# API — USER LOGIN (username/password, no license)
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/api/user-login")
@@ -239,31 +187,26 @@ async def user_login(request: Request, data: UserLogin):
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("""SELECT ua.username, ua.password_hash, ua.license_key,
-                       k.active, k.expires_at, k.hwid_resets, k.hwid
-                       FROM user_accounts ua JOIN keys k ON ua.license_key = k.key
-                       WHERE ua.username=%s""", (data.username,))
+        cur.execute("""
+            SELECT username, password_hash, hwid, hwid_resets, active
+            FROM user_accounts WHERE username = %s
+        """, (data.username,))
         result = cur.fetchone()
         if not result:
             db.close()
             return {"valid": False, "error": "Invalid username or password"}
 
-        username, password_hash, license_key, active, expires_at, hwid_resets, bound_hwid = result
+        username, password_hash, bound_hwid, hwid_resets, active = result
 
         if active == 0:
             db.close()
-            return {"valid": False, "error": "License inactive"}
-        if expires_at:
-            try:
-                if datetime.now() > datetime.fromisoformat(expires_at):
-                    db.close()
-                    return {"valid": False, "error": "License expired"}
-            except:
-                pass
+            return {"valid": False, "error": "Account inactive"}
+
         if not verify_password(password_hash, data.password):
             db.close()
             return {"valid": False, "error": "Invalid username or password"}
 
+        # HWID binding on first login
         if data.client_id:
             cur.execute("SELECT hwid FROM clients WHERE client_id=%s", (data.client_id,))
             crow = cur.fetchone()
@@ -273,11 +216,12 @@ async def user_login(request: Request, data: UserLogin):
             client_hwid = crow[0]
 
             if bound_hwid is None:
-                cur.execute("UPDATE keys SET hwid=%s WHERE key=%s", (client_hwid, license_key))
-                print(f"[HWID] Bound {client_hwid[:12]}... to {license_key}", flush=True)
+                cur.execute("UPDATE user_accounts SET hwid=%s WHERE username=%s",
+                            (client_hwid, username))
+                print(f"[HWID] Bound {client_hwid[:12]}... to {username}", flush=True)
             elif bound_hwid != client_hwid:
                 db.close()
-                return {"valid": False, "error": "HWID mismatch — license bound to another PC"}
+                return {"valid": False, "error": "HWID mismatch — account bound to another PC"}
 
         cur.execute("UPDATE user_accounts SET last_login=%s WHERE username=%s",
                     (datetime.now().isoformat(), username))
@@ -285,21 +229,20 @@ async def user_login(request: Request, data: UserLogin):
         session_id = secrets.token_hex(16)
         now = datetime.now().isoformat()
         exp = (datetime.now() + timedelta(days=30)).isoformat()
-        cur.execute("""INSERT INTO login_sessions
-                       (session_id, username, license_key, created_at, expires_at, ip_address)
-                       VALUES (%s, %s, %s, %s, %s, %s)""",
-                    (session_id, username, license_key, now, exp, request.client.host))
+        cur.execute("""
+            INSERT INTO login_sessions
+                (session_id, username, license_key, created_at, expires_at, ip_address)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (session_id, username, "", now, exp, request.client.host))
         db.commit()
         db.close()
 
-        subscription = "Lifetime" if expires_at is None else "Temporary"
         resp = JSONResponse({
             "valid": True, "message": "Login successful",
-            "username": username, "license_key": license_key,
-            "subscription": subscription, "hwid_resets": hwid_resets or 0
+            "username": username, "license_key": "",
+            "subscription": "Lifetime", "hwid_resets": hwid_resets or 0
         })
         resp.set_cookie("session_id", session_id, httponly=True, max_age=2592000, samesite="lax")
-        resp.set_cookie("license_key", license_key, httponly=True, max_age=2592000, samesite="lax")
         resp.set_cookie("username", username, httponly=True, max_age=2592000, samesite="lax")
         return resp
     except Exception as e:
@@ -309,19 +252,19 @@ async def user_login(request: Request, data: UserLogin):
 
 @app.get("/api/me")
 async def get_current_user(request: Request):
-    license_key = request.cookies.get("license_key")
+    username = request.cookies.get("username")
     session_id = request.cookies.get("session_id")
-    if not license_key or not session_id:
+    if not username or not session_id:
         return {"authenticated": False}
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("SELECT username, license_key FROM login_sessions WHERE session_id=%s AND expires_at > %s",
+        cur.execute("SELECT username FROM login_sessions WHERE session_id=%s AND expires_at > %s",
                     (session_id, datetime.now().isoformat()))
         result = cur.fetchone()
         db.close()
         if result:
-            return {"authenticated": True, "username": result[0], "license_key": result[1]}
+            return {"authenticated": True, "username": result[0], "license_key": ""}
         return {"authenticated": False}
     except:
         db.close()
@@ -339,24 +282,23 @@ async def logout():
 
 @app.get("/api/dashboard")
 async def get_dashboard(request: Request):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
+    username = request.cookies.get("username")
+    if not username:
         raise HTTPException(status_code=401, detail="Not authenticated")
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("SELECT key, duration, expires_at, active, hwid, redeemed_by, hwid_resets FROM keys WHERE key=%s",
-                    (license_key,))
+        cur.execute("SELECT username, hwid, hwid_resets, created_at, active FROM user_accounts WHERE username=%s",
+                    (username,))
         result = cur.fetchone()
         db.close()
         if not result:
             raise HTTPException(status_code=404, detail="Not found")
-        key, duration, expires_at, active, hwid, discord_id, hwid_resets = result
-        subscription = "Lifetime" if expires_at is None else "Temporary"
+        u, hwid, resets, created, active = result
         return {
-            "license_key": key, "duration": duration, "expires_at": expires_at,
-            "active": active, "hwid": hwid, "discord_id": discord_id,
-            "hwid_resets": hwid_resets or 0, "subscription": subscription
+            "username": u, "hwid": hwid, "hwid_resets": resets or 0,
+            "created_at": created, "subscription": "Lifetime",
+            "license_key": "", "active": active,
         }
     except HTTPException:
         raise
@@ -364,24 +306,23 @@ async def get_dashboard(request: Request):
         db.close()
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # ═══════════════════════════════════════════════════════════
-# API — CONFIG
+# API — CONFIG (keyed by username, not license)
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/api/config")
 async def get_config(request: Request):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
+    username = request.cookies.get("username")
+    if not username:
         raise HTTPException(status_code=401, detail="Not authenticated")
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("SELECT config FROM settings WHERE key=%s", (license_key,))
+        cur.execute("SELECT config FROM settings WHERE key=%s", (username,))
         result = cur.fetchone()
         if not result:
             cur.execute("INSERT INTO settings (key, config) VALUES (%s, %s)",
-                        (license_key, json.dumps(DEFAULT_CONFIG)))
+                        (username, json.dumps(DEFAULT_CONFIG)))
             db.commit()
             db.close()
             return DEFAULT_CONFIG
@@ -397,21 +338,20 @@ async def get_config(request: Request):
 
 @app.post("/api/config")
 async def set_config(request: Request, data: dict):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
+    username = request.cookies.get("username")
+    if not username:
         raise HTTPException(status_code=401, detail="Not authenticated")
     db = get_db()
     cur = db.cursor()
     try:
         cur.execute("INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config",
-                    (license_key, json.dumps(data)))
+                    (username, json.dumps(data)))
         db.commit()
         db.close()
         return {"status": "ok"}
     except Exception as e:
         db.close()
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ═══════════════════════════════════════════════════════════
 # API — CLIENT
@@ -448,19 +388,19 @@ async def client_auth_status(data: ClientAuthStatus):
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("""SELECT authenticated, license_key, username, hwid
+        cur.execute("""SELECT authenticated, username, hwid
                        FROM clients WHERE client_id=%s AND session_token=%s""",
                     (data.client_id, data.session_token))
         result = cur.fetchone()
         if not result:
             db.close()
             return {"authenticated": False, "error": "Invalid credentials"}
-        authenticated, license_key, username, hwid = result
+        authenticated, username, hwid = result
         cur.execute("UPDATE clients SET last_ping=%s WHERE client_id=%s",
                     (datetime.now().isoformat(), data.client_id))
         db.commit()
         db.close()
-        return {"authenticated": bool(authenticated), "license_key": license_key,
+        return {"authenticated": bool(authenticated), "license_key": "",
                 "username": username, "hwid": hwid}
     except Exception as e:
         db.close()
@@ -473,9 +413,9 @@ async def client_authenticate(data: ClientAuthenticate):
     cur = db.cursor()
     try:
         cur.execute("""UPDATE clients
-                       SET authenticated=1, license_key=%s, username=%s, last_ping=%s
+                       SET authenticated=1, username=%s, last_ping=%s
                        WHERE client_id=%s""",
-                    (data.license_key, data.username, datetime.now().isoformat(), data.client_id))
+                    (data.username, datetime.now().isoformat(), data.client_id))
         db.commit()
         db.close()
         return {"success": True}
@@ -493,14 +433,14 @@ async def get_client_config(data: dict):
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("SELECT license_key FROM clients WHERE client_id=%s AND session_token=%s AND authenticated=1",
+        cur.execute("SELECT username FROM clients WHERE client_id=%s AND session_token=%s AND authenticated=1",
                     (client_id, session_token))
         result = cur.fetchone()
         if not result:
             db.close()
             raise HTTPException(status_code=401, detail="Not authenticated")
-        license_key = result[0]
-        cur.execute("SELECT config FROM settings WHERE key=%s", (license_key,))
+        username = result[0]
+        cur.execute("SELECT config FROM settings WHERE key=%s", (username,))
         cfg = cur.fetchone()
         db.close()
         if not cfg:
@@ -518,29 +458,26 @@ async def get_client_config(data: dict):
 
 @app.get("/api/client/status-by-user/{username}")
 async def client_status_by_user(request: Request, username: str):
-    license_key = request.cookies.get("license_key")
-    if not license_key:
+    if not request.cookies.get("username"):
         raise HTTPException(status_code=401, detail="Not authenticated")
     db = get_db()
     cur = db.cursor()
     try:
         cur.execute("""SELECT last_ping FROM clients
-                       WHERE license_key=%s AND authenticated=1
-                       ORDER BY last_ping DESC LIMIT 1""", (license_key,))
+                       WHERE username=%s AND authenticated=1
+                       ORDER BY last_ping DESC LIMIT 1""", (username,))
         row = cur.fetchone()
         db.close()
         if not row or not row[0]:
             return {"connected": False}
         try:
             last = datetime.fromisoformat(row[0])
-            connected = (datetime.now() - last).total_seconds() < 15
+            return {"connected": (datetime.now() - last).total_seconds() < 15}
         except:
-            connected = False
-        return {"connected": connected}
+            return {"connected": False}
     except Exception as e:
         db.close()
         return {"connected": False, "error": str(e)}
-
 
 # ═══════════════════════════════════════════════════════════
 # KEEPALIVE
@@ -549,7 +486,6 @@ async def client_status_by_user(request: Request, username: str):
 @app.get("/api/keepalive")
 def keepalive():
     return {"status": "alive", "timestamp": datetime.now().isoformat()}
-
 
 # ═══════════════════════════════════════════════════════════
 # ROUTES
@@ -565,15 +501,15 @@ async def serve_menu():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
-    license_key = request.cookies.get("license_key")
+    username = request.cookies.get("username")
     session_id = request.cookies.get("session_id")
-    if not license_key or not session_id:
+    if not username or not session_id:
         return RedirectResponse(url="/")
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("SELECT username FROM login_sessions WHERE session_id=%s AND license_key=%s AND expires_at > %s",
-                    (session_id, license_key, datetime.now().isoformat()))
+        cur.execute("SELECT username FROM login_sessions WHERE session_id=%s AND expires_at > %s",
+                    (session_id, datetime.now().isoformat()))
         result = cur.fetchone()
         db.close()
         if not result:
