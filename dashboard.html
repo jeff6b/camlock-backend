@@ -5,12 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Lumina</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg: #09090b;
   --text: #ededf0;
   --muted: #777780;
+  --dim: #4a4a52;
   --accent: #ffffff;
   --border: #252529;
 }
@@ -21,7 +22,7 @@ html, body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: Inter, sans-serif;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   -webkit-font-smoothing: antialiased;
 }
@@ -78,24 +79,15 @@ button:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
   right: 12px;
   top: 50%;
   transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  gap: 6px;
   font-size: 9px;
   color: #6a6a75;
   -webkit-app-region: no-drag;
   app-region: no-drag;
+  letter-spacing: 0.03em;
 }
-.status-badge .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #6a6a75;
-  transition: background 0.2s;
-}
-.status-badge.saving .dot { background: #f0b060; box-shadow: 0 0 6px rgba(240,176,96,0.5); }
-.status-badge.saved .dot { background: #8effb0; box-shadow: 0 0 6px rgba(142,255,176,0.5); }
-.status-badge.error .dot { background: #ff8080; box-shadow: 0 0 6px rgba(255,128,128,0.5); }
+.status-badge.saving { color: #f0b060; }
+.status-badge.saved { color: #8effb0; }
+.status-badge.error { color: #ff8080; }
 
 main {
   width: 100%;
@@ -108,147 +100,46 @@ main {
 .page { display: none; }
 .page.active { display: block; }
 
-.stats {
+/* Overview — plain list, no cards */
+.kv {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  margin-bottom: 10px;
+  grid-template-columns: 100px 1fr;
+  gap: 6px 12px;
+  padding: 2px 0;
 }
-.stat {
-  padding: 9px 10px;
-  border: 1px solid #222226;
-  border-radius: 7px;
+.kv dt {
+  color: var(--muted);
+  font-size: 10px;
 }
-.stat-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: #85858e;
+.kv dd {
+  color: var(--text);
+  font-size: 10px;
+  word-break: break-all;
+}
+.kv dd.accent { color: var(--accent); }
+.kv dd.ok { color: #8effb0; }
+.kv dd.bad { color: #ff8080; }
+
+.section {
+  padding: 10px 0;
+  border-bottom: 1px solid #1a1a1d;
+}
+.section:last-child { border-bottom: 0; }
+.section h2 {
+  color: var(--muted);
   font-size: 9px;
-}
-.stat-top svg {
-  width: 11px;
-  height: 11px;
-  fill: none;
-  stroke: #777780;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.stat-value {
-  margin-top: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -.3px;
-}
-.stat-value.accent { color: var(--accent); }
-.stat-foot {
-  margin-top: 3px;
-  color: #62626b;
-  font-size: 8px;
-}
-
-.overview-tools {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-.overview-tool {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-align: left;
-  min-width: 0;
-  padding: 9px 10px;
-  border: 1px solid #222226;
-  border-radius: 7px;
-  background: transparent;
-  cursor: pointer;
-  transition: border-color .15s ease;
-}
-.overview-tool:hover { border-color: #41414a; }
-.tool-icon {
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  color: #c8c8d0;
-  border: 1px solid #292930;
-  border-radius: 6px;
-}
-.tool-icon svg, .tool-arrow {
-  width: 11px;
-  height: 11px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.overview-tool span:nth-child(2) {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-.overview-tool strong { font-size: 10px; font-weight: 500; }
-.overview-tool small { color: #777780; font-size: 8px; }
-.tool-arrow { color: #66666f; flex-shrink: 0; }
-
-.content-panel {
-  padding: 10px 12px;
-  border: 1px solid #242428;
-  border-radius: 8px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
   margin-bottom: 8px;
 }
-.content-panel h2 {
-  margin-bottom: 2px;
-  font-size: 11px;
-  font-weight: 600;
-}
-.info-row,
-.setting-row {
+
+.link-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid #202024;
+  gap: 6px;
+  margin-top: 4px;
 }
-.info-row:first-of-type,
-.setting-row:first-of-type { margin-top: 2px; }
-.info-row:last-child,
-.setting-row:last-child { border-bottom: 0; padding-bottom: 0; }
-.info-label { color: #85858e; font-size: 10px; }
-.info-value {
-  max-width: 60%;
-  color: #dedee3;
-  font-size: 10px;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
-.setting-title { font-size: 10px; font-weight: 500; }
-.setting-description { margin-top: 2px; color: #777780; font-size: 8px; }
-
-.toggle {
-  width: 13px;
-  height: 13px;
-  border: 1.5px solid #3a3a42;
-  border-radius: 3px;
-  background: transparent;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background .12s ease, border-color .12s ease;
-}
-.toggle.on {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.toggle:hover { border-color: #5a5a64; }
-
-.text-button {
+.link-btn {
   padding: 5px 9px;
   border: 1px solid #303036;
   border-radius: 5px;
@@ -256,28 +147,32 @@ main {
   color: #c7c7ce;
   font-size: 9px;
   cursor: pointer;
+  font-family: inherit;
 }
-.text-button:hover {
+.link-btn:hover {
   border-color: #55555e;
   color: white;
 }
 
+/* Config */
 .config-layout {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
 }
-.config-layout > .curve-panel { margin-bottom: 0; }
-.config-options {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  align-items: start;
+.content-panel {
+  padding: 10px 12px;
+  border: 1px solid #1a1a1d;
+  border-radius: 6px;
+  margin-bottom: 8px;
 }
-.config-options .content-panel {
-  margin-bottom: 0;
-  height: 100%;
-  padding: 9px 10px;
+.content-panel h2 {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
 }
 
 .curve-heading {
@@ -287,7 +182,6 @@ main {
   gap: 8px;
   margin-bottom: 6px;
 }
-.curve-heading h2 { margin-bottom: 0; font-size: 11px; }
 .curve-wrap { width: 100%; overflow: hidden; }
 #bezierSvg {
   display: block;
@@ -298,7 +192,7 @@ main {
   touch-action: none;
   user-select: none;
 }
-.axis-label { fill: #777780; font-size: 8px; }
+.axis-label { fill: #6a6a75; font-size: 8px; font-family: 'JetBrains Mono', monospace; }
 .handle-line {
   stroke: #3a3a42;
   stroke-width: 1.2;
@@ -330,20 +224,61 @@ main {
   gap: 8px;
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid #202024;
-  color: #777780;
+  border-top: 1px solid #1a1a1d;
+  color: var(--muted);
   font-size: 8px;
 }
 .curve-values span { display: flex; flex-direction: column; gap: 2px; }
 .curve-values b { color: #d6d6dd; font-weight: 500; }
+
+.config-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: start;
+}
+.config-options .content-panel {
+  margin-bottom: 0;
+  height: 100%;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #1a1a1d;
+}
+.setting-row:first-child { padding-top: 0; }
+.setting-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.setting-title { font-size: 10px; color: #b8b8c0; }
+
+.toggle {
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid #3a3a42;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .12s ease, border-color .12s ease;
+}
+.toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toggle:hover { border-color: #5a5a64; }
 
 .field-label {
   display: block;
   margin: 8px 0 4px;
   color: #9a9aa3;
   font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
-.field-label:first-child { margin-top: 4px; }
+.field-label:first-child { margin-top: 0; }
 
 .dark-input {
   width: 100%;
@@ -365,7 +300,6 @@ main {
   cursor: pointer;
 }
 
-/* ── Fill slider (fixed: single visible number via clip-path) ── */
 .fill-slider {
   position: relative;
   width: 100%;
@@ -394,7 +328,6 @@ main {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
-  letter-spacing: -.2px;
   white-space: nowrap;
   color: #dedee4;
 }
@@ -407,7 +340,6 @@ main {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
-  letter-spacing: -.2px;
   white-space: nowrap;
   color: #09090b;
   clip-path: inset(0 calc(100% - var(--fill-pct, 0%)) 0 0);
@@ -431,6 +363,7 @@ main {
   color: #dedee4;
   font-size: 10px;
   cursor: pointer;
+  font-family: inherit;
 }
 .custom-select-trigger:hover { border-color: #3a3a44; }
 .custom-select.open .custom-select-trigger { border-color: #55555e; }
@@ -504,7 +437,7 @@ main {
   gap: 5px;
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #202024;
+  border-top: 1px solid #1a1a1d;
 }
 
 #toast {
@@ -550,90 +483,49 @@ main::-webkit-scrollbar-thumb {
       <svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
     </button>
   </nav>
-  <div class="status-badge" id="saveStatus"><span class="dot"></span><span id="saveLabel">Ready</span></div>
+  <div class="status-badge" id="saveStatus"><span id="saveLabel">ready</span></div>
 </header>
 <main>
   <section class="page active" id="page-overview">
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-top">
-          Account status
-          <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z"/><path d="m9 12 2 2 4-4"/></svg>
-        </div>
-        <div class="stat-value accent" id="accountStatus">Checking</div>
-        <div class="stat-foot">Current account session</div>
-      </div>
-      <div class="stat">
-        <div class="stat-top">
-          Client
-          <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 22h8"/></svg>
-        </div>
-        <div class="stat-value" id="clientStatus">—</div>
-        <div class="stat-foot">Cheat connection</div>
-      </div>
-      <div class="stat">
-        <div class="stat-top">
-          Signed in as
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
-        </div>
-        <div class="stat-value" id="statUsername">—</div>
-        <div class="stat-foot">Your account</div>
-      </div>
-    </div>
-    <div class="overview-tools">
-      <button class="overview-tool" data-go="account">
-        <span class="tool-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
-        <span><strong>Account details</strong><small>View your account and session</small></span>
-        <svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
-      </button>
-      <button class="overview-tool" data-go="configuration">
-        <span class="tool-icon"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span>
-        <span><strong>Configuration</strong><small>Adjust curve and targeting</small></span>
-        <svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
-      </button>
+    <div class="section">
+      <dl class="kv">
+        <dt>user</dt><dd id="kvUser" class="accent">—</dd>
+        <dt>client</dt><dd id="kvClient">offline</dd>
+        <dt>license</dt><dd id="kvLicense">—</dd>
+      </dl>
     </div>
   </section>
 
   <section class="page" id="page-account">
-    <div class="content-panel">
-      <h2>Account</h2>
-      <div class="info-row">
-        <span class="info-label">Username</span>
-        <span class="info-value" id="accountUsername">—</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Session status</span>
-        <span class="info-value" id="accountSession">—</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">License</span>
-        <span class="info-value" id="accountLicense">—</span>
-      </div>
-    </div>
-    <div class="content-panel">
-      <h2>Security</h2>
-      <div style="margin-top:10px">
-        <button class="text-button" id="logoutBtn">Sign out</button>
+    <div class="section">
+      <h2>account</h2>
+      <dl class="kv">
+        <dt>username</dt><dd id="kvAccountUser">—</dd>
+        <dt>session</dt><dd id="kvAccountSession">—</dd>
+        <dt>license</dt><dd id="kvAccountLicense">—</dd>
+      </dl>
+      <div class="link-row">
+        <button class="link-btn" id="logoutBtn">sign out</button>
       </div>
     </div>
   </section>
 
   <section class="page" id="page-configuration">
     <div class="config-layout">
-      <div class="content-panel curve-panel">
+      <div class="content-panel">
         <div class="curve-heading">
-          <h2>Bezier curve</h2>
-          <button class="text-button" id="resetCurveBtn">Reset</button>
+          <h2>curve</h2>
+          <button class="link-btn" id="resetCurveBtn">reset</button>
         </div>
         <div class="curve-wrap">
           <svg id="bezierSvg" viewBox="0 0 600 310" role="img" aria-label="Bezier curve editor">
             <defs>
               <pattern id="curveGrid" width="30" height="30" patternUnits="userSpaceOnUse">
-                <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#25252c" stroke-width="1"/>
+                <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#1a1a1d" stroke-width="1"/>
               </pattern>
             </defs>
             <rect x="34" y="18" width="548" height="260" fill="url(#curveGrid)" rx="8"/>
-            <path d="M34 278H582 M34 18V278" stroke="#45454e" stroke-width="1.2"/>
+            <path d="M34 278H582 M34 18V278" stroke="#2e2e36" stroke-width="1.2"/>
             <text x="34" y="299" class="axis-label">0</text>
             <text x="572" y="299" class="axis-label">1</text>
             <text x="15" y="28" class="axis-label">1</text>
@@ -648,67 +540,49 @@ main::-webkit-scrollbar-thumb {
           </svg>
         </div>
         <div class="curve-values">
-          <span>Point 1 <b id="point1Value">27%, 30%</b></span>
-          <span>Point 2 <b id="point2Value">71%, 76%</b></span>
+          <span>p1 <b id="point1Value">27%, 30%</b></span>
+          <span>p2 <b id="point2Value">71%, 76%</b></span>
         </div>
       </div>
 
       <div class="config-options">
         <div class="content-panel">
-          <h2>General</h2>
+          <h2>general</h2>
           <div class="setting-row">
-            <div>
-              <div class="setting-title">Enabled</div>
-              <div class="setting-description">System on / off</div>
-            </div>
+            <div class="setting-title">enabled</div>
             <button class="toggle on" id="cfgEnabled" role="switch" aria-checked="true" aria-label="Enabled"></button>
           </div>
           <div class="setting-row">
-            <div>
-              <div class="setting-title">Keybind</div>
-              <div class="setting-description">Click then press a key</div>
-            </div>
+            <div class="setting-title">keybind</div>
             <input class="dark-input keybind-input" id="cfgKeybind" type="text" value="Q" maxlength="8" readonly spellcheck="false">
           </div>
           <div class="setting-row">
-            <div>
-              <div class="setting-title">Unlock on death</div>
-              <div class="setting-description">Release when you die</div>
-            </div>
+            <div class="setting-title">unlock on death</div>
             <button class="toggle on" id="cfgUnlockOnDeath" role="switch" aria-checked="true" aria-label="Unlock on death"></button>
           </div>
           <div class="setting-row">
-            <div>
-              <div class="setting-title">Self death check</div>
-              <div class="setting-description">Check local death state</div>
-            </div>
+            <div class="setting-title">self death check</div>
             <button class="toggle on" id="cfgSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button>
           </div>
         </div>
 
         <div class="content-panel">
-          <h2>Targeting</h2>
+          <h2>targeting</h2>
           <div class="setting-row">
-            <div>
-              <div class="setting-title">Predict target</div>
-              <div class="setting-description">Lead moving targets</div>
-            </div>
+            <div class="setting-title">predict target</div>
             <button class="toggle on" id="cfgPredictTarget" role="switch" aria-checked="true" aria-label="Predict target"></button>
           </div>
-          <label class="field-label">Prediction</label>
+          <label class="field-label">prediction</label>
           <div class="fill-slider" id="slPrediction" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.10">
             <div class="fill-slider-fill"></div>
             <div class="fill-slider-value">0.10</div>
             <div class="fill-slider-value-inverse">0.10</div>
           </div>
           <div class="setting-row">
-            <div>
-              <div class="setting-title">Closest part</div>
-              <div class="setting-description">Aim nearest body part</div>
-            </div>
+            <div class="setting-title">closest part</div>
             <button class="toggle on" id="cfgClosestPart" role="switch" aria-checked="true" aria-label="Closest part"></button>
           </div>
-          <label class="field-label">Fixed part</label>
+          <label class="field-label">fixed part</label>
           <div class="custom-select" id="cfgFixedPartSelect" data-value="Head">
             <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
               <span class="value">Head</span>
@@ -725,29 +599,26 @@ main::-webkit-scrollbar-thumb {
         </div>
 
         <div class="content-panel">
-          <h2>Smoothing & range</h2>
-          <label class="field-label">Smoothness</label>
+          <h2>smoothing</h2>
+          <label class="field-label">smoothness</label>
           <div class="fill-slider" id="slSmoothness" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.35">
             <div class="fill-slider-fill"></div>
             <div class="fill-slider-value">0.35</div>
             <div class="fill-slider-value-inverse">0.35</div>
           </div>
           <div class="setting-row">
-            <div>
-              <div class="setting-title">Max studs check</div>
-              <div class="setting-description">Limit targeting distance</div>
-            </div>
+            <div class="setting-title">max studs check</div>
             <button class="toggle on" id="cfgMaxStudsCheck" role="switch" aria-checked="true" aria-label="Max studs check"></button>
           </div>
-          <label class="field-label">Max studs</label>
+          <label class="field-label">max studs</label>
           <div class="fill-slider" id="slMaxStuds" data-min="0" data-max="2000" data-step="10" data-decimals="0" data-value="500">
             <div class="fill-slider-fill"></div>
             <div class="fill-slider-value">500</div>
             <div class="fill-slider-value-inverse">500</div>
           </div>
           <div class="config-actions">
-            <button class="text-button" id="cfgResetBtn">Reset</button>
-            <button class="text-button" id="cfgCopyBtn">Copy config</button>
+            <button class="link-btn" id="cfgResetBtn">reset</button>
+            <button class="link-btn" id="cfgCopyBtn">copy</button>
           </div>
         </div>
       </div>
@@ -798,28 +669,27 @@ async function refreshSession() {
     if (!response.ok) throw new Error("fail");
     const data = await response.json();
     if (!data.authenticated) { window.location.href = "/"; return; }
-    const username = data.username || "User";
+    const username = data.username || "user";
     currentUser = username;
-    document.getElementById("statUsername").textContent = username;
-    document.getElementById("accountUsername").textContent = username;
-    document.getElementById("accountStatus").textContent = "Active";
-    document.getElementById("accountSession").textContent = "Authenticated";
-    document.getElementById("accountLicense").textContent = data.license_key || "—";
+    document.getElementById("kvUser").textContent = username;
+    document.getElementById("kvAccountUser").textContent = username;
+    document.getElementById("kvAccountSession").textContent = "active";
+    document.getElementById("kvAccountLicense").textContent = data.license_key || "—";
+    document.getElementById("kvLicense").textContent = data.license_key || "—";
 
     try {
       const dRes = await fetch("/api/dashboard", { credentials: "include" });
       if (dRes.ok) {
         const d = await dRes.json();
-        document.getElementById("accountLicense").textContent = d.license_key || "—";
+        document.getElementById("kvAccountLicense").textContent = d.license_key || "—";
+        document.getElementById("kvLicense").textContent = d.license_key || "—";
       }
     } catch (e) {}
 
     refreshClientStatus();
     setInterval(refreshClientStatus, 3000);
   } catch {
-    document.getElementById("accountStatus").textContent = "Unknown";
-    document.getElementById("accountSession").textContent = "Unable to verify";
-    showToast("Couldn't verify the session.");
+    document.getElementById("kvAccountSession").textContent = "unable to verify";
   }
 }
 
@@ -829,13 +699,13 @@ async function refreshClientStatus() {
     const r = await fetch(`/api/client/status-by-user/${currentUser}`, { credentials: "include" });
     if (!r.ok) return;
     const d = await r.json();
-    const el = document.getElementById("clientStatus");
+    const el = document.getElementById("kvClient");
     if (d.connected) {
-      el.textContent = "Connected";
-      el.style.color = "#8effb0";
+      el.textContent = "connected";
+      el.className = "ok";
     } else {
-      el.textContent = "Offline";
-      el.style.color = "";
+      el.textContent = "offline";
+      el.className = "";
     }
   } catch (e) {}
 }
@@ -845,7 +715,7 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
     const r = await fetch("/api/logout", { method: "POST", credentials: "include" });
     if (r.ok) window.location.href = "/";
   } catch {
-    showToast("Couldn't contact the server to sign out.");
+    showToast("couldn't sign out");
   }
 });
 
@@ -931,9 +801,7 @@ function initFillSlider(el) {
     const text = fmt(v);
     label.textContent = text;
     labelInv.textContent = text;
-    if (!silent) {
-      queueSave();
-    }
+    if (!silent) queueSave();
   }
   function fromEvent(e) {
     const rect = el.getBoundingClientRect();
@@ -1051,7 +919,7 @@ const defaults = {
 
 function queueSave() {
   isDirty = true;
-  setSaveStatus("saving", "Saving...");
+  setSaveStatus("saving", "saving");
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveConfig, 500);
 }
@@ -1067,15 +935,15 @@ async function saveConfig() {
     });
     if (r.ok) {
       isDirty = false;
-      setSaveStatus("saved", "Saved");
+      setSaveStatus("saved", "saved");
       setTimeout(() => {
-        if (!isDirty) setSaveStatus("", "Ready");
+        if (!isDirty) setSaveStatus("", "ready");
       }, 1500);
     } else {
-      setSaveStatus("error", "Save failed");
+      setSaveStatus("error", "failed");
     }
   } catch (e) {
-    setSaveStatus("error", "Error");
+    setSaveStatus("error", "error");
   }
 }
 
@@ -1162,23 +1030,23 @@ async function loadConfig() {
     if (cfg && Object.keys(cfg).length > 0) {
       applyConfigToUI(cfg);
     }
-    setSaveStatus("", "Ready");
+    setSaveStatus("", "ready");
   } catch (e) {
-    setSaveStatus("error", "Load failed");
+    setSaveStatus("error", "load fail");
   }
 }
 
 document.getElementById("cfgResetBtn").addEventListener("click", () => {
   applyConfigToUI(defaults);
   queueSave();
-  showToast("Config reset to defaults.");
+  showToast("reset");
 });
 document.getElementById("cfgCopyBtn").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(JSON.stringify(readConfigFromUI(), null, 2));
-    showToast("Config copied.");
+    showToast("copied");
   } catch {
-    showToast("Couldn't copy.");
+    showToast("copy failed");
   }
 });
 
