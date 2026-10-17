@@ -5,21 +5,101 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Login</title>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
-  body {
-    min-height: 100vh;
-    background: linear-gradient(160deg, rgba(6,10,14,0.75), rgba(6,10,14,0.55)),
-      url('https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=2000&q=80');
-    background-size: cover; background-position: center; background-attachment: fixed;
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
   }
 
-  #login {
+  html, body {
+    width: 100%;
+    height: 100%;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  body {
     min-height: 100vh;
+    overflow: hidden;
+    background:
+      linear-gradient(160deg, rgba(6,10,14,0.75), rgba(6,10,14,0.55)),
+      url('https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=2000&q=80');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+  }
+
+  /* App top bar */
+
+  .topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 8px;
+    background: rgba(10, 10, 12, 0.96);
+    border-bottom: 1px solid #29292d;
+    z-index: 1000;
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+
+  .window-controls {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    gap: 2px;
+    -webkit-app-region: no-drag;
+  }
+
+  .window-btn {
+    width: 36px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: #92929a;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .window-btn:hover {
+    background: #252529;
+    color: #f2f2f3;
+  }
+
+  .window-btn.close:hover {
+    background: #c42b35;
+    color: #ffffff;
+  }
+
+  .window-btn svg {
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* Full-screen login layout */
+
+  #login {
+    width: 100%;
+    height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -29,13 +109,20 @@
   }
 
   @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(14px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .panel-wrap {
     width: 100vw;
-    height: 100vh;
+    height: calc(100vh - 38px);
+    margin-top: 38px;
     max-width: none;
     border-radius: 0;
     box-shadow: none;
@@ -47,7 +134,9 @@
     display: flex;
     border-radius: 0;
     overflow: hidden;
-    background: radial-gradient(120% 140% at 100% 0%, rgba(142,203,255,0.14), transparent 60%), #0a0a0c;
+    background:
+      radial-gradient(120% 140% at 100% 0%, rgba(142,203,255,0.14), transparent 60%),
+      #0a0a0c;
   }
 
   .panel-left {
@@ -67,7 +156,9 @@
     margin-bottom: 3px;
   }
 
-  .form-heading .highlight { color: #8ecbff; }
+  .form-heading .highlight {
+    color: #8ecbff;
+  }
 
   .form-sub {
     color: rgba(230,230,232,0.5);
@@ -75,7 +166,11 @@
     margin-bottom: 18px;
   }
 
-  .field-group { width: 100%; margin-bottom: 11px; }
+  .field-group {
+    width: 100%;
+    max-width: 460px;
+    margin-bottom: 11px;
+  }
 
   .field-group label {
     display: block;
@@ -122,6 +217,7 @@
   .login-btn {
     position: relative;
     width: 100%;
+    max-width: 460px;
     margin-top: 8px;
     padding: 9px 0;
     border: none;
@@ -136,7 +232,10 @@
     transition: transform 0.15s ease, opacity 0.15s ease;
   }
 
-  .login-btn:hover { transform: translateY(-1px); opacity: 0.92; }
+  .login-btn:hover {
+    transform: translateY(-1px);
+    opacity: 0.92;
+  }
 
   .login-btn:disabled {
     opacity: 0.5;
@@ -151,7 +250,10 @@
     min-height: 14px;
     text-align: left;
     width: 100%;
+    max-width: 460px;
   }
+
+  /* Right panel */
 
   .panel-right {
     flex: 1;
@@ -190,6 +292,7 @@
     flex-direction: column;
     gap: 11px;
     width: 100%;
+    max-width: 460px;
   }
 
   .stat-box {
@@ -219,18 +322,73 @@
   }
 
   @media (max-width: 420px) {
-    .panel { flex-direction: column; }
-    .panel-right { padding: 26px 20px; }
-    .panel-left { padding-top: 30px; }
+    body {
+      overflow: auto;
+    }
+
+    #login {
+      height: auto;
+      min-height: 100vh;
+    }
+
+    .panel-wrap {
+      height: auto;
+      min-height: calc(100vh - 38px);
+    }
+
+    .panel {
+      min-height: calc(100vh - 38px);
+      flex-direction: column;
+    }
+
+    .panel-left {
+      padding: 30px 20px;
+    }
+
+    .panel-right {
+      padding: 26px 20px;
+    }
   }
 </style>
 </head>
+
 <body>
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="window-controls">
+
+      <button class="window-btn" id="minimizeBtn" aria-label="Minimize">
+        <svg viewBox="0 0 12 12">
+          <path d="M2 6h8"/>
+        </svg>
+      </button>
+
+      <button class="window-btn" id="maximizeBtn" aria-label="Maximize">
+        <svg viewBox="0 0 12 12">
+          <rect x="2.5" y="2.5" width="7" height="7"/>
+        </svg>
+      </button>
+
+      <button class="window-btn close" id="closeBtn" aria-label="Close">
+        <svg viewBox="0 0 12 12">
+          <path d="M3 3l6 6M9 3L3 9"/>
+        </svg>
+      </button>
+
+    </div>
+  </div>
+
+  <!-- Login -->
   <div id="login">
     <div class="panel-wrap">
       <div class="panel">
+
         <div class="panel-left">
-          <div class="form-heading">Welcome, <span class="highlight">User</span></div>
+          <div class="form-heading">
+            Welcome, <span class="highlight">User</span>
+          </div>
+
           <div class="form-sub">Sign in to continue</div>
 
           <div class="field-group">
@@ -262,21 +420,25 @@
         <div class="panel-right">
           <h1>Closet Cheating<br>Made <span class="highlight">Easy</span></h1>
           <div class="form-sub">&nbsp;</div>
+
           <div class="stats">
             <div class="stat-box">
               <span class="stat-label">Online Now</span>
               <span class="stat-value">0</span>
             </div>
+
             <div class="stat-box">
               <span class="stat-label">Sessions</span>
               <span class="stat-value">0</span>
             </div>
+
             <div class="stat-box">
               <span class="stat-label">Uptime</span>
               <span class="stat-value">0%</span>
             </div>
           </div>
         </div>
+
       </div>
     </div>
   </div>
@@ -285,10 +447,12 @@
   function getClientId() {
     const p = new URLSearchParams(window.location.search);
     const fromUrl = p.get('client');
+
     if (fromUrl) {
       localStorage.setItem('client_id', fromUrl);
       return fromUrl;
     }
+
     return localStorage.getItem('client_id');
   }
 
@@ -361,13 +525,21 @@
     if (e.key === 'Enter') login();
   });
 
+  // Existing session check
   (async () => {
     try {
       const r = await fetch('/api/me', { credentials: 'include' });
       const data = await r.json();
-      if (data.authenticated) window.location.href = '/dashboard';
+
+      if (data.authenticated) {
+        window.location.href = '/dashboard';
+      }
     } catch (e) {}
   })();
+
+  // Window controls require a desktop framework API.
+  // Connect these handlers to Tauri or Electron if applicable.
 </script>
+
 </body>
 </html>
