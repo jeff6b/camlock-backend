@@ -365,6 +365,7 @@ main {
   cursor: pointer;
 }
 
+/* ── Fill slider (fixed: single visible number via clip-path) ── */
 .fill-slider {
   position: relative;
   width: 100%;
@@ -383,7 +384,6 @@ main {
   width: 0%;
   background: #ffffff;
   pointer-events: none;
-  overflow: hidden;
 }
 .fill-slider-value {
   position: absolute;
@@ -396,13 +396,21 @@ main {
   pointer-events: none;
   letter-spacing: -.2px;
   white-space: nowrap;
+  color: #dedee4;
 }
-.fill-slider-value.light { color: #dedee4; }
-.fill-slider-value.dark {
+.fill-slider-value-inverse {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  letter-spacing: -.2px;
+  white-space: nowrap;
   color: #09090b;
-  width: 0;
-  left: 0;
-  right: auto;
+  clip-path: inset(0 calc(100% - var(--fill-pct, 0%)) 0 0);
 }
 .fill-slider:hover { border-color: #3a3a44; }
 
@@ -689,8 +697,9 @@ main::-webkit-scrollbar-thumb {
           </div>
           <label class="field-label">Prediction</label>
           <div class="fill-slider" id="slPrediction" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.10">
-            <div class="fill-slider-value light">0.10</div>
-            <div class="fill-slider-fill"><div class="fill-slider-value dark">0.10</div></div>
+            <div class="fill-slider-fill"></div>
+            <div class="fill-slider-value">0.10</div>
+            <div class="fill-slider-value-inverse">0.10</div>
           </div>
           <div class="setting-row">
             <div>
@@ -719,8 +728,9 @@ main::-webkit-scrollbar-thumb {
           <h2>Smoothing & range</h2>
           <label class="field-label">Smoothness</label>
           <div class="fill-slider" id="slSmoothness" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.35">
-            <div class="fill-slider-value light">0.35</div>
-            <div class="fill-slider-fill"><div class="fill-slider-value dark">0.35</div></div>
+            <div class="fill-slider-fill"></div>
+            <div class="fill-slider-value">0.35</div>
+            <div class="fill-slider-value-inverse">0.35</div>
           </div>
           <div class="setting-row">
             <div>
@@ -731,8 +741,9 @@ main::-webkit-scrollbar-thumb {
           </div>
           <label class="field-label">Max studs</label>
           <div class="fill-slider" id="slMaxStuds" data-min="0" data-max="2000" data-step="10" data-decimals="0" data-value="500">
-            <div class="fill-slider-value light">500</div>
-            <div class="fill-slider-fill"><div class="fill-slider-value dark">500</div></div>
+            <div class="fill-slider-fill"></div>
+            <div class="fill-slider-value">500</div>
+            <div class="fill-slider-value-inverse">500</div>
           </div>
           <div class="config-actions">
             <button class="text-button" id="cfgResetBtn">Reset</button>
@@ -749,7 +760,6 @@ const pages = ["overview", "account", "configuration"];
 let toastTimer;
 let currentUser = null;
 let saveTimer = null;
-let pendingSave = false;
 let isDirty = false;
 
 const saveStatus = document.getElementById("saveStatus");
@@ -782,7 +792,6 @@ function navigate(page) {
 document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => navigate(t.dataset.page)));
 document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => navigate(b.dataset.go)));
 
-/* ── Session ── */
 async function refreshSession() {
   try {
     const response = await fetch("/api/me", { credentials: "include" });
@@ -797,7 +806,6 @@ async function refreshSession() {
     document.getElementById("accountSession").textContent = "Authenticated";
     document.getElementById("accountLicense").textContent = data.license_key || "—";
 
-    // Fetch dashboard details
     try {
       const dRes = await fetch("/api/dashboard", { credentials: "include" });
       if (dRes.ok) {
@@ -806,7 +814,6 @@ async function refreshSession() {
       }
     } catch (e) {}
 
-    // Poll client status
     refreshClientStatus();
     setInterval(refreshClientStatus, 3000);
   } catch {
@@ -842,8 +849,7 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
   }
 });
 
-/* ── Toggles ── */
-function setupToggle(id, onChange) {
+function setupToggle(id) {
   const button = document.getElementById(id);
   const initial = button.classList.contains("on");
   function setState(enabled) {
@@ -852,15 +858,12 @@ function setupToggle(id, onChange) {
   }
   setState(initial);
   button.addEventListener("click", () => {
-    const next = !button.classList.contains("on");
-    setState(next);
-    if (onChange) onChange(next);
+    setState(!button.classList.contains("on"));
     queueSave();
   });
   return { get: () => button.classList.contains("on"), set: setState };
 }
 
-/* ── Custom Select ── */
 function initCustomSelect(root) {
   const trigger = root.querySelector(".custom-select-trigger");
   const options = root.querySelectorAll(".custom-option");
@@ -879,7 +882,7 @@ function initCustomSelect(root) {
     root.dataset.value = option.dataset.value;
     valueEl.textContent = option.querySelector("span").textContent;
     close();
-    root.dispatchEvent(new CustomEvent("change", { detail: { value: option.dataset.value } }));
+    queueSave();
   }
   trigger.addEventListener("click", e => {
     e.stopPropagation();
@@ -900,15 +903,14 @@ function initCustomSelect(root) {
 }
 document.querySelectorAll(".custom-select").forEach(initCustomSelect);
 
-/* ── Fill slider ── */
-function initFillSlider(el, onChange) {
+function initFillSlider(el) {
   const min = Number(el.dataset.min);
   const max = Number(el.dataset.max);
   const step = Number(el.dataset.step) || 1;
   const decimals = Number(el.dataset.decimals) || 0;
   const fill = el.querySelector(".fill-slider-fill");
-  const labelLight = el.querySelector(".fill-slider-value.light");
-  const labelDark = el.querySelector(".fill-slider-value.dark");
+  const label = el.querySelector(".fill-slider-value");
+  const labelInv = el.querySelector(".fill-slider-value-inverse");
   let value = Number(el.dataset.value);
   let dragging = false;
 
@@ -923,14 +925,13 @@ function initFillSlider(el, onChange) {
     else v = Math.round(v * Math.pow(10, decimals)) / Math.pow(10, decimals);
     value = v;
     el.dataset.value = String(v);
-    fill.style.width = ((v - min) / (max - min)) * 100 + "%";
+    const pct = ((v - min) / (max - min)) * 100;
+    fill.style.width = pct + "%";
+    el.style.setProperty("--fill-pct", pct + "%");
     const text = fmt(v);
-    labelLight.textContent = text;
-    labelDark.textContent = text;
-    labelDark.style.width = el.clientWidth + "px";
+    label.textContent = text;
+    labelInv.textContent = text;
     if (!silent) {
-      el.dispatchEvent(new CustomEvent("change", { detail: { value: v } }));
-      if (onChange) onChange(v);
       queueSave();
     }
   }
@@ -948,13 +949,11 @@ function initFillSlider(el, onChange) {
   el.addEventListener("pointermove", e => { if (dragging) fromEvent(e); });
   el.addEventListener("pointerup", () => { dragging = false; });
   el.addEventListener("pointercancel", () => { dragging = false; });
-  window.addEventListener("resize", () => { labelDark.style.width = el.clientWidth + "px"; });
 
   set(value, true);
   return { get: () => value, set: v => set(v, true) };
 }
 
-/* ── Bezier ── */
 const curveSvg = document.getElementById("bezierSvg");
 const curvePath = document.getElementById("curvePath");
 const control1 = document.getElementById("control1");
@@ -1043,16 +1042,13 @@ document.getElementById("resetCurveBtn").addEventListener("click", () => {
   queueSave();
 });
 
-/* ── Config state ── */
 const defaults = {
   Enabled: true, Keybind: "Q", PredictTarget: true, Prediction: 0.10,
   ClosestPart: true, FixedPart: "Head", Smoothness: 0.35,
   MaxStudsCheck: true, MaxStuds: 500, UnlockOnDeath: true, SelfDeathCheck: true,
   CurveP1: { x: 180, y: 200 }, CurveP2: { x: 420, y: 80 }
 };
-let config = JSON.parse(JSON.stringify(defaults));
 
-/* ── Save to backend ── */
 function queueSave() {
   isDirty = true;
   setSaveStatus("saving", "Saving...");
@@ -1083,22 +1079,55 @@ async function saveConfig() {
   }
 }
 
+const cfgToggles = {
+  Enabled: setupToggle("cfgEnabled"),
+  PredictTarget: setupToggle("cfgPredictTarget"),
+  ClosestPart: setupToggle("cfgClosestPart"),
+  MaxStudsCheck: setupToggle("cfgMaxStudsCheck"),
+  UnlockOnDeath: setupToggle("cfgUnlockOnDeath"),
+  SelfDeathCheck: setupToggle("cfgSelfDeathCheck")
+};
+
+const keybindInput = document.getElementById("cfgKeybind");
+let capturingKey = false;
+keybindInput.addEventListener("click", () => {
+  capturingKey = true;
+  keybindInput.value = "…";
+  keybindInput.style.borderColor = "#55555e";
+});
+document.addEventListener("keydown", e => {
+  if (!capturingKey) return;
+  e.preventDefault();
+  const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+  if (key === "Escape") keybindInput.value = readConfigFromUI().Keybind || "Q";
+  else keybindInput.value = key;
+  capturingKey = false;
+  keybindInput.style.borderColor = "";
+  queueSave();
+});
+
+const sliders = {
+  Prediction: initFillSlider(document.getElementById("slPrediction")),
+  Smoothness: initFillSlider(document.getElementById("slSmoothness")),
+  MaxStuds: initFillSlider(document.getElementById("slMaxStuds"))
+};
+
 function readConfigFromUI() {
-  const c = {};
-  c.Enabled = cfgToggles.Enabled.get();
-  c.Keybind = keybindInput.value || "Q";
-  c.PredictTarget = cfgToggles.PredictTarget.get();
-  c.Prediction = sliders.Prediction.get();
-  c.ClosestPart = cfgToggles.ClosestPart.get();
-  c.FixedPart = document.getElementById("cfgFixedPartSelect").dataset.value || "Head";
-  c.Smoothness = sliders.Smoothness.get();
-  c.MaxStudsCheck = cfgToggles.MaxStudsCheck.get();
-  c.MaxStuds = sliders.MaxStuds.get();
-  c.UnlockOnDeath = cfgToggles.UnlockOnDeath.get();
-  c.SelfDeathCheck = cfgToggles.SelfDeathCheck.get();
-  c.CurveP1 = { x: curveState.p1.x, y: curveState.p1.y };
-  c.CurveP2 = { x: curveState.p2.x, y: curveState.p2.y };
-  return c;
+  return {
+    Enabled: cfgToggles.Enabled.get(),
+    Keybind: keybindInput.value || "Q",
+    PredictTarget: cfgToggles.PredictTarget.get(),
+    Prediction: sliders.Prediction.get(),
+    ClosestPart: cfgToggles.ClosestPart.get(),
+    FixedPart: document.getElementById("cfgFixedPartSelect").dataset.value || "Head",
+    Smoothness: sliders.Smoothness.get(),
+    MaxStudsCheck: cfgToggles.MaxStudsCheck.get(),
+    MaxStuds: sliders.MaxStuds.get(),
+    UnlockOnDeath: cfgToggles.UnlockOnDeath.get(),
+    SelfDeathCheck: cfgToggles.SelfDeathCheck.get(),
+    CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
+    CurveP2: { x: curveState.p2.x, y: curveState.p2.y }
+  };
 }
 
 function applyConfigToUI(c) {
@@ -1139,42 +1168,6 @@ async function loadConfig() {
   }
 }
 
-/* ── Setup controls ── */
-const cfgToggles = {
-  Enabled: setupToggle("cfgEnabled"),
-  PredictTarget: setupToggle("cfgPredictTarget"),
-  ClosestPart: setupToggle("cfgClosestPart"),
-  MaxStudsCheck: setupToggle("cfgMaxStudsCheck"),
-  UnlockOnDeath: setupToggle("cfgUnlockOnDeath"),
-  SelfDeathCheck: setupToggle("cfgSelfDeathCheck")
-};
-
-const keybindInput = document.getElementById("cfgKeybind");
-let capturingKey = false;
-keybindInput.addEventListener("click", () => {
-  capturingKey = true;
-  keybindInput.value = "…";
-  keybindInput.style.borderColor = "#55555e";
-});
-document.addEventListener("keydown", e => {
-  if (!capturingKey) return;
-  e.preventDefault();
-  const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
-  if (key === "Escape") keybindInput.value = config.Keybind || "Q";
-  else keybindInput.value = key;
-  capturingKey = false;
-  keybindInput.style.borderColor = "";
-  queueSave();
-});
-
-document.getElementById("cfgFixedPartSelect").addEventListener("change", () => queueSave());
-
-const sliders = {
-  Prediction: initFillSlider(document.getElementById("slPrediction")),
-  Smoothness: initFillSlider(document.getElementById("slSmoothness")),
-  MaxStuds: initFillSlider(document.getElementById("slMaxStuds"))
-};
-
 document.getElementById("cfgResetBtn").addEventListener("click", () => {
   applyConfigToUI(defaults);
   queueSave();
@@ -1189,12 +1182,12 @@ document.getElementById("cfgCopyBtn").addEventListener("click", async () => {
   }
 });
 
-/* ── Boot ── */
 async function boot() {
   await refreshSession();
   await loadConfig();
 }
 
+drawCurve();
 boot();
 </script>
 </body>
