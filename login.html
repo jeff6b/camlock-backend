@@ -1,111 +1,100 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Lumina — Login</title>
+<title>Login</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    width: 100%; height: 100%; overflow: hidden;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    background: #0a0a0c;
+  html, body { height: 100%; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+  body {
+    min-height: 100vh;
+    background: linear-gradient(160deg, rgba(6,10,14,0.75), rgba(6,10,14,0.55)),
+      url('https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=2000&q=80');
+    background-size: cover; background-position: center; background-attachment: fixed;
   }
-  .panel {
-    width: 100vw; height: 100vh;
-    display: flex;
-    background: #0a0a0c;
-    opacity: 0; animation: fadeIn 0.5s ease forwards;
-  }
-  @keyframes fadeIn { to { opacity: 1; } }
+  #login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 0; opacity: 0; animation: fadeUp 0.6s ease forwards; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 
-  .panel-left {
-    flex: 1;
-    display: flex; flex-direction: column; justify-content: center;
-    padding: 80px 100px;
-    background: #0a0a0c;
+  .panel-wrap {
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    border-radius: 0;
+    box-shadow: none;
   }
-  .form-heading { color: #f5f5f6; font-size: 32px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.5px; }
+
+  .panel {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    border-radius: 0;
+    overflow: hidden;
+    background: radial-gradient(120% 140% at 100% 0%, rgba(142,203,255,0.14), transparent 60%), #0a0a0c;
+  }
+
+  .panel-left { position: relative; flex: 1.1; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; padding: 34px 26px 30px; }
+  .form-heading { color: #f5f5f6; font-size: 15px; font-weight: 700; margin-bottom: 3px; }
   .form-heading .highlight { color: #8ecbff; }
-  .form-sub { color: rgba(230,230,232,0.5); font-size: 15px; margin-bottom: 44px; }
-  .field-group { width: 100%; max-width: 460px; margin-bottom: 22px; }
-  .field-group label { display: block; color: rgba(230,230,232,0.6); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 9px; }
+  .form-sub { color: rgba(230,230,232,0.5); font-size: 11px; margin-bottom: 18px; }
+  .field-group { width: 100%; margin-bottom: 11px; }
+  .field-group label { display: block; color: rgba(230,230,232,0.55); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
   .input-shell { position: relative; display: flex; align-items: center; }
-  .input-shell svg { position: absolute; left: 16px; width: 16px; height: 16px; opacity: 0.45; }
-  .field-group input {
-    width: 100%; background: rgba(20,20,23,0.6);
-    border: 1px solid #1a1a1d; border-radius: 11px;
-    padding: 16px 18px 16px 46px;
-    color: #f2f2f3; font-size: 15px; font-family: inherit;
-    outline: none; transition: border-color 0.15s, box-shadow 0.15s;
-  }
-  .field-group input:focus { border-color: #8ecbff; box-shadow: 0 0 0 4px rgba(142,203,255,0.12); }
-  .login-btn {
-    width: 100%; max-width: 460px; margin-top: 14px; padding: 16px 0;
-    border: none; border-radius: 11px;
-    background: #ffffff; color: #0a0a0d;
-    font-size: 15px; font-weight: 700; font-family: inherit;
-    cursor: pointer; transition: transform 0.15s, opacity 0.15s;
-  }
+  .input-shell svg { position: absolute; left: 10px; width: 12px; height: 12px; opacity: 0.4; }
+  .field-group input { width: 100%; background: transparent; border: 1px solid #1a1a1d; border-radius: 8px; padding: 8px 11px 8px 28px; color: #f2f2f3; font-size: 12px; font-family: inherit; outline: none; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+  .field-group input:focus { border-color: #8ecbff; box-shadow: 0 0 0 3px rgba(142,203,255,0.12); }
+  .login-btn { position: relative; width: 100%; margin-top: 8px; padding: 9px 0; border: none; border-radius: 8px; background: #ffffff; color: #0a0a0d; font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer; overflow: hidden; transition: transform 0.15s ease, opacity 0.15s ease; }
   .login-btn:hover { transform: translateY(-1px); opacity: 0.92; }
   .login-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-  .error-msg { color: #ff8080; font-size: 13px; margin-top: 16px; min-height: 18px; }
-
-  .panel-right {
-    flex: 1;
-    display: flex; flex-direction: column; justify-content: center;
-    padding: 80px 100px;
-    border-left: 1px solid #1a1a1d;
-    background: radial-gradient(140% 160% at 0% 100%, rgba(142,203,255,0.08), transparent 60%), #0a0a0c;
-  }
-  .panel-right h1 { font-size: 48px; font-weight: 700; line-height: 1.1; color: #f2f2f3; letter-spacing: -1.2px; margin-bottom: 20px; }
+  .error-msg { color: #ff8080; font-size: 11px; margin-top: 10px; min-height: 14px; text-align: left; width: 100%; }
+  .panel-right { flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; padding: 34px 22px 30px; text-align: left; }
+  .panel-right h1 { font-size: 15px; font-weight: 700; line-height: 1.25; color: #f2f2f3; letter-spacing: -0.3px; margin-bottom: 3px; }
   .panel-right h1 .highlight { background: linear-gradient(100deg, #8ecbff, #cfe9ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .panel-right .desc { color: rgba(230,230,232,0.55); font-size: 16px; line-height: 1.7; margin-bottom: 44px; max-width: 480px; }
-  .stats { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 480px; }
-  .stat-box { background: rgba(20,20,23,0.6); border: 1px solid #1a1a1d; border-radius: 11px; padding: 18px 22px; display: flex; align-items: center; justify-content: space-between; }
-  .stat-label { font-size: 12px; font-weight: 600; color: rgba(230,230,232,0.55); text-transform: uppercase; letter-spacing: 0.06em; }
-  .stat-value { font-size: 15px; font-weight: 700; color: #8ecbff; font-family: 'JetBrains Mono', monospace; }
-
-  @media (max-width: 900px) {
-    .panel { flex-direction: column; }
-    .panel-left, .panel-right { padding: 60px 40px; }
-    .panel-right { border-left: none; border-top: 1px solid #1a1a1d; }
-    .panel-right h1 { font-size: 32px; }
-  }
+  .panel-right .form-sub { color: rgba(230,230,232,0.5); font-size: 11px; margin-bottom: 18px; }
+  .stats { display: flex; flex-direction: column; gap: 11px; width: 100%; }
+  .stat-box { background: transparent; border: 1px solid #1a1a1d; border-radius: 8px; padding: 8px 11px; display: flex; align-items: center; justify-content: space-between; min-height: 34px; }
+  .stat-label { font-size: 10px; font-weight: 600; color: rgba(230,230,232,0.55); text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat-value { font-size: 12px; font-weight: 700; color: #8ecbff; font-family: 'JetBrains Mono', monospace; }
+  @media (max-width: 420px) { .panel { flex-direction: column; } .panel-right { padding: 26px 20px; } .panel-left { padding-top: 30px; } }
 </style>
 </head>
 <body>
-  <div class="panel">
-    <div class="panel-left">
-      <div class="form-heading">Welcome, <span class="highlight">Back</span></div>
-      <div class="form-sub">Sign in to continue</div>
-      <div class="field-group">
-        <label for="username">Username</label>
-        <div class="input-shell">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
-          <input type="text" id="username" autocomplete="username">
+  <div id="login">
+    <div class="panel-wrap">
+      <div class="panel">
+        <div class="panel-left">
+          <div class="form-heading">Welcome, <span class="highlight">User</span></div>
+          <div class="form-sub">Sign in to continue</div>
+          <div class="field-group">
+            <label for="username">Username</label>
+            <div class="input-shell">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+              <input type="text" id="username" autocomplete="username">
+            </div>
+          </div>
+          <div class="field-group">
+            <label for="password">Password</label>
+            <div class="input-shell">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              <input type="password" id="password" autocomplete="current-password">
+            </div>
+          </div>
+          <button class="login-btn" id="loginBtn">Log in</button>
+          <div class="error-msg" id="errorMsg"></div>
         </div>
-      </div>
-      <div class="field-group">
-        <label for="password">Password</label>
-        <div class="input-shell">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-          <input type="password" id="password" autocomplete="current-password">
+        <div class="panel-right">
+          <h1>Closet Cheating<br>Made <span class="highlight">Easy</span></h1>
+          <div class="form-sub">&nbsp;</div>
+          <div class="stats">
+            <div class="stat-box"><span class="stat-label">Online Now</span><span class="stat-value">0</span></div>
+            <div class="stat-box"><span class="stat-label">Sessions</span><span class="stat-value">0</span></div>
+            <div class="stat-box"><span class="stat-label">Uptime</span><span class="stat-value">0%</span></div>
+          </div>
         </div>
-      </div>
-      <button class="login-btn" id="loginBtn">Sign In</button>
-      <div class="error-msg" id="errorMsg"></div>
-    </div>
-    <div class="panel-right">
-      <h1>Closet Cheating<br>Made <span class="highlight">Easy</span></h1>
-      <div class="desc">The simplest, cleanest camlock for Roblox. Hardware-locked. Cloud-synced. Config in the browser, aim in-game.</div>
-      <div class="stats">
-        <div class="stat-box"><span class="stat-label">Online Now</span><span class="stat-value">0</span></div>
-        <div class="stat-box"><span class="stat-label">Active Sessions</span><span class="stat-value">0</span></div>
-        <div class="stat-box"><span class="stat-label">Uptime</span><span class="stat-value">99.9%</span></div>
       </div>
     </div>
   </div>
@@ -125,14 +114,14 @@
     if (!u || !p) { err.textContent = 'Please enter username and password'; return; }
     btn.disabled = true; btn.textContent = 'Signing in...';
     try {
-      const clientId = getClientId();
       const r = await fetch('/api/user-login', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         credentials: 'include',
-        body: JSON.stringify({ username: u, password: p, client_id: clientId })
+        body: JSON.stringify({ username: u, password: p })
       });
       const data = await r.json();
       if (data.valid) {
+        const clientId = getClientId();
         if (clientId) {
           try {
             await fetch('/api/client/authenticate', {
@@ -144,16 +133,16 @@
                 username: data.username
               })
             });
-          } catch (e) {}
+          } catch (e) { console.warn('Client auth failed:', e); }
         }
         window.location.href = '/dashboard';
       } else {
         err.textContent = data.error || 'Login failed';
-        btn.disabled = false; btn.textContent = 'Sign In';
+        btn.disabled = false; btn.textContent = 'Log in';
       }
     } catch (e) {
       err.textContent = 'Connection error';
-      btn.disabled = false; btn.textContent = 'Sign In';
+      btn.disabled = false; btn.textContent = 'Log in';
     }
   }
   document.getElementById('loginBtn').addEventListener('click', login);
@@ -169,3 +158,4 @@
 </script>
 </body>
 </html>
+```
