@@ -149,6 +149,26 @@ init_db()
 migrate_db()
 
 # ═══════════════════════════════════════════════════════════
+# DEFAULT CONFIG — served when a user has no config yet
+# ═══════════════════════════════════════════════════════════
+
+DEFAULT_CONFIG = {
+    "Enabled": True,
+    "Keybind": "Q",
+    "PredictTarget": True,
+    "Prediction": 0.10,
+    "ClosestPart": True,
+    "FixedPart": "Head",
+    "Smoothness": 0.35,
+    "MaxStudsCheck": True,
+    "MaxStuds": 500,
+    "UnlockOnDeath": True,
+    "SelfDeathCheck": True,
+    "CurveP1": {"x": 180, "y": 200},
+    "CurveP2": {"x": 420, "y": 80},
+}
+
+# ═══════════════════════════════════════════════════════════
 # BOOTSTRAP
 # ═══════════════════════════════════════════════════════════
 
@@ -361,15 +381,18 @@ async def get_config(request: Request):
         result = cur.fetchone()
         if not result:
             cur.execute("INSERT INTO settings (key, config) VALUES (%s, %s)",
-                        (license_key, json.dumps({})))
+                        (license_key, json.dumps(DEFAULT_CONFIG)))
             db.commit()
             db.close()
-            return {}
+            return DEFAULT_CONFIG
         db.close()
-        return json.loads(result[0])
+        try:
+            return json.loads(result[0])
+        except:
+            return DEFAULT_CONFIG
     except Exception as e:
         db.close()
-        return {}
+        return DEFAULT_CONFIG
 
 
 @app.post("/api/config")
@@ -480,7 +503,12 @@ async def get_client_config(data: dict):
         cur.execute("SELECT config FROM settings WHERE key=%s", (license_key,))
         cfg = cur.fetchone()
         db.close()
-        return json.loads(cfg[0]) if cfg else {}
+        if not cfg:
+            return DEFAULT_CONFIG
+        try:
+            return json.loads(cfg[0])
+        except:
+            return DEFAULT_CONFIG
     except HTTPException:
         raise
     except Exception as e:
