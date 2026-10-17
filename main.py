@@ -1,4 +1,4 @@
-# main.py — Full backend + fullscreen login + fullscreen dashboard + HWID binding
+# main.py — Full backend + fullscreen login + dashboard with tab nav
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
@@ -134,7 +134,7 @@ init_db()
 migrate_db()
 
 # ═══════════════════════════════════════════════════════════
-# BOOTSTRAP TEST ACCOUNT
+# BOOTSTRAP
 # ═══════════════════════════════════════════════════════════
 
 def bootstrap_test_account():
@@ -163,7 +163,7 @@ def bootstrap_test_account():
                     (now, "light", license_key))
         db.commit()
         db.close()
-        print("[BOOTSTRAP] ✅ Test account created! user=light pass=light", flush=True)
+        print("[BOOTSTRAP] Test account created! user=light pass=light", flush=True)
     except Exception as e:
         print(f"[BOOTSTRAP] Error: {e}", flush=True)
 
@@ -196,7 +196,7 @@ class ClientAuthenticate(BaseModel):
     username: str
 
 # ═══════════════════════════════════════════════════════════
-# API — USER LOGIN (with HWID binding)
+# API — USER
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/api/user-login")
@@ -229,7 +229,6 @@ async def user_login(request: Request, data: UserLogin):
             db.close()
             return {"valid": False, "error": "Invalid username or password"}
 
-        # ── HWID binding ──
         if data.client_id:
             cur.execute("SELECT hwid FROM clients WHERE client_id=%s", (data.client_id,))
             crow = cur.fetchone()
@@ -239,7 +238,6 @@ async def user_login(request: Request, data: UserLogin):
             client_hwid = crow[0]
 
             if bound_hwid is None:
-                # First login — bind HWID
                 cur.execute("UPDATE keys SET hwid=%s WHERE key=%s", (client_hwid, license_key))
                 print(f"[HWID] Bound {client_hwid[:12]}... to {license_key}", flush=True)
             elif bound_hwid != client_hwid:
@@ -378,7 +376,7 @@ async def set_config(request: Request, data: dict):
 
 
 # ═══════════════════════════════════════════════════════════
-# API — CLIENT (for Python cheat)
+# API — CLIENT
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/api/client/register")
@@ -475,6 +473,32 @@ async def get_client_config(data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/client/status-by-user/{username}")
+async def client_status_by_user(request: Request, username: str):
+    license_key = request.cookies.get("license_key")
+    if not license_key:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("""SELECT last_ping FROM clients
+                       WHERE license_key=%s AND authenticated=1
+                       ORDER BY last_ping DESC LIMIT 1""", (license_key,))
+        row = cur.fetchone()
+        db.close()
+        if not row or not row[0]:
+            return {"connected": False}
+        try:
+            last = datetime.fromisoformat(row[0])
+            connected = (datetime.now() - last).total_seconds() < 15
+        except:
+            connected = False
+        return {"connected": connected}
+    except Exception as e:
+        db.close()
+        return {"connected": False, "error": str(e)}
+
+
 # ═══════════════════════════════════════════════════════════
 # KEEPALIVE
 # ═══════════════════════════════════════════════════════════
@@ -485,7 +509,7 @@ def keepalive():
 
 
 # ═══════════════════════════════════════════════════════════
-# HTML — LOGIN PAGE (FULLSCREEN)
+# HTML — LOGIN (FULLSCREEN)
 # ═══════════════════════════════════════════════════════════
 
 LOGIN_HTML = """<!DOCTYPE html>
@@ -498,7 +522,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     width: 100%; height: 100%; overflow: hidden;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -510,16 +534,13 @@ LOGIN_HTML = """<!DOCTYPE html>
     background-size: cover; background-position: center; background-attachment: fixed;
     display: flex; align-items: stretch; justify-content: stretch;
   }
-  .panel-wrap {
-    width: 100%; height: 100vh;
-    opacity: 0; animation: fadeUp 0.6s ease forwards;
-  }
-  @keyframes fadeUp { from { opacity: 0; } to { opacity: 1; } }
   .panel {
-    width: 100%; height: 100%;
+    width: 100vw; height: 100vh;
     display: flex;
-    background: radial-gradient(120% 140% at 100% 0%, rgba(142,203,255,0.16), transparent 60%), #0a0a0c;
+    background: radial-gradient(120% 140% at 100% 0%, rgba(142,203,255,0.16), transparent 60%), rgba(10,10,12,0.85);
+    opacity: 0; animation: fadeIn 0.5s ease forwards;
   }
+  @keyframes fadeIn { to { opacity: 1; } }
   .panel-left {
     flex: 1;
     display: flex; flex-direction: column; justify-content: center;
@@ -574,36 +595,34 @@ LOGIN_HTML = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-  <div class="panel-wrap">
-    <div class="panel">
-      <div class="panel-left">
-        <div class="form-heading">Welcome, <span class="highlight">Back</span></div>
-        <div class="form-sub">Sign in to continue</div>
-        <div class="field-group">
-          <label for="username">Username</label>
-          <div class="input-shell">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
-            <input type="text" id="username" autocomplete="username">
-          </div>
+  <div class="panel">
+    <div class="panel-left">
+      <div class="form-heading">Welcome, <span class="highlight">Back</span></div>
+      <div class="form-sub">Sign in to continue</div>
+      <div class="field-group">
+        <label for="username">Username</label>
+        <div class="input-shell">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          <input type="text" id="username" autocomplete="username">
         </div>
-        <div class="field-group">
-          <label for="password">Password</label>
-          <div class="input-shell">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-            <input type="password" id="password" autocomplete="current-password">
-          </div>
-        </div>
-        <button class="login-btn" id="loginBtn">Sign In</button>
-        <div class="error-msg" id="errorMsg"></div>
       </div>
-      <div class="panel-right">
-        <h1>Closet Cheating<br>Made <span class="highlight">Easy</span></h1>
-        <div class="desc">The simplest, cleanest camlock for Roblox. Hardware-locked. Cloud-synced. Config in the browser, aim in-game.</div>
-        <div class="stats">
-          <div class="stat-box"><span class="stat-label">Online Now</span><span class="stat-value">0</span></div>
-          <div class="stat-box"><span class="stat-label">Active Sessions</span><span class="stat-value">0</span></div>
-          <div class="stat-box"><span class="stat-label">Uptime</span><span class="stat-value">99.9%</span></div>
+      <div class="field-group">
+        <label for="password">Password</label>
+        <div class="input-shell">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#8ecbff" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          <input type="password" id="password" autocomplete="current-password">
         </div>
+      </div>
+      <button class="login-btn" id="loginBtn">Sign In</button>
+      <div class="error-msg" id="errorMsg"></div>
+    </div>
+    <div class="panel-right">
+      <h1>Closet Cheating<br>Made <span class="highlight">Easy</span></h1>
+      <div class="desc">The simplest, cleanest camlock for Roblox. Hardware-locked. Cloud-synced. Config in the browser, aim in-game.</div>
+      <div class="stats">
+        <div class="stat-box"><span class="stat-label">Online Now</span><span class="stat-value">0</span></div>
+        <div class="stat-box"><span class="stat-label">Active Sessions</span><span class="stat-value">0</span></div>
+        <div class="stat-box"><span class="stat-label">Uptime</span><span class="stat-value">99.9%</span></div>
       </div>
     </div>
   </div>
@@ -642,7 +661,7 @@ LOGIN_HTML = """<!DOCTYPE html>
                 username: data.username
               })
             });
-          } catch (e) { console.warn('Client auth failed:', e); }
+          } catch (e) {}
         }
         window.location.href = '/dashboard';
       } else {
@@ -670,7 +689,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 
 
 # ═══════════════════════════════════════════════════════════
-# HTML — DASHBOARD (FULLSCREEN + MONACO + SAVE)
+# HTML — DASHBOARD (with top-center tab nav)
 # ═══════════════════════════════════════════════════════════
 
 DASHBOARD_HTML = """<!DOCTYPE html>
@@ -686,48 +705,99 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; }
   body { background: #0a0a0c; color: #e0e0e8; font-family: 'Inter', sans-serif; display: flex; flex-direction: column; }
-  .topbar {
-    height: 60px; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 28px; border-bottom: 1px solid #1a1a1d;
-    background: #0a0a0c;
+
+  /* Top nav — tiny centered pill */
+  .nav-pill {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid #2a2a2e;
+    border-radius: 10px;
+    background: transparent;
+    z-index: 1000;
+    -webkit-app-region: drag;
+    app-region: drag;
   }
-  .brand { font-size: 16px; font-weight: 700; color: #f5f5f6; letter-spacing: -0.3px; }
-  .brand span { color: #8ecbff; }
-  .topbar-right { display: flex; align-items: center; gap: 16px; }
-  .user-badge { font-size: 13px; color: rgba(230,230,232,0.55); font-family: 'JetBrains Mono', monospace; }
+  .nav-btn {
+    width: 40px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background 0.15s;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+    color: #6a6a75;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,0.05); color: #b0b0b8; }
+  .nav-btn.active { background: rgba(255,255,255,0.08); color: #ffffff; }
+  .nav-btn svg { width: 15px; height: 15px; }
+
+  /* Top right — user + logout */
+  .topbar-right {
+    position: fixed;
+    top: 16px; right: 20px;
+    display: flex; align-items: center; gap: 12px;
+    z-index: 100;
+  }
+  .user-badge { font-size: 12px; color: rgba(230,230,232,0.5); font-family: 'JetBrains Mono', monospace; }
   .user-badge strong { color: #fff; }
   .logout-btn {
-    padding: 8px 16px; background: transparent; border: 1px solid #252529;
-    border-radius: 8px; color: #888890; font-size: 12px; font-weight: 600;
+    padding: 6px 14px; background: transparent; border: 1px solid #252529;
+    border-radius: 7px; color: #888890; font-size: 11px; font-weight: 600;
     cursor: pointer; transition: 0.15s;
   }
   .logout-btn:hover { color: #fff; border-color: #fff; }
-  .main { flex: 1; display: flex; min-height: 0; }
-  .sidebar {
-    width: 300px; flex-shrink: 0; padding: 24px;
-    border-right: 1px solid #1a1a1d; overflow-y: auto;
-    display: flex; flex-direction: column; gap: 22px;
+
+  /* Views */
+  .view { display: none; width: 100%; height: 100%; padding-top: 76px; }
+  .view.active { display: flex; flex-direction: column; }
+
+  /* ── Dashboard view ── */
+  #view-dash {
+    align-items: center;
+    padding: 100px 40px 40px;
+    overflow-y: auto;
   }
-  .section-label { font-size: 10px; font-weight: 600; color: rgba(230,230,232,0.4); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 10px; }
-  .stat-box { background: rgba(20,20,23,0.6); border: 1px solid #1a1a1d; border-radius: 10px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .stat-label { font-size: 11px; color: rgba(230,230,232,0.55); font-weight: 500; }
-  .stat-value { font-size: 12px; color: #8ecbff; font-family: 'JetBrains Mono', monospace; font-weight: 700; word-break: break-all; text-align: right; max-width: 160px; }
-  .stat-value.blur { filter: blur(6px); user-select: none; cursor: default; transition: filter 0.2s; }
-  .stat-value.blur:hover { filter: blur(0); user-select: text; cursor: text; }
-  .client-status { display: flex; align-items: center; gap: 8px; background: rgba(20,20,23,0.6); border: 1px solid #1a1a1d; border-radius: 10px; padding: 12px 14px; }
+  .dash-grid {
+    width: 100%;
+    max-width: 900px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+  }
+  .card {
+    background: rgba(20,20,23,0.6);
+    border: 1px solid #1a1a1d;
+    border-radius: 12px;
+    padding: 22px 24px;
+  }
+  .card-header { font-size: 11px; color: rgba(230,230,232,0.4); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 12px; font-weight: 600; }
+  .card-value { font-size: 16px; color: #fff; font-family: 'JetBrains Mono', monospace; word-break: break-all; }
+  .card-value.blur { filter: blur(6px); user-select: none; cursor: default; transition: filter 0.2s; }
+  .card-value.blur:hover { filter: blur(0); user-select: text; cursor: text; }
+  .status-row { display: flex; align-items: center; gap: 8px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #ff8080; box-shadow: 0 0 8px rgba(255,128,128,0.6); }
   .dot.connected { background: #8effb0; box-shadow: 0 0 8px rgba(142,255,176,0.6); }
-  .client-status-label { font-size: 12px; color: rgba(230,230,232,0.7); font-weight: 500; }
-  .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  /* ── Editor view ── */
+  #view-editor {
+    padding: 76px 0 0 0;
+  }
   #editor { flex: 1; width: 100%; }
   .editor-bar {
-    height: 56px; flex-shrink: 0;
+    height: 60px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: space-between;
     padding: 0 20px; border-top: 1px solid #1a1a1d;
     background: #0d0d0f;
   }
-  .editor-bar-left { display: flex; align-items: center; gap: 10px; }
   .editor-bar-label { font-size: 12px; color: rgba(230,230,232,0.45); font-family: 'JetBrains Mono', monospace; }
   .save-btn {
     padding: 10px 24px; background: #ffffff; color: #0a0a0c;
@@ -737,6 +807,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .save-btn:hover:not(:disabled) { transform: scale(1.03); }
   .save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .save-btn.saved { background: #8effb0; }
+
+  /* Toast */
   .toast {
     position: fixed; bottom: 24px; right: 24px;
     background: #1a1a1d; border: 1px solid #252529; color: #fff;
@@ -748,54 +820,68 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-  <div class="topbar">
-    <div class="brand">Lumina<span>.</span> Dashboard</div>
-    <div class="topbar-right">
-      <div class="user-badge">Signed in as <strong id="tbUser">...</strong></div>
-      <button class="logout-btn" onclick="logout()">Logout</button>
+
+  <!-- Nav pill — home / editor -->
+  <div class="nav-pill">
+    <div class="nav-btn active" id="navHome" title="Dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+    </div>
+    <div class="nav-btn" id="navEditor" title="Config Editor">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="16 18 22 12 16 6"/>
+        <polyline points="8 6 2 12 8 18"/>
+      </svg>
     </div>
   </div>
 
-  <div class="main">
-    <div class="sidebar">
-      <div>
-        <div class="section-label">Client Status</div>
-        <div class="client-status">
+  <!-- Top right -->
+  <div class="topbar-right">
+    <div class="user-badge">Signed in as <strong id="tbUser">...</strong></div>
+    <button class="logout-btn" onclick="logout()">Logout</button>
+  </div>
+
+  <!-- Dashboard view -->
+  <div class="view active" id="view-dash">
+    <div class="dash-grid">
+      <div class="card">
+        <div class="card-header">Client Status</div>
+        <div class="status-row">
           <div class="dot" id="clientDot"></div>
-          <div class="client-status-label" id="clientLabel">Disconnected</div>
+          <div class="card-value" id="clientLabel" style="font-size:14px;">Disconnected</div>
         </div>
       </div>
-
-      <div>
-        <div class="section-label">Account</div>
-        <div class="stat-box"><span class="stat-label">Username</span><span class="stat-value" id="sUser">-</span></div>
-        <div class="stat-box"><span class="stat-label">License</span><span class="stat-value blur" id="sLicense">-</span></div>
-        <div class="stat-box"><span class="stat-label">Subscription</span><span class="stat-value" id="sSub">-</span></div>
+      <div class="card">
+        <div class="card-header">Username</div>
+        <div class="card-value" id="sUser">-</div>
       </div>
-
-      <div>
-        <div class="section-label">Hardware</div>
-        <div class="stat-box"><span class="stat-label">HWID</span><span class="stat-value blur" id="sHwid">-</span></div>
-        <div class="stat-box"><span class="stat-label">Resets</span><span class="stat-value" id="sResets">0</span></div>
+      <div class="card">
+        <div class="card-header">License</div>
+        <div class="card-value blur" id="sLicense">-</div>
       </div>
-
-      <div>
-        <div class="section-label">Tips</div>
-        <div style="font-size: 11px; color: rgba(230,230,232,0.4); line-height: 1.6;">
-          Edit the JSON on the right and hit <strong style="color:#fff;">Save Config</strong>.<br>
-          The cheat polls every 2 seconds and picks up changes live.
-        </div>
+      <div class="card">
+        <div class="card-header">Subscription</div>
+        <div class="card-value" id="sSub">-</div>
+      </div>
+      <div class="card">
+        <div class="card-header">HWID</div>
+        <div class="card-value blur" id="sHwid">-</div>
+      </div>
+      <div class="card">
+        <div class="card-header">HWID Resets</div>
+        <div class="card-value" id="sResets">0</div>
       </div>
     </div>
+  </div>
 
-    <div class="editor-area">
-      <div id="editor"></div>
-      <div class="editor-bar">
-        <div class="editor-bar-left">
-          <span class="editor-bar-label">config.json</span>
-        </div>
-        <button class="save-btn" id="saveBtn" disabled>Save Config</button>
-      </div>
+  <!-- Editor view -->
+  <div class="view" id="view-editor">
+    <div id="editor"></div>
+    <div class="editor-bar">
+      <span class="editor-bar-label">config.json</span>
+      <button class="save-btn" id="saveBtn" disabled>Save Config</button>
     </div>
   </div>
 
@@ -806,6 +892,21 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   let dirty = false;
   let currentUser = null;
 
+  // ── Nav ──
+  document.getElementById('navHome').addEventListener('click', () => switchView('dash'));
+  document.getElementById('navEditor').addEventListener('click', () => switchView('editor'));
+
+  function switchView(name) {
+    document.getElementById('view-dash').classList.toggle('active', name === 'dash');
+    document.getElementById('view-editor').classList.toggle('active', name === 'editor');
+    document.getElementById('navHome').classList.toggle('active', name === 'dash');
+    document.getElementById('navEditor').classList.toggle('active', name === 'editor');
+    if (name === 'editor' && editor) {
+      setTimeout(() => editor.layout(), 50);
+    }
+  }
+
+  // ── Monaco ──
   require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs' }});
   require(['vs/editor/editor.main'], function () {
     monaco.editor.defineTheme('lumina', {
@@ -850,7 +951,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   }
 
   async function loadAll() {
-    // auth check
     const meRes = await fetch('/api/me', { credentials: 'include' });
     const me = await meRes.json();
     if (!me.authenticated) { window.location.href = '/'; return; }
@@ -858,7 +958,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     document.getElementById('tbUser').textContent = me.username;
     document.getElementById('sUser').textContent = me.username;
 
-    // dashboard data
     const dRes = await fetch('/api/dashboard', { credentials: 'include' });
     if (dRes.ok) {
       const d = await dRes.json();
@@ -868,11 +967,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       document.getElementById('sResets').textContent = d.hwid_resets;
     }
 
-    // config
     const cRes = await fetch('/api/config', { credentials: 'include' });
     const cfg = await cRes.json();
-    const pretty = JSON.stringify(cfg, null, 2);
-    editor.setValue(pretty);
+    editor.setValue(JSON.stringify(cfg, null, 2));
     dirty = false;
     document.getElementById('saveBtn').disabled = true;
 
@@ -913,7 +1010,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         body: JSON.stringify(parsed)
       });
       if (r.ok) {
-        btn.textContent = 'Saved ✓';
+        btn.textContent = 'Saved';
         btn.classList.add('saved');
         toast('Config saved', true);
         dirty = false;
