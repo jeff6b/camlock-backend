@@ -152,7 +152,6 @@ DEFAULT_CONFIG = {
     "MaxStudsCheck": True, "MaxStuds": 500,
     "UnlockOnDeath": True, "SelfDeathCheck": True,
     "StickyMode": True,
-    "MouseLock": False,
     "CurveP1": {"x": 180, "y": 200}, "CurveP2": {"x": 420, "y": 80},
 }
 
