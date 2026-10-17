@@ -755,7 +755,7 @@ async function refreshSession() {
     if (!data.authenticated) { window.location.href = "/"; return; }
     const username = data.username || "user";
     currentUser = username;
-    document.getElementById("userTag").textContent = username;
+    document.getElementById("userTag").textContent = "light";
     document.getElementById("statUsername").textContent = username;
     document.getElementById("accountUsername").textContent = username;
     document.getElementById("accountStatus").textContent = "Active";
