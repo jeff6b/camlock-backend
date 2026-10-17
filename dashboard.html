@@ -642,6 +642,10 @@ main::-webkit-scrollbar-thumb {
             <button class="toggle on" id="cfgEnabled" role="switch" aria-checked="true" aria-label="Enabled"></button>
           </div>
           <div class="setting-row">
+            <div class="setting-title">Sticky mode</div>
+            <button class="toggle on" id="cfgStickyMode" role="switch" aria-checked="true" aria-label="Sticky mode"></button>
+          </div>
+          <div class="setting-row">
             <div class="setting-title">Keybind</div>
             <input class="dark-input keybind-input" id="cfgKeybind" type="text" value="Q" maxlength="8" readonly spellcheck="false">
           </div>
@@ -754,7 +758,6 @@ function navigate(page) {
 document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => navigate(t.dataset.page)));
 document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => navigate(b.dataset.go)));
 
-/* Session timer */
 function tickTimer() {
   const s = Math.floor((Date.now() - sessionStart) / 1000);
   const hh = String(Math.floor(s / 3600)).padStart(2, "0");
@@ -822,7 +825,6 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
 });
 
 document.getElementById("closeAppBtn").addEventListener("click", async () => {
-  if (!confirm("close the app?")) return;
   try {
     await fetch("/api/client/shutdown", { method: "POST", credentials: "include" });
     showToast("closing...");
@@ -946,7 +948,6 @@ function initFillSlider(el) {
   return { get: () => value, set: v => set(v, true) };
 }
 
-/* Keybind capture */
 const keybindInput = document.getElementById("cfgKeybind");
 const webviewKeybindInput = document.getElementById("cfgWebviewKeybind");
 let capturingKeybind = null;
@@ -971,7 +972,6 @@ function setKeybindLabel(input, label) {
 keybindInput.addEventListener("click", () => startCapture(keybindInput));
 webviewKeybindInput.addEventListener("click", () => startCapture(webviewKeybindInput));
 
-// Keyboard capture
 document.addEventListener("keydown", e => {
   if (!capturingKeybind) return;
   e.preventDefault();
@@ -988,7 +988,6 @@ document.addEventListener("keydown", e => {
   setKeybindLabel(capturingKeybind, label);
 });
 
-// Side mouse buttons — button 3 = back, button 4 = forward
 document.addEventListener("pointerdown", e => {
   if (!capturingKeybind) return;
   if (e.button === 3) {
@@ -1000,7 +999,6 @@ document.addEventListener("pointerdown", e => {
   }
 }, true);
 
-// Prevent context menu on right click during capture
 document.addEventListener("contextmenu", e => {
   if (capturingKeybind) e.preventDefault();
 });
@@ -1013,7 +1011,6 @@ document.addEventListener("mousedown", e => {
   }
 });
 
-/* Bezier */
 const curveSvg = document.getElementById("bezierSvg");
 const curvePath = document.getElementById("curvePath");
 const control1 = document.getElementById("control1");
@@ -1107,6 +1104,7 @@ const defaults = {
   PredictTarget: true, Prediction: 0.10,
   ClosestPart: true, FixedPart: "Head", Smoothness: 0.35,
   MaxStudsCheck: true, MaxStuds: 500, UnlockOnDeath: true, SelfDeathCheck: true,
+  StickyMode: true,
   CurveP1: { x: 180, y: 200 }, CurveP2: { x: 420, y: 80 }
 };
 
@@ -1142,6 +1140,7 @@ async function saveConfig() {
 
 const cfgToggles = {
   Enabled: setupToggle("cfgEnabled"),
+  StickyMode: setupToggle("cfgStickyMode"),
   PredictTarget: setupToggle("cfgPredictTarget"),
   ClosestPart: setupToggle("cfgClosestPart"),
   MaxStudsCheck: setupToggle("cfgMaxStudsCheck"),
@@ -1169,6 +1168,7 @@ function readConfigFromUI() {
     MaxStuds: sliders.MaxStuds.get(),
     UnlockOnDeath: cfgToggles.UnlockOnDeath.get(),
     SelfDeathCheck: cfgToggles.SelfDeathCheck.get(),
+    StickyMode: cfgToggles.StickyMode.get(),
     CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
     CurveP2: { x: curveState.p2.x, y: curveState.p2.y }
   };
@@ -1177,6 +1177,7 @@ function readConfigFromUI() {
 function applyConfigToUI(c) {
   if (!c || typeof c !== "object") return;
   cfgToggles.Enabled.set(c.Enabled !== false);
+  cfgToggles.StickyMode.set(c.StickyMode !== false);
   keybindInput.value = c.Keybind || "Q";
   webviewKeybindInput.value = c.WebviewKeybind || "F8";
   cfgToggles.PredictTarget.set(c.PredictTarget !== false);
