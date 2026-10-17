@@ -410,13 +410,38 @@ async def client_authenticate(data: ClientAuthenticate):
     db = get_db()
     cur = db.cursor()
     try:
+        # Get the client's HWID
+        cur.execute("SELECT hwid FROM clients WHERE client_id=%s", (data.client_id,))
+        crow = cur.fetchone()
+        if not crow:
+            db.close()
+            raise HTTPException(status_code=404, detail="Client not registered")
+        client_hwid = crow[0]
+
+        # Update the client row
         cur.execute("""UPDATE clients
                        SET authenticated=1, username=%s, last_ping=%s
                        WHERE client_id=%s""",
                     (data.username, datetime.now().isoformat(), data.client_id))
+
+        # Bind HWID to account if not yet bound
+        cur.execute("SELECT hwid FROM user_accounts WHERE username=%s", (data.username,))
+        urow = cur.fetchone()
+        if urow:
+            current_hwid = urow[0]
+            if not current_hwid:
+                cur.execute("UPDATE user_accounts SET hwid=%s WHERE username=%s",
+                            (client_hwid, data.username))
+                print(f"[HWID] Bound {client_hwid[:12]}... to {data.username}", flush=True)
+            elif current_hwid != client_hwid:
+                db.close()
+                raise HTTPException(status_code=403, detail="HWID mismatch — account bound to another PC")
+
         db.commit()
         db.close()
         return {"success": True}
+    except HTTPException:
+        raise
     except Exception as e:
         db.close()
         raise HTTPException(status_code=500, detail=str(e))
