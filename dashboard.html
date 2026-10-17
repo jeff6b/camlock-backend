@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Lumina</title>
+<title>light</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -104,6 +104,7 @@ main {
   padding: 10px 14px 12px;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 .page { display: none; }
 .page.active { display: block; }
@@ -229,6 +230,14 @@ main {
   border-color: #55555e;
   color: white;
 }
+.text-button.danger {
+  border-color: #4a2020;
+  color: #ff8080;
+}
+.text-button.danger:hover {
+  border-color: #ff8080;
+  color: #ff8080;
+}
 
 .config-layout {
   display: flex;
@@ -326,7 +335,7 @@ main {
 }
 .dark-input:focus { border-color: #55555e; }
 .keybind-input {
-  width: 42px;
+  width: 52px;
   text-align: center;
   letter-spacing: .4px;
   font-weight: 500;
@@ -344,6 +353,7 @@ main {
   overflow: hidden;
   user-select: none;
   touch-action: none;
+  overscroll-behavior: contain;
 }
 .fill-slider-fill {
   position: absolute;
@@ -569,14 +579,22 @@ main::-webkit-scrollbar-thumb {
         <span class="info-value" id="accountSession">—</span>
       </div>
       <div class="info-row">
-        <span class="info-label">License</span>
-        <span class="info-value" id="accountLicense">—</span>
+        <span class="info-label">HWID</span>
+        <span class="info-value" id="accountHwid">—</span>
+      </div>
+    </div>
+    <div class="content-panel">
+      <h2>Hotkeys</h2>
+      <div class="setting-row">
+        <div class="setting-title">Webview toggle</div>
+        <input class="dark-input keybind-input" id="cfgWebviewKeybind" type="text" value="F8" maxlength="8" readonly spellcheck="false">
       </div>
     </div>
     <div class="content-panel">
       <h2>Security</h2>
-      <div style="margin-top:10px">
+      <div style="margin-top:10px; display:flex; gap:6px;">
         <button class="text-button" id="logoutBtn">Sign out</button>
+        <button class="text-button danger" id="closeAppBtn">Close App</button>
       </div>
     </div>
   </section>
@@ -760,13 +778,12 @@ async function refreshSession() {
     document.getElementById("accountUsername").textContent = username;
     document.getElementById("accountStatus").textContent = "Active";
     document.getElementById("accountSession").textContent = "Authenticated";
-    document.getElementById("accountLicense").textContent = data.license_key || "—";
 
     try {
       const dRes = await fetch("/api/dashboard", { credentials: "include" });
       if (dRes.ok) {
         const d = await dRes.json();
-        document.getElementById("accountLicense").textContent = d.license_key || "—";
+        document.getElementById("accountHwid").textContent = d.hwid || "not bound";
       }
     } catch (e) {}
 
@@ -775,7 +792,6 @@ async function refreshSession() {
   } catch {
     document.getElementById("accountStatus").textContent = "Unknown";
     document.getElementById("accountSession").textContent = "Unable to verify";
-    showToast("Couldn't verify the session.");
   }
 }
 
@@ -801,7 +817,18 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
     const r = await fetch("/api/logout", { method: "POST", credentials: "include" });
     if (r.ok) window.location.href = "/";
   } catch {
-    showToast("Couldn't contact the server to sign out.");
+    showToast("couldn't sign out");
+  }
+});
+
+document.getElementById("closeAppBtn").addEventListener("click", async () => {
+  if (!confirm("close the app?")) return;
+  try {
+    await fetch("/api/client/shutdown", { method: "POST", credentials: "include" });
+    showToast("closing...");
+    setTimeout(() => { try { window.close(); } catch (e) {} }, 500);
+  } catch (e) {
+    showToast("close failed");
   }
 });
 
@@ -896,18 +923,97 @@ function initFillSlider(el) {
   }
 
   el.addEventListener("pointerdown", e => {
+    e.preventDefault();
     dragging = true;
     el.setPointerCapture?.(e.pointerId);
     fromEvent(e);
   });
-  el.addEventListener("pointermove", e => { if (dragging) fromEvent(e); });
-  el.addEventListener("pointerup", () => { dragging = false; });
+  el.addEventListener("pointermove", e => {
+    if (dragging) {
+      e.preventDefault();
+      fromEvent(e);
+    }
+  });
+  el.addEventListener("pointerup", e => {
+    e.preventDefault();
+    dragging = false;
+    try { el.releasePointerCapture?.(e.pointerId); } catch (err) {}
+  });
   el.addEventListener("pointercancel", () => { dragging = false; });
+  el.addEventListener("touchstart", e => e.preventDefault(), { passive: false });
 
   set(value, true);
   return { get: () => value, set: v => set(v, true) };
 }
 
+/* Keybind capture */
+const keybindInput = document.getElementById("cfgKeybind");
+const webviewKeybindInput = document.getElementById("cfgWebviewKeybind");
+let capturingKeybind = null;
+
+function startCapture(input) {
+  capturingKeybind = input;
+  input.value = "…";
+  input.style.borderColor = "#55555e";
+}
+
+function stopCapture() {
+  if (capturingKeybind) capturingKeybind.style.borderColor = "";
+  capturingKeybind = null;
+}
+
+function setKeybindLabel(input, label) {
+  input.value = label;
+  stopCapture();
+  queueSave();
+}
+
+keybindInput.addEventListener("click", () => startCapture(keybindInput));
+webviewKeybindInput.addEventListener("click", () => startCapture(webviewKeybindInput));
+
+// Keyboard capture
+document.addEventListener("keydown", e => {
+  if (!capturingKeybind) return;
+  e.preventDefault();
+  const k = e.key;
+  if (k === "Escape") {
+    capturingKeybind.value = capturingKeybind === keybindInput ? "Q" : "F8";
+    stopCapture();
+    return;
+  }
+  let label;
+  if (k.length === 1) label = k.toUpperCase();
+  else if (k.startsWith("F") && k.length <= 3) label = k;
+  else label = k;
+  setKeybindLabel(capturingKeybind, label);
+});
+
+// Side mouse buttons — button 3 = back, button 4 = forward
+document.addEventListener("pointerdown", e => {
+  if (!capturingKeybind) return;
+  if (e.button === 3) {
+    e.preventDefault();
+    setKeybindLabel(capturingKeybind, "MB4");
+  } else if (e.button === 4) {
+    e.preventDefault();
+    setKeybindLabel(capturingKeybind, "MB5");
+  }
+}, true);
+
+// Prevent context menu on right click during capture
+document.addEventListener("contextmenu", e => {
+  if (capturingKeybind) e.preventDefault();
+});
+
+document.addEventListener("mousedown", e => {
+  if (!capturingKeybind) return;
+  if (e.button === 3 || e.button === 4) {
+    e.preventDefault();
+    setKeybindLabel(capturingKeybind, e.button === 3 ? "MB4" : "MB5");
+  }
+});
+
+/* Bezier */
 const curveSvg = document.getElementById("bezierSvg");
 const curvePath = document.getElementById("curvePath");
 const control1 = document.getElementById("control1");
@@ -997,7 +1103,8 @@ document.getElementById("resetCurveBtn").addEventListener("click", () => {
 });
 
 const defaults = {
-  Enabled: true, Keybind: "Q", PredictTarget: true, Prediction: 0.10,
+  Enabled: true, Keybind: "Q", WebviewKeybind: "F8",
+  PredictTarget: true, Prediction: 0.10,
   ClosestPart: true, FixedPart: "Head", Smoothness: 0.35,
   MaxStudsCheck: true, MaxStuds: 500, UnlockOnDeath: true, SelfDeathCheck: true,
   CurveP1: { x: 180, y: 200 }, CurveP2: { x: 420, y: 80 }
@@ -1042,24 +1149,6 @@ const cfgToggles = {
   SelfDeathCheck: setupToggle("cfgSelfDeathCheck")
 };
 
-const keybindInput = document.getElementById("cfgKeybind");
-let capturingKey = false;
-keybindInput.addEventListener("click", () => {
-  capturingKey = true;
-  keybindInput.value = "…";
-  keybindInput.style.borderColor = "#55555e";
-});
-document.addEventListener("keydown", e => {
-  if (!capturingKey) return;
-  e.preventDefault();
-  const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
-  if (key === "Escape") keybindInput.value = readConfigFromUI().Keybind || "Q";
-  else keybindInput.value = key;
-  capturingKey = false;
-  keybindInput.style.borderColor = "";
-  queueSave();
-});
-
 const sliders = {
   Prediction: initFillSlider(document.getElementById("slPrediction")),
   Smoothness: initFillSlider(document.getElementById("slSmoothness")),
@@ -1070,6 +1159,7 @@ function readConfigFromUI() {
   return {
     Enabled: cfgToggles.Enabled.get(),
     Keybind: keybindInput.value || "Q",
+    WebviewKeybind: webviewKeybindInput.value || "F8",
     PredictTarget: cfgToggles.PredictTarget.get(),
     Prediction: sliders.Prediction.get(),
     ClosestPart: cfgToggles.ClosestPart.get(),
@@ -1088,6 +1178,7 @@ function applyConfigToUI(c) {
   if (!c || typeof c !== "object") return;
   cfgToggles.Enabled.set(c.Enabled !== false);
   keybindInput.value = c.Keybind || "Q";
+  webviewKeybindInput.value = c.WebviewKeybind || "F8";
   cfgToggles.PredictTarget.set(c.PredictTarget !== false);
   sliders.Prediction.set(c.Prediction !== undefined ? c.Prediction : 0.10);
   cfgToggles.ClosestPart.set(c.ClosestPart !== false);
