@@ -586,7 +586,7 @@ main::-webkit-scrollbar-thumb {
     <div class="content-panel">
       <h2>Hotkeys</h2>
       <div class="setting-row">
-        <div class="setting-title">Menu toggle</div>
+        <div class="setting-title">Webview toggle</div>
         <input class="dark-input keybind-input" id="cfgWebviewKeybind" type="text" value="F8" maxlength="8" readonly spellcheck="false">
       </div>
     </div>
@@ -644,6 +644,10 @@ main::-webkit-scrollbar-thumb {
           <div class="setting-row">
             <div class="setting-title">Sticky mode</div>
             <button class="toggle on" id="cfgStickyMode" role="switch" aria-checked="true" aria-label="Sticky mode"></button>
+          </div>
+          <div class="setting-row">
+            <div class="setting-title">Mouse lock</div>
+            <button class="toggle" id="cfgMouseLock" role="switch" aria-checked="false" aria-label="Mouse lock"></button>
           </div>
           <div class="setting-row">
             <div class="setting-title">Keybind</div>
@@ -1104,7 +1108,7 @@ const defaults = {
   PredictTarget: true, Prediction: 0.10,
   ClosestPart: true, FixedPart: "Head", Smoothness: 0.35,
   MaxStudsCheck: true, MaxStuds: 500, UnlockOnDeath: true, SelfDeathCheck: true,
-  StickyMode: true,
+  StickyMode: true, MouseLock: false,
   CurveP1: { x: 180, y: 200 }, CurveP2: { x: 420, y: 80 }
 };
 
@@ -1141,6 +1145,7 @@ async function saveConfig() {
 const cfgToggles = {
   Enabled: setupToggle("cfgEnabled"),
   StickyMode: setupToggle("cfgStickyMode"),
+  MouseLock: setupToggle("cfgMouseLock"),
   PredictTarget: setupToggle("cfgPredictTarget"),
   ClosestPart: setupToggle("cfgClosestPart"),
   MaxStudsCheck: setupToggle("cfgMaxStudsCheck"),
@@ -1169,6 +1174,7 @@ function readConfigFromUI() {
     UnlockOnDeath: cfgToggles.UnlockOnDeath.get(),
     SelfDeathCheck: cfgToggles.SelfDeathCheck.get(),
     StickyMode: cfgToggles.StickyMode.get(),
+    MouseLock: cfgToggles.MouseLock.get(),
     CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
     CurveP2: { x: curveState.p2.x, y: curveState.p2.y }
   };
@@ -1178,6 +1184,7 @@ function applyConfigToUI(c) {
   if (!c || typeof c !== "object") return;
   cfgToggles.Enabled.set(c.Enabled !== false);
   cfgToggles.StickyMode.set(c.StickyMode !== false);
+  cfgToggles.MouseLock.set(c.MouseLock === true);
   keybindInput.value = c.Keybind || "Q";
   webviewKeybindInput.value = c.WebviewKeybind || "F8";
   cfgToggles.PredictTarget.set(c.PredictTarget !== false);
