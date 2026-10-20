@@ -1,4 +1,4 @@
-# main.py — backend for username/password accounts (no licenses)
+# main.py — backend for username/password accounts + community configs
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
@@ -99,6 +99,31 @@ def init_db():
             session_token TEXT, license_key TEXT, username TEXT,
             created_at TEXT NOT NULL, last_ping TEXT,
             authenticated INTEGER DEFAULT 0)""")
+
+        # ── COMMUNITY CONFIGS ──
+        cur.execute("""CREATE TABLE IF NOT EXISTS community_configs (
+            id SERIAL PRIMARY KEY,
+            author TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            config_data TEXT NOT NULL,
+            likes INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS community_likes (
+            id SERIAL PRIMARY KEY,
+            config_id INTEGER NOT NULL REFERENCES community_configs(id) ON DELETE CASCADE,
+            username TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(config_id, username)
+        )""")
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_configs_created
+            ON community_configs(created_at DESC)""")
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_likes_config
+            ON community_likes(config_id)""")
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_likes_user
+            ON community_likes(username)""")
+
         db.commit()
         db.close()
         print("DB initialized", flush=True)
@@ -410,7 +435,6 @@ async def client_authenticate(data: ClientAuthenticate):
     db = get_db()
     cur = db.cursor()
     try:
-        # Get the client's HWID
         cur.execute("SELECT hwid FROM clients WHERE client_id=%s", (data.client_id,))
         crow = cur.fetchone()
         if not crow:
@@ -418,13 +442,11 @@ async def client_authenticate(data: ClientAuthenticate):
             raise HTTPException(status_code=404, detail="Client not registered")
         client_hwid = crow[0]
 
-        # Update the client row
         cur.execute("""UPDATE clients
                        SET authenticated=1, username=%s, last_ping=%s
                        WHERE client_id=%s""",
                     (data.username, datetime.now().isoformat(), data.client_id))
 
-        # Bind HWID to account if not yet bound
         cur.execute("SELECT hwid FROM user_accounts WHERE username=%s", (data.username,))
         urow = cur.fetchone()
         if urow:
@@ -518,6 +540,164 @@ async def client_status_by_user(request: Request, username: str):
     except Exception as e:
         db.close()
         return {"connected": False, "error": str(e)}
+
+# ═══════════════════════════════════════════════════════════
+# API — COMMUNITY CONFIGS
+# ═══════════════════════════════════════════════════════════
+
+@app.get("/api/community/configs")
+async def list_community_configs(request: Request):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("""
+            SELECT id, author, name, description, config_data, likes, created_at
+            FROM community_configs
+            ORDER BY created_at DESC
+        """)
+        rows = cur.fetchall()
+        cur.execute("SELECT config_id FROM community_likes WHERE username=%s", (username,))
+        liked_ids = [r[0] for r in cur.fetchall()]
+        db.close()
+        configs = []
+        for row in rows:
+            cid, author, name, desc, cfg_json, likes, created = row
+            try:
+                cfg = json.loads(cfg_json)
+            except:
+                cfg = {}
+            configs.append({
+                "id": cid,
+                "author": author,
+                "name": name,
+                "description": desc or "",
+                "config_data": cfg,
+                "likes": likes or 0,
+                "created_at": created
+            })
+        return {"configs": configs, "liked_ids": liked_ids}
+    except Exception as e:
+        try:
+            db.close()
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/community/configs")
+async def create_community_config(request: Request, data: dict):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    name = (data.get("name") or "").strip()
+    desc = (data.get("description") or "").strip()
+    cfg = data.get("config_data")
+    if not name:
+        raise HTTPException(status_code=400, detail="Name required")
+    if not cfg or not isinstance(cfg, dict):
+        raise HTTPException(status_code=400, detail="Config data required")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO community_configs (author, name, description, config_data, likes, created_at)
+            VALUES (%s, %s, %s, %s, 0, %s)
+            RETURNING id
+        """, (username, name[:60], desc[:500], json.dumps(cfg), datetime.now().isoformat()))
+        new_id = cur.fetchone()[0]
+        db.commit()
+        db.close()
+        return {"success": True, "id": new_id}
+    except Exception as e:
+        try:
+            db.close()
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/community/configs/{config_id}/like")
+async def toggle_community_like(request: Request, config_id: int):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT id FROM community_likes WHERE config_id=%s AND username=%s",
+                    (config_id, username))
+        existing = cur.fetchone()
+        if existing:
+            cur.execute("DELETE FROM community_likes WHERE id=%s", (existing[0],))
+            cur.execute("UPDATE community_configs SET likes = GREATEST(likes - 1, 0) WHERE id=%s",
+                        (config_id,))
+            liked = False
+        else:
+            cur.execute("""
+                INSERT INTO community_likes (config_id, username, created_at)
+                VALUES (%s, %s, %s)
+            """, (config_id, username, datetime.now().isoformat()))
+            cur.execute("UPDATE community_configs SET likes = likes + 1 WHERE id=%s",
+                        (config_id,))
+            liked = True
+        cur.execute("SELECT likes FROM community_configs WHERE id=%s", (config_id,))
+        row = cur.fetchone()
+        likes = row[0] if row else 0
+        db.commit()
+        db.close()
+        return {"success": True, "liked": liked, "likes": likes}
+    except Exception as e:
+        try:
+            db.close()
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/community/configs/save-mine")
+async def save_community_to_mine(request: Request, data: dict):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    cid = data.get("community_config_id")
+    if not cid:
+        raise HTTPException(status_code=400, detail="Missing config id")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT name, config_data FROM community_configs WHERE id=%s", (cid,))
+        row = cur.fetchone()
+        if not row:
+            db.close()
+            raise HTTPException(status_code=404, detail="Config not found")
+        base_name, cfg_json = row
+        name = base_name
+        suffix = 1
+        while True:
+            cur.execute("SELECT id FROM saved_configs WHERE username=%s AND config_name=%s",
+                        (username, name))
+            if not cur.fetchone():
+                break
+            name = f"{base_name} ({suffix})"
+            suffix += 1
+        cur.execute("""
+            INSERT INTO saved_configs (username, config_name, config_data, created_at)
+            VALUES (%s, %s, %s, %s)
+        """, (username, name, cfg_json, datetime.now().isoformat()))
+        db.commit()
+        db.close()
+        return {"success": True, "name": name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        try:
+            db.close()
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ═══════════════════════════════════════════════════════════
 # KEEPALIVE
