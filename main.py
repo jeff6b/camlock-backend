@@ -657,6 +657,48 @@ async def toggle_community_like(request: Request, config_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/auto-login", response_class=HTMLResponse)
+async def auto_login(request: Request, client: str = None):
+    """Single-account build: auto-login via authenticated client_id."""
+    if not client:
+        return RedirectResponse(url="/")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT username FROM clients WHERE client_id=%s AND authenticated=1", (client,))
+        row = cur.fetchone()
+        if not row:
+            db.close()
+            return RedirectResponse(url="/")
+        username = row[0]
+        cur.execute("SELECT username FROM user_accounts WHERE username=%s", (username,))
+        urow = cur.fetchone()
+        if not urow:
+            db.close()
+            return RedirectResponse(url="/")
+        username = urow[0]
+        session_id = secrets.token_hex(16)
+        now = datetime.now().isoformat()
+        exp = (datetime.now() + timedelta(days=30)).isoformat()
+        cur.execute("""
+            INSERT INTO login_sessions
+                (session_id, username, license_key, created_at, expires_at, ip_address)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (session_id, username, "", now, exp, request.client.host))
+        db.commit()
+        db.close()
+    except Exception:
+        try:
+            db.close()
+        except:
+            pass
+        return RedirectResponse(url="/")
+    resp = RedirectResponse(url="/dashboard", status_code=302)
+    resp.set_cookie("session_id", session_id, httponly=True, max_age=2592000, samesite="lax")
+    resp.set_cookie("username", username, httponly=True, max_age=2592000, samesite="lax")
+    return resp
+
+
 @app.post("/api/community/configs/save-mine")
 async def save_community_to_mine(request: Request, data: dict):
     username = request.cookies.get("username")
