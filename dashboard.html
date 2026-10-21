@@ -66,7 +66,6 @@ main {
 .page { display: none; }
 .page.active { display: block; }
 
-/* Generic popup */
 .tab-popup, .keybind-mode-popup {
   position: fixed; z-index: 300; min-width: 100px; padding: 3px;
   border: 1px solid var(--border); border-radius: 6px;
@@ -232,7 +231,6 @@ main {
 
 .config-actions { display: flex; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 
-/* Weapon cards */
 .weapon-cards {
   display: flex; flex-direction: column; gap: 6px;
   margin-top: 8px; max-height: 340px; overflow-y: auto; padding-right: 4px;
@@ -298,7 +296,6 @@ main {
 }
 #toast.show { opacity: 1; transform: translateY(0); }
 
-/* Community configs */
 .community-toolbar { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
 .community-search {
   flex: 1; padding: 6px 10px; border: 1px solid var(--border);
@@ -362,7 +359,6 @@ main {
   font-size: 10px; border: 1px dashed var(--border); border-radius: 8px;
 }
 
-/* Publish modal */
 .cfg-modal-overlay {
   position: fixed; inset: 0; background: transparent;
   display: flex; align-items: center; justify-content: center;
@@ -453,7 +449,6 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
   </section>
 
   <section class="page" id="page-configuration">
-    <!-- AIM ASSIST PANEL -->
     <div id="panel-aim">
       <div class="config-layout">
         <div class="content-panel curve-panel">
@@ -494,7 +489,7 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
             <h2>General</h2>
             <div class="setting-row"><div class="setting-title">Enabled</div><button class="toggle on" id="cfgEnabled" role="switch" aria-checked="true" aria-label="Enabled"></button></div>
             <div class="setting-row"><div class="setting-title">Sticky mode</div><button class="toggle on" id="cfgStickyMode" role="switch" aria-checked="true" aria-label="Sticky mode"></button></div>
-            <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="cfgKeybind" type="text" value="Q" maxlength="8" readonly spellcheck="false"></div>
+            <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="cfgKeybind" type="text" value="Q" maxlength="8" readonly spellcheck="false" title="Right-click for hold/toggle"></div>
             <div class="setting-row"><div class="setting-title">Unlock on death</div><button class="toggle on" id="cfgUnlockOnDeath" role="switch" aria-checked="true" aria-label="Unlock on death"></button></div>
             <div class="setting-row"><div class="setting-title">Self death check</div><button class="toggle on" id="cfgSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button></div>
           </div>
@@ -552,13 +547,12 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
       </div>
     </div>
 
-    <!-- TRIGGERBOT PANEL -->
     <div id="panel-triggerbot" style="display: none;">
       <div class="config-options">
         <div class="content-panel">
           <h2>General</h2>
           <div class="setting-row"><div class="setting-title">Enabled</div><button class="toggle" id="tbEnabled" role="switch" aria-checked="false" aria-label="Triggerbot enabled"></button></div>
-          <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="tbKeybind" type="text" value="E" maxlength="8" readonly spellcheck="false"></div>
+          <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="tbKeybind" type="text" value="E" maxlength="8" readonly spellcheck="false" title="Right-click for hold/toggle"></div>
           <div class="setting-row"><div class="setting-title">Require camlock</div><button class="toggle on" id="tbRequireCamlock" role="switch" aria-checked="true" aria-label="Require camlock"></button></div>
           <div class="setting-row"><div class="setting-title">Death check</div><button class="toggle on" id="tbDeathCheck" role="switch" aria-checked="true" aria-label="Death check"></button></div>
           <div class="setting-row"><div class="setting-title">Self death check</div><button class="toggle on" id="tbSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button></div>
@@ -697,7 +691,6 @@ function applyConfigMode() {
 document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => navigate(t.dataset.page)));
 document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => navigate(b.dataset.go)));
 
-// Right-click Configuration tab
 const configTabPopup = document.getElementById("configTabPopup");
 const configTabBtn = document.querySelector('.tab[data-page="configuration"]');
 
@@ -913,28 +906,47 @@ tbKeybindInput.addEventListener("click", () => startCapture(tbKeybindInput));
 
 const keybindModePopup = document.getElementById("keybindModePopup");
 
-keybindInput.addEventListener("contextmenu", e => {
-  e.preventDefault();
-  const rect = keybindInput.getBoundingClientRect();
+function openKeybindModePopup(inputEl, currentMode, targetTag) {
+  const rect = inputEl.getBoundingClientRect();
   keybindModePopup.style.top = (rect.bottom + 4) + "px";
   keybindModePopup.style.left = rect.left + "px";
+  keybindModePopup.dataset.target = targetTag;
   keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
-    item.classList.toggle("selected", item.dataset.mode === keybindMode);
+    item.classList.toggle("selected", item.dataset.mode === currentMode);
   });
   keybindModePopup.classList.add("show");
+}
+
+keybindInput.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  openKeybindModePopup(keybindInput, keybindMode, "aim");
+});
+
+tbKeybindInput.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  openKeybindModePopup(tbKeybindInput, tbKeybindMode, "tb");
 });
 
 keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
   item.addEventListener("click", () => {
-    keybindMode = item.dataset.mode;
+    const target = keybindModePopup.dataset.target;
+    if (target === "tb") {
+      tbKeybindMode = item.dataset.mode;
+    } else {
+      keybindMode = item.dataset.mode;
+    }
     keybindModePopup.classList.remove("show");
     queueSave();
-    showToast(`Keybind mode: ${keybindMode === "hold" ? "Hold" : "Toggle"}`);
+    showToast(`Keybind mode: ${item.dataset.mode === "hold" ? "Hold" : "Toggle"}`);
   });
 });
 
 document.addEventListener("click", e => {
-  if (!keybindModePopup.contains(e.target) && e.target !== keybindInput) keybindModePopup.classList.remove("show");
+  if (!keybindModePopup.contains(e.target) &&
+      e.target !== keybindInput &&
+      e.target !== tbKeybindInput) {
+    keybindModePopup.classList.remove("show");
+  }
 });
 
 document.addEventListener("keydown", e => {
@@ -1101,6 +1113,11 @@ const tbToggles = {
   WeaponSpecific: setupToggle("tbWeaponSpecific")
 };
 
+document.getElementById("tbWeaponSpecific").addEventListener("click", () => {
+  const isOn = document.getElementById("tbWeaponSpecific").classList.contains("on");
+  document.getElementById("weaponListWrap").style.display = isOn ? "block" : "none";
+});
+
 const sliders = {
   PredictionX: initFillSlider(document.getElementById("slPredictionX")),
   PredictionY: initFillSlider(document.getElementById("slPredictionY")),
@@ -1203,13 +1220,6 @@ document.getElementById("weaponNameConfirm").addEventListener("click", () => {
 document.getElementById("weaponNameInput").addEventListener("keydown", e => {
   if (e.key === "Enter") document.getElementById("weaponNameConfirm").click();
   if (e.key === "Escape") document.getElementById("weaponNameInputWrap").style.display = "none";
-});
-
-tbToggles.WeaponSpecific = setupToggle("tbWeaponSpecific");
-const originalWeaponSpecificClick = document.getElementById("tbWeaponSpecific").onclick;
-document.getElementById("tbWeaponSpecific").addEventListener("click", () => {
-  document.getElementById("weaponListWrap").style.display =
-    document.getElementById("tbWeaponSpecific").classList.contains("on") ? "block" : "none";
 });
 
 function escapeHtml(s) {
@@ -1328,7 +1338,6 @@ document.getElementById("cfgResetBtn").addEventListener("click", () => {
   showToast("Config reset to defaults.");
 });
 
-// Community configs
 const communityGrid = document.getElementById("communityGrid");
 const communitySearch = document.getElementById("communitySearch");
 const publishModal = document.getElementById("publishModal");
