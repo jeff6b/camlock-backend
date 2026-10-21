@@ -836,7 +836,7 @@ main::-webkit-scrollbar-thumb {
     <div class="content-panel">
       <h2>Hotkeys</h2>
       <div class="setting-row">
-        <div class="setting-title">Webview toggle</div>
+        <div class="setting-title">uiiii toggle</div>
         <input class="dark-input keybind-input" id="cfgWebviewKeybind" type="text" value="F8" maxlength="8" readonly spellcheck="false">
       </div>
     </div>
@@ -949,12 +949,6 @@ main::-webkit-scrollbar-thumb {
               <div class="custom-option" data-value="LowerTorso" role="option"><span>LowerTorso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
             </div>
           </div>
-          <label class="field-label">Overshoot amount</label>
-          <div class="fill-slider" id="slOvershoot" data-min="0" data-max="0.3" data-step="0.01" data-decimals="2" data-value="0.08">
-            <div class="fill-slider-fill"></div>
-            <div class="fill-slider-value">0.08</div>
-            <div class="fill-slider-value-inverse">0.08</div>
-          </div>
         </div>
 
         <div class="content-panel">
@@ -980,16 +974,6 @@ main::-webkit-scrollbar-thumb {
             <div class="fill-slider-fill"></div>
             <div class="fill-slider-value">3.0</div>
             <div class="fill-slider-value-inverse">3.0</div>
-          </div>
-          <div class="setting-row">
-            <div class="setting-title">Curve type</div>
-            <button class="toggle" id="cfgCurveType" role="switch" aria-checked="false" aria-label="Curve type"></button>
-          </div>
-          <label class="field-label">Curve bend</label>
-          <div class="fill-slider" id="slCurveBend" data-min="-0.2" data-max="0.2" data-step="0.01" data-decimals="2" data-value="0.05">
-            <div class="fill-slider-fill"></div>
-            <div class="fill-slider-value">0.05</div>
-            <div class="fill-slider-value-inverse">0.05</div>
           </div>
           <label class="field-label">Reaction delay</label>
           <div class="fill-slider" id="slReactionDelay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.12">
@@ -1460,7 +1444,6 @@ const defaults = {
   ClosestPoint: true, FixedPart: "Head", Smoothness: 0.35,
   MaxStudsCheck: true, MaxStuds: 500, UnlockOnDeath: true, SelfDeathCheck: true,
   StickyMode: true,
-  CurveType: "quadratic", CurveBend: 0.05, OvershootAmount: 0.08,
   StabilizerDeadzone: 3.0, ReactionDelay: 0.12,
   Streamproof: false,
   CurveP1: { x: 180, y: 200 }, CurveP2: { x: 420, y: 80 }
@@ -1504,7 +1487,6 @@ const cfgToggles = {
   MaxStudsCheck: setupToggle("cfgMaxStudsCheck"),
   UnlockOnDeath: setupToggle("cfgUnlockOnDeath"),
   SelfDeathCheck: setupToggle("cfgSelfDeathCheck"),
-  CurveType: setupToggle("cfgCurveType"),
   Streamproof: setupToggle("cfgStreamproof")
 };
 
@@ -1513,9 +1495,7 @@ const sliders = {
   PredictionY: initFillSlider(document.getElementById("slPredictionY")),
   Smoothness: initFillSlider(document.getElementById("slSmoothness")),
   MaxStuds: initFillSlider(document.getElementById("slMaxStuds")),
-  Overshoot: initFillSlider(document.getElementById("slOvershoot")),
   Deadzone: initFillSlider(document.getElementById("slDeadzone")),
-  CurveBend: initFillSlider(document.getElementById("slCurveBend")),
   ReactionDelay: initFillSlider(document.getElementById("slReactionDelay"))
 };
 
@@ -1536,9 +1516,6 @@ function readConfigFromUI() {
     UnlockOnDeath: cfgToggles.UnlockOnDeath.get(),
     SelfDeathCheck: cfgToggles.SelfDeathCheck.get(),
     StickyMode: cfgToggles.StickyMode.get(),
-    CurveType: cfgToggles.CurveType.get() ? "cubic" : "quadratic",
-    CurveBend: sliders.CurveBend.get(),
-    OvershootAmount: sliders.Overshoot.get(),
     StabilizerDeadzone: sliders.Deadzone.get(),
     ReactionDelay: sliders.ReactionDelay.get(),
     Streamproof: cfgToggles.Streamproof.get(),
@@ -1571,9 +1548,6 @@ function applyConfigToUI(c) {
   sliders.MaxStuds.set(c.MaxStuds !== undefined ? c.MaxStuds : 500);
   cfgToggles.UnlockOnDeath.set(c.UnlockOnDeath !== false);
   cfgToggles.SelfDeathCheck.set(c.SelfDeathCheck !== false);
-  cfgToggles.CurveType.set(c.CurveType === "cubic");
-  sliders.CurveBend.set(c.CurveBend !== undefined ? c.CurveBend : 0.05);
-  sliders.Overshoot.set(c.OvershootAmount !== undefined ? c.OvershootAmount : 0.08);
   sliders.Deadzone.set(c.StabilizerDeadzone !== undefined ? c.StabilizerDeadzone : 3.0);
   sliders.ReactionDelay.set(c.ReactionDelay !== undefined ? c.ReactionDelay : 0.12);
   cfgToggles.Streamproof.set(c.Streamproof === true);
