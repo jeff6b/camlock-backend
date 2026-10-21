@@ -30,10 +30,6 @@ if HAS_LIMITER:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
 
-# ═══════════════════════════════════════════════════════════
-# HTML TEMPLATES
-# ═══════════════════════════════════════════════════════════
-
 BASE_DIR = pathlib.Path(__file__).parent
 
 def load_html(filename: str) -> str:
@@ -44,10 +40,6 @@ def load_html(filename: str) -> str:
 
 LOGIN_HTML = load_html("login.html")
 DASHBOARD_HTML = load_html("dashboard.html")
-
-# ═══════════════════════════════════════════════════════════
-# DATABASE
-# ═══════════════════════════════════════════════════════════
 
 DATABASE_URL = "postgresql://neondb_owner:npg_S7hoDMeaw2cQ@ep-wandering-dream-ah21egpt-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
 
@@ -99,8 +91,6 @@ def init_db():
             session_token TEXT, license_key TEXT, username TEXT,
             created_at TEXT NOT NULL, last_ping TEXT,
             authenticated INTEGER DEFAULT 0)""")
-
-        # ── COMMUNITY CONFIGS ──
         cur.execute("""CREATE TABLE IF NOT EXISTS community_configs (
             id SERIAL PRIMARY KEY,
             author TEXT NOT NULL,
@@ -117,13 +107,9 @@ def init_db():
             created_at TEXT NOT NULL,
             UNIQUE(config_id, username)
         )""")
-        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_configs_created
-            ON community_configs(created_at DESC)""")
-        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_likes_config
-            ON community_likes(config_id)""")
-        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_likes_user
-            ON community_likes(username)""")
-
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_configs_created ON community_configs(created_at DESC)""")
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_likes_config ON community_likes(config_id)""")
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_likes_user ON community_likes(username)""")
         db.commit()
         db.close()
         print("DB initialized", flush=True)
@@ -165,26 +151,39 @@ def migrate_db():
 init_db()
 migrate_db()
 
-# ═══════════════════════════════════════════════════════════
-# DEFAULT CONFIG
-# ═══════════════════════════════════════════════════════════
-
-DEFAULT_CONFIG = {
+DEFAULT_CAMLOCK = {
     "Enabled": True, "Keybind": "Q", "KeybindMode": "toggle", "WebviewKeybind": "F8",
     "PredictTarget": True, "PredictionX": 0.10, "PredictionY": 0.10,
     "ClosestPoint": True, "FixedPart": "Head", "Smoothness": 0.35,
     "MaxStudsCheck": True, "MaxStuds": 500,
     "UnlockOnDeath": True, "SelfDeathCheck": True,
     "StickyMode": True,
-    "CurveType": "quadratic",
     "StabilizerDeadzone": 3.0, "ReactionDelay": 0.12,
     "Streamproof": False,
     "CurveP1": {"x": 180, "y": 200}, "CurveP2": {"x": 420, "y": 80},
 }
 
-# ═══════════════════════════════════════════════════════════
-# MODELS
-# ═══════════════════════════════════════════════════════════
+DEFAULT_TRIGGERBOT = {
+    "Enabled": False,
+    "Keybind": "E",
+    "KeybindMode": "hold",
+    "RequireCamlock": True,
+    "AimPart": "Head",
+    "Radius": 12.0,
+    "Delay": 0.12,
+    "StudCheck": True,
+    "MaxStuds": 500,
+    "DeathCheck": True,
+    "SelfDeathCheck": True,
+    "WeaponSpecific": False,
+    "WeaponConfigs": {
+        "Double-Barrel SG": {"AimPart": "Head", "Radius": 12.0, "Delay": 0.08},
+        "Revolver": {"AimPart": "Head", "Radius": 10.0, "Delay": 0.15},
+        "TacticalShotgun": {"AimPart": "Head", "Radius": 14.0, "Delay": 0.10},
+    },
+}
+
+DEFAULT_CONFIG = {**DEFAULT_CAMLOCK, "triggerbot": DEFAULT_TRIGGERBOT}
 
 class UserLogin(BaseModel):
     username: str
@@ -204,9 +203,6 @@ class ClientAuthenticate(BaseModel):
     license_key: Optional[str] = None
     username: str
 
-# ═══════════════════════════════════════════════════════════
-# API — USER LOGIN
-# ═══════════════════════════════════════════════════════════
 
 @app.post("/api/user-login")
 async def user_login(request: Request, data: UserLogin):
@@ -221,17 +217,13 @@ async def user_login(request: Request, data: UserLogin):
         if not result:
             db.close()
             return {"valid": False, "error": "Invalid username or password"}
-
         username, password_hash, bound_hwid, hwid_resets, active = result
-
         if active == 0:
             db.close()
             return {"valid": False, "error": "Account inactive"}
-
         if not verify_password(password_hash, data.password):
             db.close()
             return {"valid": False, "error": "Invalid username or password"}
-
         if data.client_id:
             cur.execute("SELECT hwid FROM clients WHERE client_id=%s", (data.client_id,))
             crow = cur.fetchone()
@@ -239,18 +231,13 @@ async def user_login(request: Request, data: UserLogin):
                 db.close()
                 return {"valid": False, "error": "Client not registered"}
             client_hwid = crow[0]
-
             if bound_hwid is None:
-                cur.execute("UPDATE user_accounts SET hwid=%s WHERE username=%s",
-                            (client_hwid, username))
+                cur.execute("UPDATE user_accounts SET hwid=%s WHERE username=%s", (client_hwid, username))
                 print(f"[HWID] Bound {client_hwid[:12]}... to {username}", flush=True)
             elif bound_hwid != client_hwid:
                 db.close()
                 return {"valid": False, "error": "HWID mismatch — account bound to another PC"}
-
-        cur.execute("UPDATE user_accounts SET last_login=%s WHERE username=%s",
-                    (datetime.now().isoformat(), username))
-
+        cur.execute("UPDATE user_accounts SET last_login=%s WHERE username=%s", (datetime.now().isoformat(), username))
         session_id = secrets.token_hex(16)
         now = datetime.now().isoformat()
         exp = (datetime.now() + timedelta(days=30)).isoformat()
@@ -261,7 +248,6 @@ async def user_login(request: Request, data: UserLogin):
         """, (session_id, username, "", now, exp, request.client.host))
         db.commit()
         db.close()
-
         resp = JSONResponse({
             "valid": True, "message": "Login successful",
             "username": username, "license_key": "",
@@ -313,8 +299,7 @@ async def get_dashboard(request: Request):
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("SELECT username, hwid, hwid_resets, created_at, active FROM user_accounts WHERE username=%s",
-                    (username,))
+        cur.execute("SELECT username, hwid, hwid_resets, created_at, active FROM user_accounts WHERE username=%s", (username,))
         result = cur.fetchone()
         db.close()
         if not result:
@@ -331,9 +316,6 @@ async def get_dashboard(request: Request):
         db.close()
         raise HTTPException(status_code=500, detail=str(e))
 
-# ═══════════════════════════════════════════════════════════
-# API — CONFIG
-# ═══════════════════════════════════════════════════════════
 
 @app.get("/api/config")
 async def get_config(request: Request):
@@ -378,9 +360,6 @@ async def set_config(request: Request, data: dict):
         db.close()
         raise HTTPException(status_code=500, detail=str(e))
 
-# ═══════════════════════════════════════════════════════════
-# API — CLIENT
-# ═══════════════════════════════════════════════════════════
 
 @app.post("/api/client/register")
 async def register_client(data: ClientRegister):
@@ -443,24 +422,20 @@ async def client_authenticate(data: ClientAuthenticate):
             db.close()
             raise HTTPException(status_code=404, detail="Client not registered")
         client_hwid = crow[0]
-
         cur.execute("""UPDATE clients
                        SET authenticated=1, username=%s, last_ping=%s
                        WHERE client_id=%s""",
                     (data.username, datetime.now().isoformat(), data.client_id))
-
         cur.execute("SELECT hwid FROM user_accounts WHERE username=%s", (data.username,))
         urow = cur.fetchone()
         if urow:
             current_hwid = urow[0]
             if not current_hwid:
-                cur.execute("UPDATE user_accounts SET hwid=%s WHERE username=%s",
-                            (client_hwid, data.username))
+                cur.execute("UPDATE user_accounts SET hwid=%s WHERE username=%s", (client_hwid, data.username))
                 print(f"[HWID] Bound {client_hwid[:12]}... to {data.username}", flush=True)
             elif current_hwid != client_hwid:
                 db.close()
                 raise HTTPException(status_code=403, detail="HWID mismatch — account bound to another PC")
-
         db.commit()
         db.close()
         return {"success": True}
@@ -543,9 +518,6 @@ async def client_status_by_user(request: Request, username: str):
         db.close()
         return {"connected": False, "error": str(e)}
 
-# ═══════════════════════════════════════════════════════════
-# API — COMMUNITY CONFIGS
-# ═══════════════════════════════════════════════════════════
 
 @app.get("/api/community/configs")
 async def list_community_configs(request: Request):
@@ -572,20 +544,14 @@ async def list_community_configs(request: Request):
             except:
                 cfg = {}
             configs.append({
-                "id": cid,
-                "author": author,
-                "name": name,
-                "description": desc or "",
-                "config_data": cfg,
-                "likes": likes or 0,
-                "created_at": created
+                "id": cid, "author": author, "name": name,
+                "description": desc or "", "config_data": cfg,
+                "likes": likes or 0, "created_at": created
             })
         return {"configs": configs, "liked_ids": liked_ids}
     except Exception as e:
-        try:
-            db.close()
-        except:
-            pass
+        try: db.close()
+        except: pass
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -614,10 +580,8 @@ async def create_community_config(request: Request, data: dict):
         db.close()
         return {"success": True, "id": new_id}
     except Exception as e:
-        try:
-            db.close()
-        except:
-            pass
+        try: db.close()
+        except: pass
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -629,21 +593,16 @@ async def toggle_community_like(request: Request, config_id: int):
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("SELECT id FROM community_likes WHERE config_id=%s AND username=%s",
-                    (config_id, username))
+        cur.execute("SELECT id FROM community_likes WHERE config_id=%s AND username=%s", (config_id, username))
         existing = cur.fetchone()
         if existing:
             cur.execute("DELETE FROM community_likes WHERE id=%s", (existing[0],))
-            cur.execute("UPDATE community_configs SET likes = GREATEST(likes - 1, 0) WHERE id=%s",
-                        (config_id,))
+            cur.execute("UPDATE community_configs SET likes = GREATEST(likes - 1, 0) WHERE id=%s", (config_id,))
             liked = False
         else:
-            cur.execute("""
-                INSERT INTO community_likes (config_id, username, created_at)
-                VALUES (%s, %s, %s)
-            """, (config_id, username, datetime.now().isoformat()))
-            cur.execute("UPDATE community_configs SET likes = likes + 1 WHERE id=%s",
-                        (config_id,))
+            cur.execute("INSERT INTO community_likes (config_id, username, created_at) VALUES (%s, %s, %s)",
+                        (config_id, username, datetime.now().isoformat()))
+            cur.execute("UPDATE community_configs SET likes = likes + 1 WHERE id=%s", (config_id,))
             liked = True
         cur.execute("SELECT likes FROM community_configs WHERE id=%s", (config_id,))
         row = cur.fetchone()
@@ -652,53 +611,9 @@ async def toggle_community_like(request: Request, config_id: int):
         db.close()
         return {"success": True, "liked": liked, "likes": likes}
     except Exception as e:
-        try:
-            db.close()
-        except:
-            pass
+        try: db.close()
+        except: pass
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/auto-login", response_class=HTMLResponse)
-async def auto_login(request: Request, client: str = None):
-    """Single-account build: auto-login via authenticated client_id."""
-    if not client:
-        return RedirectResponse(url="/")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT username FROM clients WHERE client_id=%s AND authenticated=1", (client,))
-        row = cur.fetchone()
-        if not row:
-            db.close()
-            return RedirectResponse(url="/")
-        username = row[0]
-        cur.execute("SELECT username FROM user_accounts WHERE username=%s", (username,))
-        urow = cur.fetchone()
-        if not urow:
-            db.close()
-            return RedirectResponse(url="/")
-        username = urow[0]
-        session_id = secrets.token_hex(16)
-        now = datetime.now().isoformat()
-        exp = (datetime.now() + timedelta(days=30)).isoformat()
-        cur.execute("""
-            INSERT INTO login_sessions
-                (session_id, username, license_key, created_at, expires_at, ip_address)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (session_id, username, "", now, exp, request.client.host))
-        db.commit()
-        db.close()
-    except Exception:
-        try:
-            db.close()
-        except:
-            pass
-        return RedirectResponse(url="/")
-    resp = RedirectResponse(url="/dashboard", status_code=302)
-    resp.set_cookie("session_id", session_id, httponly=True, max_age=2592000, samesite="lax")
-    resp.set_cookie("username", username, httponly=True, max_age=2592000, samesite="lax")
-    return resp
 
 
 @app.post("/api/community/configs/save-mine")
@@ -721,39 +636,29 @@ async def save_community_to_mine(request: Request, data: dict):
         name = base_name
         suffix = 1
         while True:
-            cur.execute("SELECT id FROM saved_configs WHERE username=%s AND config_name=%s",
-                        (username, name))
+            cur.execute("SELECT id FROM saved_configs WHERE username=%s AND config_name=%s", (username, name))
             if not cur.fetchone():
                 break
             name = f"{base_name} ({suffix})"
             suffix += 1
-        cur.execute("""
-            INSERT INTO saved_configs (username, config_name, config_data, created_at)
-            VALUES (%s, %s, %s, %s)
-        """, (username, name, cfg_json, datetime.now().isoformat()))
+        cur.execute("""INSERT INTO saved_configs (username, config_name, config_data, created_at)
+                       VALUES (%s, %s, %s, %s)""",
+                    (username, name, cfg_json, datetime.now().isoformat()))
         db.commit()
         db.close()
         return {"success": True, "name": name}
     except HTTPException:
         raise
     except Exception as e:
-        try:
-            db.close()
-        except:
-            pass
+        try: db.close()
+        except: pass
         raise HTTPException(status_code=500, detail=str(e))
 
-# ═══════════════════════════════════════════════════════════
-# KEEPALIVE
-# ═══════════════════════════════════════════════════════════
 
 @app.get("/api/keepalive")
 def keepalive():
     return {"status": "alive", "timestamp": datetime.now().isoformat()}
 
-# ═══════════════════════════════════════════════════════════
-# ROUTES
-# ═══════════════════════════════════════════════════════════
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_login():
