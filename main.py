@@ -1,4 +1,4 @@
-# main.py — backend for username/password accounts + community configs
+# main.py — backend for username/password accounts + community config
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
