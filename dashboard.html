@@ -232,8 +232,14 @@ main {
 .config-actions { display: flex; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 
 .weapon-cards {
-  display: flex; flex-direction: column; gap: 6px;
-  margin-top: 8px; max-height: 340px; overflow-y: auto; padding-right: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .weapon-cards::-webkit-scrollbar { width: 3px; }
 .weapon-cards::-webkit-scrollbar-thumb { background: #222226; border-radius: 2px; }
