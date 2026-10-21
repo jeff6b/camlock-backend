@@ -176,8 +176,8 @@ DEFAULT_CONFIG = {
     "MaxStudsCheck": True, "MaxStuds": 500,
     "UnlockOnDeath": True, "SelfDeathCheck": True,
     "StickyMode": True,
-    "CurveType": "quadratic", "CurveBend": 0.05, "OvershootAmount": 0.08,
-    "StabilizerDeadzone": 3.0, "ReactionDelay": 0.12, "Jitter": 0.2,
+    "CurveType": "quadratic",
+    "StabilizerDeadzone": 3.0, "ReactionDelay": 0.12,
     "Streamproof": False,
     "CurveP1": {"x": 180, "y": 200}, "CurveP2": {"x": 420, "y": 80},
 }
