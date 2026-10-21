@@ -250,13 +250,6 @@ main {
   font-size: 10px; font-weight: 600; color: var(--text);
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.weapon-card-del {
-  width: 16px; height: 16px; border: 1px solid var(--border);
-  border-radius: 3px; background: transparent; color: var(--muted);
-  font-size: 10px; line-height: 1; cursor: pointer; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-}
-.weapon-card-del:hover { color: #a85555; border-color: #35353a; }
 .weapon-card-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 .weapon-card-label {
   width: 56px; font-size: 8px; color: var(--muted);
@@ -266,21 +259,6 @@ main {
 .weapon-card-row .custom-select-trigger { padding: 3px 6px; font-size: 9px; }
 .weapon-card-row .fill-slider { height: 18px; }
 .weapon-card-row .fill-slider-value, .weapon-card-row .fill-slider-value-inverse { font-size: 8px; }
-
-.add-weapon-btn {
-  padding: 6px 10px; border: 1px dashed var(--border);
-  border-radius: 6px; background: transparent; color: var(--muted);
-  font-size: 9px; cursor: pointer; margin-top: 6px;
-}
-.add-weapon-btn:hover { color: var(--text); border-color: #35353a; }
-
-.weapon-name-input-wrap { display: flex; gap: 4px; margin-top: 6px; }
-.weapon-name-input-wrap input {
-  flex: 1; padding: 5px 7px; border: 1px solid var(--border);
-  border-radius: 5px; background: transparent; color: var(--text);
-  font: inherit; font-size: 10px; outline: none;
-}
-.weapon-name-input-wrap input:focus { border-color: #35353a; }
 
 .session-bar {
   position: fixed; bottom: 8px; right: 12px;
@@ -592,11 +570,6 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
           <div class="setting-row"><div class="setting-title">Weapon specific</div><button class="toggle" id="tbWeaponSpecific" role="switch" aria-checked="false" aria-label="Weapon specific"></button></div>
           <div id="weaponListWrap" style="display: none;">
             <div class="weapon-cards" id="weaponCards"></div>
-            <button class="add-weapon-btn" id="addWeaponBtn">+ Add weapon</button>
-            <div class="weapon-name-input-wrap" id="weaponNameInputWrap" style="display: none;">
-              <input type="text" id="weaponNameInput" placeholder="Exact weapon name" maxlength="60">
-              <button class="text-button" id="weaponNameConfirm">Add</button>
-            </div>
           </div>
         </div>
       </div>
@@ -638,6 +611,8 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
 <div id="toast" role="status"></div>
 <script>
 const pages = ["overview", "account", "configuration", "community"];
+const WEAPON_NAMES = ["Double-Barrel SG", "Revolver", "TacticalShotgun"];
+
 let toastTimer;
 let currentUser = null;
 let saveTimer = null;
@@ -1136,19 +1111,13 @@ const tbSliders = {
 function renderWeapons() {
   const container = document.getElementById("weaponCards");
   container.innerHTML = "";
-  const names = Object.keys(weaponConfigs);
-  if (names.length === 0) {
-    container.innerHTML = '<div style="text-align: center; padding: 12px; color: var(--muted); font-size: 9px;">No weapons. Click + Add weapon.</div>';
-    return;
-  }
-  names.forEach(name => {
-    const cfg = weaponConfigs[name];
+  WEAPON_NAMES.forEach(name => {
+    const cfg = weaponConfigs[name] || { AimPart: "Head", Radius: 12.0, Delay: 0.12 };
     const card = document.createElement("div");
     card.className = "weapon-card";
     card.innerHTML = `
       <div class="weapon-card-head">
         <div class="weapon-card-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
-        <button class="weapon-card-del" data-weapon-del="${escapeHtml(name)}">×</button>
       </div>
       <div class="weapon-card-row">
         <span class="weapon-card-label">Aim part</span>
@@ -1176,51 +1145,27 @@ function renderWeapons() {
     `;
     container.appendChild(card);
 
-    card.querySelector(".weapon-card-del").addEventListener("click", () => {
-      delete weaponConfigs[name];
-      renderWeapons();
-      queueSave();
-    });
-
     const aimPartSel = card.querySelector(".weapon-aimpart");
     initCustomSelect(aimPartSel, val => {
+      if (!weaponConfigs[name]) weaponConfigs[name] = { AimPart: "Head", Radius: 12.0, Delay: 0.12 };
       weaponConfigs[name].AimPart = val;
     });
 
     const radiusSlider = card.querySelector(".weapon-radius");
     const radiusInst = initFillSlider(radiusSlider, val => {
+      if (!weaponConfigs[name]) weaponConfigs[name] = { AimPart: "Head", Radius: 12.0, Delay: 0.12 };
       weaponConfigs[name].Radius = val;
     });
-    radiusInst.set(weaponConfigs[name].Radius ?? 12.0, true);
+    radiusInst.set(cfg.Radius ?? 12.0, true);
 
     const delaySlider = card.querySelector(".weapon-delay");
     const delayInst = initFillSlider(delaySlider, val => {
+      if (!weaponConfigs[name]) weaponConfigs[name] = { AimPart: "Head", Radius: 12.0, Delay: 0.12 };
       weaponConfigs[name].Delay = val;
     });
-    delayInst.set(weaponConfigs[name].Delay ?? 0.12, true);
+    delayInst.set(cfg.Delay ?? 0.12, true);
   });
 }
-
-document.getElementById("addWeaponBtn").addEventListener("click", () => {
-  document.getElementById("weaponNameInputWrap").style.display = "flex";
-  document.getElementById("weaponNameInput").value = "";
-  document.getElementById("weaponNameInput").focus();
-});
-
-document.getElementById("weaponNameConfirm").addEventListener("click", () => {
-  const name = document.getElementById("weaponNameInput").value.trim();
-  if (!name) { showToast("Weapon name required"); return; }
-  if (weaponConfigs[name]) { showToast("Weapon already exists"); return; }
-  weaponConfigs[name] = { AimPart: "Head", Radius: 12.0, Delay: 0.12 };
-  document.getElementById("weaponNameInputWrap").style.display = "none";
-  renderWeapons();
-  queueSave();
-});
-
-document.getElementById("weaponNameInput").addEventListener("keydown", e => {
-  if (e.key === "Enter") document.getElementById("weaponNameConfirm").click();
-  if (e.key === "Escape") document.getElementById("weaponNameInputWrap").style.display = "none";
-});
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
