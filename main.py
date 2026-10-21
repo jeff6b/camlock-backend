@@ -170,13 +170,15 @@ migrate_db()
 # ═══════════════════════════════════════════════════════════
 
 DEFAULT_CONFIG = {
-    "Enabled": True, "Keybind": "Q", "WebviewKeybind": "F8",
-    "PredictTarget": True, "Prediction": 0.10,
-    "ClosestPart": True, "FixedPart": "Head",
-    "Smoothness": 0.35,
+    "Enabled": True, "Keybind": "Q", "KeybindMode": "toggle", "WebviewKeybind": "F8",
+    "PredictTarget": True, "PredictionX": 0.10, "PredictionY": 0.10,
+    "ClosestPoint": True, "FixedPart": "Head", "Smoothness": 0.35,
     "MaxStudsCheck": True, "MaxStuds": 500,
     "UnlockOnDeath": True, "SelfDeathCheck": True,
     "StickyMode": True,
+    "CurveType": "quadratic", "CurveBend": 0.05, "OvershootAmount": 0.08,
+    "StabilizerDeadzone": 3.0, "ReactionDelay": 0.12, "Jitter": 0.2,
+    "Streamproof": False,
     "CurveP1": {"x": 180, "y": 200}, "CurveP2": {"x": 420, "y": 80},
 }
 
