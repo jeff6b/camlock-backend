@@ -1,694 +1,1505 @@
-# main.py — backend for username/password accounts + community configs
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from pydantic import BaseModel
-from typing import Optional
-import psycopg2
-import os
-import json
-import secrets
-import pathlib
-from datetime import datetime, timedelta
-import hashlib
-import hmac
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>light</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0c0c0e;
+  --text: #b8b8bc;
+  --muted: #5e5e64;
+  --accent: #8e8e94;
+  --border: #1a1a1d;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: Inter, sans-serif; font-size: 11px;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; }
+button:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
 
-try:
-    from slowapi import Limiter, _rate_limit_exceeded_handler
-    from slowapi.util import get_remote_address
-    from slowapi.errors import RateLimitExceeded
-    from slowapi.middleware import SlowAPIMiddleware
-    limiter = Limiter(key_func=get_remote_address)
-    HAS_LIMITER = True
-except ImportError:
-    limiter = None
-    HAS_LIMITER = False
+.header {
+  display: flex; justify-content: center; align-items: center;
+  position: relative; padding: 8px 10px 0; height: 36px;
+  -webkit-app-region: drag; app-region: drag;
+}
+.user-tag {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  font-size: 11px; color: var(--text);
+  -webkit-app-region: no-drag; app-region: no-drag;
+}
+.tabs {
+  display: flex; align-items: center; gap: 1px; padding: 2px;
+  border: 1px solid var(--border); border-radius: 7px;
+  -webkit-app-region: no-drag; app-region: no-drag;
+}
+.tab {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 24px; border: 1px solid transparent;
+  border-radius: 5px; background: transparent; color: var(--muted);
+  cursor: pointer; transition: color .16s ease;
+}
+.tab svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); }
 
-app = FastAPI()
+.status-badge {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  font-size: 9px; color: var(--muted);
+  -webkit-app-region: no-drag; app-region: no-drag;
+}
+.status-badge.saving { color: #9a7540; }
+.status-badge.saved { color: #5a9e6e; }
+.status-badge.error { color: #a85555; }
 
-if HAS_LIMITER:
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-    app.add_middleware(SlowAPIMiddleware)
+main {
+  width: 100%; height: calc(100% - 36px - 24px);
+  margin: 0; padding: 10px 14px 12px;
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+}
+.page { display: none; }
+.page.active { display: block; }
 
-BASE_DIR = pathlib.Path(__file__).parent
+.tab-popup, .keybind-mode-popup {
+  position: fixed; z-index: 300; min-width: 100px; padding: 3px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: #131316; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  opacity: 0; pointer-events: none; transform: translateY(-3px);
+  transition: opacity .15s ease, transform .15s ease;
+}
+.tab-popup.show, .keybind-mode-popup.show {
+  opacity: 1; pointer-events: auto; transform: translateY(0);
+}
+.tab-popup .popup-item, .keybind-mode-popup .popup-item {
+  padding: 5px 10px; border-radius: 4px; font-size: 9px;
+  color: var(--muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.tab-popup .popup-item:hover, .keybind-mode-popup .popup-item:hover {
+  background: #16161a; color: var(--text);
+}
+.tab-popup .popup-item.selected, .keybind-mode-popup .popup-item.selected { color: var(--accent); }
 
-def load_html(filename: str) -> str:
-    path = BASE_DIR / filename
-    if not path.exists():
-        return f"<h1 style='color:#fff;background:#000;padding:40px'>Missing: {filename}</h1>"
-    return path.read_text(encoding="utf-8")
+.stats {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px; margin-bottom: 10px;
+}
+.stat { padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; }
+.stat-top { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 9px; }
+.stat-value { margin-top: 6px; font-size: 13px; font-weight: 600; letter-spacing: -.3px; color: var(--text); }
+.stat-value.accent { color: var(--accent); }
 
-LOGIN_HTML = load_html("login.html")
-DASHBOARD_HTML = load_html("dashboard.html")
+.overview-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.overview-tool {
+  display: flex; align-items: center; gap: 8px; text-align: left; min-width: 0;
+  padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px;
+  background: transparent; cursor: pointer; transition: border-color .15s ease;
+}
+.overview-tool:hover { border-color: #2a2a2e; }
+.overview-tool strong { font-size: 10px; font-weight: 500; flex: 1; color: var(--text); }
+.tool-arrow { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); flex-shrink: 0; }
 
-DATABASE_URL = "postgresql://neondb_owner:npg_S7hoDMeaw2cQ@ep-wandering-dream-ah21egpt-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
+.content-panel {
+  padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 8px; margin-bottom: 8px;
+}
+.content-panel h2 { margin-bottom: 2px; font-size: 11px; font-weight: 600; color: var(--text); }
+.info-row, .setting-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.info-row:first-of-type, .setting-row:first-of-type { margin-top: 2px; }
+.info-row:last-child, .setting-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.info-label { color: var(--muted); font-size: 10px; }
+.info-value { max-width: 60%; color: var(--text); font-size: 10px; text-align: right; overflow-wrap: anywhere; }
+.setting-title { font-size: 10px; font-weight: 500; color: var(--text); }
 
-def get_db():
-    return psycopg2.connect(DATABASE_URL)
+.toggle {
+  width: 13px; height: 13px; border: 1.5px solid #262629; border-radius: 3px;
+  background: transparent; cursor: pointer; flex-shrink: 0;
+  transition: background .12s ease, border-color .12s ease;
+}
+.toggle.on { background: var(--accent); border-color: var(--accent); }
+.toggle:hover { border-color: #35353a; }
 
-def hash_password(password: str, salt: str = None):
-    if salt is None:
-        salt = secrets.token_hex(16)
-    key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
-    return f"{salt}:{key.hex()}", salt
+.text-button {
+  padding: 5px 9px; border: 1px solid #262629; border-radius: 5px;
+  background: transparent; color: var(--text); font-size: 9px; cursor: pointer;
+}
+.text-button:hover { border-color: #35353a; color: var(--accent); }
+.text-button.danger { border-color: #262629; color: var(--text); }
+.text-button.danger:hover { border-color: #35353a; color: #a85555; }
 
-def verify_password(stored_hash: str, password: str) -> bool:
-    try:
-        salt, stored_key = stored_hash.split(':')
-        key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
-        return hmac.compare_digest(key.hex(), stored_key)
-    except:
-        return False
+.config-layout { display: flex; flex-direction: column; gap: 8px; }
+.config-layout > .curve-panel { margin-bottom: 0; }
+.config-options {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px; align-items: start;
+}
+.config-options .content-panel { margin-bottom: 0; height: 100%; padding: 9px 10px; }
 
-def init_db():
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("""CREATE TABLE IF NOT EXISTS user_accounts (
-            id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            license_key TEXT,
-            email TEXT,
-            discord_id TEXT,
-            hwid TEXT,
-            hwid_resets INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 1,
-            created_at TEXT NOT NULL,
-            last_login TEXT)""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS login_sessions (
-            session_id TEXT PRIMARY KEY, username TEXT NOT NULL,
-            license_key TEXT, created_at TEXT NOT NULL,
-            expires_at TEXT NOT NULL, ip_address TEXT)""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
-            id SERIAL PRIMARY KEY, username TEXT NOT NULL,
-            config_name TEXT NOT NULL, config_data TEXT NOT NULL,
-            created_at TEXT NOT NULL, UNIQUE(username, config_name))""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY, config TEXT NOT NULL)""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS clients (
-            client_id TEXT PRIMARY KEY, hwid TEXT NOT NULL,
-            session_token TEXT, license_key TEXT, username TEXT,
-            created_at TEXT NOT NULL, last_ping TEXT,
-            authenticated INTEGER DEFAULT 0)""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS community_configs (
-            id SERIAL PRIMARY KEY,
-            author TEXT NOT NULL,
-            name TEXT NOT NULL,
-            description TEXT,
-            config_data TEXT NOT NULL,
-            likes INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL
-        )""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS community_likes (
-            id SERIAL PRIMARY KEY,
-            config_id INTEGER NOT NULL REFERENCES community_configs(id) ON DELETE CASCADE,
-            username TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            UNIQUE(config_id, username)
-        )""")
-        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_configs_created ON community_configs(created_at DESC)""")
-        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_likes_config ON community_likes(config_id)""")
-        cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_likes_user ON community_likes(username)""")
-        db.commit()
-        db.close()
-        print("DB initialized", flush=True)
-    except Exception as e:
-        print(f"DB init error: {e}", flush=True)
+.curve-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.curve-heading h2 { margin-bottom: 0; font-size: 11px; }
+.curve-wrap { width: 100%; overflow: hidden; }
+#bezierSvg { display: block; width: 100%; height: auto; max-height: 118px; overflow: visible; touch-action: none; user-select: none; }
+.axis-label { fill: var(--muted); font-size: 8px; }
+.handle-line { stroke: #202024; stroke-width: 1.2; stroke-dasharray: 3 4; }
+.curve-path { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+.curve-end { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; }
+.control-point { fill: var(--accent); stroke: var(--bg); stroke-width: 2; cursor: grab; }
+.control-point:hover, .control-point:focus { r: 8; outline: none; }
+.control-point:active { cursor: grabbing; }
+.curve-values {
+  display: flex; justify-content: space-between; gap: 8px;
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border);
+  color: var(--muted); font-size: 8px;
+}
+.curve-values span { display: flex; flex-direction: column; gap: 2px; }
+.curve-values b { color: var(--text); font-weight: 500; }
 
-def migrate_db():
-    try:
-        db = get_db()
-        cur = db.cursor()
-        migrations = [
-            ("user_accounts", "discord_id", "TEXT"),
-            ("user_accounts", "hwid", "TEXT"),
-            ("user_accounts", "hwid_resets", "INTEGER DEFAULT 0"),
-            ("user_accounts", "active", "INTEGER DEFAULT 1"),
-            ("user_accounts", "email", "TEXT"),
-            ("user_accounts", "last_login", "TEXT"),
-            ("saved_configs", "username", "TEXT"),
-        ]
-        for table, col, definition in migrations:
-            try:
-                cur.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {definition}')
-            except Exception as e:
-                print(f"[MIGRATE] {table}.{col} skip: {e}", flush=True)
-        try:
-            cur.execute("ALTER TABLE user_accounts ALTER COLUMN license_key DROP NOT NULL")
-        except Exception:
-            pass
-        try:
-            cur.execute("ALTER TABLE login_sessions ALTER COLUMN license_key DROP NOT NULL")
-        except Exception:
-            pass
-        db.commit()
-        db.close()
-        print("[MIGRATE] Done", flush=True)
-    except Exception as e:
-        print(f"[MIGRATE] Error: {e}", flush=True)
+.field-label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 8px; }
+.field-label:first-child { margin-top: 4px; }
 
-init_db()
-migrate_db()
+.dark-input {
+  width: 100%; padding: 5px 7px; border: 1px solid var(--border);
+  border-radius: 5px; outline: none; background: transparent;
+  color: var(--text); font: inherit; font-size: 10px;
+}
+.dark-input:focus { border-color: #35353a; }
+.keybind-input { width: 52px; text-align: center; letter-spacing: .4px; font-weight: 500; cursor: pointer; }
 
-DEFAULT_CAMLOCK = {
-    "Enabled": True, "Keybind": "Q", "KeybindMode": "toggle", "WebviewKeybind": "F8",
-    "PredictTarget": True, "PredictionX": 0.10, "PredictionY": 0.10,
-    "ClosestPoint": True, "FixedPart": "Head", "Smoothness": 0.35,
-    "MaxStudsCheck": True, "MaxStuds": 500,
-    "UnlockOnDeath": True, "SelfDeathCheck": True,
-    "StickyMode": True,
-    "StabilizerDeadzone": 3.0, "ReactionDelay": 0.12,
-    "Streamproof": False,
-    "CurveP1": {"x": 180, "y": 200}, "CurveP2": {"x": 420, "y": 80},
+.fill-slider {
+  position: relative; width: 100%; height: 22px;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: transparent; cursor: pointer; overflow: hidden;
+  user-select: none; touch-action: none; overscroll-behavior: contain;
+}
+.fill-slider-fill { position: absolute; top: 0; left: 0; bottom: 0; width: 0%; background: var(--accent); pointer-events: none; }
+.fill-slider-value {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 9px; font-weight: 600; font-variant-numeric: tabular-nums;
+  pointer-events: none; letter-spacing: -.2px; white-space: nowrap; color: var(--text);
+}
+.fill-slider-value-inverse {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 9px; font-weight: 600; font-variant-numeric: tabular-nums;
+  pointer-events: none; letter-spacing: -.2px; white-space: nowrap; color: var(--bg);
+  clip-path: inset(0 calc(100% - var(--fill-pct, 0%)) 0 0);
+}
+.fill-slider:hover { border-color: #2a2a2e; }
+
+.custom-select { position: relative; width: 100%; user-select: none; }
+.custom-select-trigger {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 5px 7px; border: 1px solid var(--border);
+  border-radius: 5px; background: transparent; color: var(--text);
+  font-size: 10px; cursor: pointer;
+}
+.custom-select-trigger:hover { border-color: #2a2a2e; }
+.custom-select.open .custom-select-trigger { border-color: #35353a; }
+.custom-select-trigger .value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.custom-select-trigger .chevron {
+  width: 11px; height: 11px; flex-shrink: 0; margin-left: 6px;
+  color: var(--muted); transition: transform .18s ease, color .15s ease;
+}
+.custom-select.open .custom-select-trigger .chevron { transform: rotate(180deg); color: var(--accent); }
+.custom-select-options {
+  position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 50;
+  max-height: 0; overflow: hidden; border: 1px solid transparent;
+  border-radius: 6px; background: var(--bg); opacity: 0; transform: translateY(-3px);
+  pointer-events: none;
+  transition: max-height .2s ease, opacity .16s ease, transform .16s ease, border-color .16s ease;
+}
+.custom-select.open .custom-select-options {
+  max-height: 140px; opacity: 1; transform: translateY(0);
+  pointer-events: auto; border-color: var(--border); overflow-y: auto;
+}
+.custom-option {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 8px; color: var(--muted); font-size: 9px; cursor: pointer;
+}
+.custom-option:hover { background: #16161a; color: var(--text); }
+.custom-option.selected { color: var(--accent); background: transparent; }
+.custom-option .check { width: 10px; height: 10px; opacity: 0; color: var(--accent); }
+.custom-option.selected .check { opacity: 1; }
+
+.config-actions { display: flex; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
+.weapon-cards {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 8px; max-height: 340px; overflow-y: auto; padding-right: 4px;
+}
+.weapon-cards::-webkit-scrollbar { width: 3px; }
+.weapon-cards::-webkit-scrollbar-thumb { background: #222226; border-radius: 2px; }
+.weapon-card {
+  padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 6px; background: rgba(20,20,23,0.5);
+  position: relative;
+}
+.weapon-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 6px;
+}
+.weapon-card-name {
+  font-size: 10px; font-weight: 600; color: var(--text);
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.weapon-card-del {
+  width: 16px; height: 16px; border: 1px solid var(--border);
+  border-radius: 3px; background: transparent; color: var(--muted);
+  font-size: 10px; line-height: 1; cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.weapon-card-del:hover { color: #a85555; border-color: #35353a; }
+.weapon-card-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.weapon-card-label {
+  width: 56px; font-size: 8px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0;
+}
+.weapon-card-row .custom-select, .weapon-card-row .fill-slider { flex: 1; }
+.weapon-card-row .custom-select-trigger { padding: 3px 6px; font-size: 9px; }
+.weapon-card-row .fill-slider { height: 18px; }
+.weapon-card-row .fill-slider-value, .weapon-card-row .fill-slider-value-inverse { font-size: 8px; }
+
+.add-weapon-btn {
+  padding: 6px 10px; border: 1px dashed var(--border);
+  border-radius: 6px; background: transparent; color: var(--muted);
+  font-size: 9px; cursor: pointer; margin-top: 6px;
+}
+.add-weapon-btn:hover { color: var(--text); border-color: #35353a; }
+
+.weapon-name-input-wrap { display: flex; gap: 4px; margin-top: 6px; }
+.weapon-name-input-wrap input {
+  flex: 1; padding: 5px 7px; border: 1px solid var(--border);
+  border-radius: 5px; background: transparent; color: var(--text);
+  font: inherit; font-size: 10px; outline: none;
+}
+.weapon-name-input-wrap input:focus { border-color: #35353a; }
+
+.session-bar {
+  position: fixed; bottom: 8px; right: 12px;
+  font-size: 9px; color: var(--muted); pointer-events: none;
 }
 
-DEFAULT_TRIGGERBOT = {
-    "Enabled": False,
-    "Keybind": "E",
-    "KeybindMode": "hold",
-    "RequireCamlock": True,
-    "AimPart": "Head",
-    "Radius": 12.0,
-    "Delay": 0.12,
-    "StudCheck": True,
-    "MaxStuds": 500,
-    "DeathCheck": True,
-    "SelfDeathCheck": True,
-    "WeaponSpecific": False,
-    "WeaponConfigs": {
-        "Double-Barrel SG": {"AimPart": "Head", "Radius": 12.0, "Delay": 0.08},
-        "Revolver": {"AimPart": "Head", "Radius": 10.0, "Delay": 0.15},
-        "TacticalShotgun": {"AimPart": "Head", "Radius": 14.0, "Delay": 0.10},
-    },
+#toast {
+  position: fixed; right: 10px; bottom: 26px; max-width: 220px;
+  padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 6px; background: #131316; color: var(--text);
+  font-size: 9px; opacity: 0; transform: translateY(4px);
+  pointer-events: none; transition: .2s ease; z-index: 100;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+
+.community-toolbar { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+.community-search {
+  flex: 1; padding: 6px 10px; border: 1px solid var(--border);
+  border-radius: 6px; background: transparent; color: var(--text);
+  font: inherit; font-size: 10px; outline: none;
+}
+.community-search:focus { border-color: #35353a; }
+.community-search::placeholder { color: var(--muted); }
+
+.community-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+
+.cfg-card {
+  padding: 11px 12px; border: 1px solid var(--border);
+  border-radius: 8px; display: flex; flex-direction: column;
+  gap: 8px; transition: border-color .15s ease;
+}
+.cfg-card:hover { border-color: #262629; }
+
+.cfg-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.cfg-card-title { font-size: 11px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; line-height: 1.3; }
+.cfg-card-author { font-size: 9px; color: var(--muted); margin-top: 2px; }
+
+.cfg-card-desc { font-size: 10px; color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; min-height: 15px; }
+
+.cfg-card-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.cfg-tag {
+  padding: 2px 6px; border: 1px solid var(--border);
+  border-radius: 3px; font-size: 8px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.3px;
 }
 
-DEFAULT_CONFIG = {**DEFAULT_CAMLOCK, "triggerbot": DEFAULT_TRIGGERBOT}
+.cfg-card-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 6px; padding-top: 8px; border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+.cfg-like-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 7px; border: 1px solid var(--border);
+  border-radius: 4px; background: transparent; color: var(--muted);
+  font-size: 9px; cursor: pointer;
+  transition: color .14s ease, border-color .14s ease;
+}
+.cfg-like-btn:hover { color: var(--accent); border-color: #2a2a2e; }
+.cfg-like-btn.liked { color: var(--accent); border-color: #2a2a2e; }
+.cfg-like-btn svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.cfg-like-btn.liked svg { fill: var(--accent); }
 
-class UserLogin(BaseModel):
-    username: str
-    password: str
-    client_id: Optional[str] = None
+.cfg-card-actions { display: flex; gap: 4px; }
+.cfg-mini-btn {
+  padding: 3px 8px; border: 1px solid var(--border);
+  border-radius: 4px; background: transparent; color: var(--muted);
+  font-size: 9px; cursor: pointer;
+  transition: color .14s ease, border-color .14s ease;
+}
+.cfg-mini-btn:hover { color: var(--text); border-color: #2a2a2e; }
+.cfg-mini-btn.primary:hover { color: var(--accent); }
 
-class ClientRegister(BaseModel):
-    client_id: str
-    hwid: str
+.community-empty {
+  padding: 30px 16px; text-align: center; color: var(--muted);
+  font-size: 10px; border: 1px dashed var(--border); border-radius: 8px;
+}
 
-class ClientAuthStatus(BaseModel):
-    client_id: str
-    session_token: Optional[str] = None
+.cfg-modal-overlay {
+  position: fixed; inset: 0; background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s ease;
+}
+.cfg-modal-overlay.show { opacity: 1; pointer-events: auto; }
+.cfg-modal {
+  width: 90%; max-width: 420px; background: var(--bg);
+  border: 1px solid #2a2a2e; border-radius: 8px;
+  padding: 14px 16px; display: flex; flex-direction: column;
+  gap: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+}
+.cfg-modal h3 { font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+.cfg-modal label { display: block; font-size: 9px; color: var(--muted); margin-bottom: 3px; }
+.cfg-modal input, .cfg-modal textarea {
+  width: 100%; padding: 6px 9px; border: 1px solid #2a2a2e;
+  border-radius: 5px; background: #0a0a0c; color: var(--text);
+  font: inherit; font-size: 10px; outline: none; resize: vertical;
+  transition: border-color .14s ease;
+}
+.cfg-modal input:focus, .cfg-modal textarea:focus { border-color: #4a4a52; }
+.cfg-modal textarea { min-height: 60px; }
+.cfg-modal-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+.cfg-modal-actions .text-button { padding: 6px 14px; }
 
-class ClientAuthenticate(BaseModel):
-    client_id: str
-    license_key: Optional[str] = None
-    username: str
+main::-webkit-scrollbar { width: 4px; }
+main::-webkit-scrollbar-track { background: transparent; }
+main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="user-tag" id="userTag">light</div>
+  <nav class="tabs" aria-label="Main navigation">
+    <button class="tab active" data-page="overview" title="Overview" aria-label="Overview">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    </button>
+    <button class="tab" data-page="account" title="Account" aria-label="Account">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+    </button>
+    <button class="tab" data-page="configuration" title="Configuration" aria-label="Configuration">
+      <svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+    </button>
+    <button class="tab" data-page="community" title="Community" aria-label="Community">
+      <svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>
+    </button>
+  </nav>
+  <div class="status-badge" id="saveStatus"><span id="saveLabel">Ready</span></div>
+</header>
+<main>
+  <section class="page active" id="page-overview">
+    <div class="stats">
+      <div class="stat"><div class="stat-top">Account status</div><div class="stat-value accent" id="accountStatus">Checking</div></div>
+      <div class="stat"><div class="stat-top">Client</div><div class="stat-value" id="clientStatus">—</div></div>
+      <div class="stat"><div class="stat-top">Signed in as</div><div class="stat-value" id="statUsername">—</div></div>
+    </div>
+    <div class="overview-tools">
+      <button class="overview-tool" data-go="account"><strong>Account details</strong><svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+      <button class="overview-tool" data-go="configuration"><strong>Configuration</strong><svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+    </div>
+  </section>
 
+  <section class="page" id="page-account">
+    <div class="content-panel">
+      <h2>Account</h2>
+      <div class="info-row"><span class="info-label">Username</span><span class="info-value" id="accountUsername">—</span></div>
+      <div class="info-row"><span class="info-label">Session status</span><span class="info-value" id="accountSession">—</span></div>
+      <div class="info-row"><span class="info-label">HWID</span><span class="info-value" id="accountHwid">—</span></div>
+    </div>
+    <div class="content-panel">
+      <h2>Hotkeys</h2>
+      <div class="setting-row">
+        <div class="setting-title">Webview toggle</div>
+        <input class="dark-input keybind-input" id="cfgWebviewKeybind" type="text" value="F8" maxlength="8" readonly spellcheck="false">
+      </div>
+    </div>
+    <div class="content-panel">
+      <h2>Security</h2>
+      <div class="setting-row">
+        <div class="setting-title">Streamproof</div>
+        <button class="toggle" id="cfgStreamproof" role="switch" aria-checked="false" aria-label="Streamproof"></button>
+      </div>
+      <div style="margin-top:10px; display:flex; gap:6px;">
+        <button class="text-button" id="logoutBtn">Sign out</button>
+        <button class="text-button danger" id="closeAppBtn">Close App</button>
+      </div>
+    </div>
+  </section>
 
-@app.post("/api/user-login")
-async def user_login(request: Request, data: UserLogin):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("""
-            SELECT username, password_hash, hwid, hwid_resets, active
-            FROM user_accounts WHERE username = %s
-        """, (data.username,))
-        result = cur.fetchone()
-        if not result:
-            db.close()
-            return {"valid": False, "error": "Invalid username or password"}
-        username, password_hash, bound_hwid, hwid_resets, active = result
-        if active == 0:
-            db.close()
-            return {"valid": False, "error": "Account inactive"}
-        if not verify_password(password_hash, data.password):
-            db.close()
-            return {"valid": False, "error": "Invalid username or password"}
-        if data.client_id:
-            cur.execute("SELECT hwid FROM clients WHERE client_id=%s", (data.client_id,))
-            crow = cur.fetchone()
-            if not crow:
-                db.close()
-                return {"valid": False, "error": "Client not registered"}
-            client_hwid = crow[0]
-            if bound_hwid is None:
-                cur.execute("UPDATE user_accounts SET hwid=%s WHERE username=%s", (client_hwid, username))
-                print(f"[HWID] Bound {client_hwid[:12]}... to {username}", flush=True)
-            elif bound_hwid != client_hwid:
-                db.close()
-                return {"valid": False, "error": "HWID mismatch — account bound to another PC"}
-        cur.execute("UPDATE user_accounts SET last_login=%s WHERE username=%s", (datetime.now().isoformat(), username))
-        session_id = secrets.token_hex(16)
-        now = datetime.now().isoformat()
-        exp = (datetime.now() + timedelta(days=30)).isoformat()
-        cur.execute("""
-            INSERT INTO login_sessions
-                (session_id, username, license_key, created_at, expires_at, ip_address)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (session_id, username, "", now, exp, request.client.host))
-        db.commit()
-        db.close()
-        resp = JSONResponse({
-            "valid": True, "message": "Login successful",
-            "username": username, "license_key": "",
-            "subscription": "Lifetime", "hwid_resets": hwid_resets or 0
-        })
-        resp.set_cookie("session_id", session_id, httponly=True, max_age=2592000, samesite="lax")
-        resp.set_cookie("username", username, httponly=True, max_age=2592000, samesite="lax")
-        return resp
-    except Exception as e:
-        db.close()
-        return {"valid": False, "error": f"Server error: {str(e)}"}
+  <section class="page" id="page-configuration">
+    <div id="panel-aim">
+      <div class="config-layout">
+        <div class="content-panel curve-panel">
+          <div class="curve-heading">
+            <h2>Bezier curve</h2>
+            <button class="text-button" id="resetCurveBtn">Reset</button>
+          </div>
+          <div class="curve-wrap">
+            <svg id="bezierSvg" viewBox="0 0 600 310" role="img" aria-label="Bezier curve editor">
+              <defs>
+                <pattern id="curveGrid" width="30" height="30" patternUnits="userSpaceOnUse">
+                  <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#18181b" stroke-width="1"/>
+                </pattern>
+              </defs>
+              <rect x="34" y="18" width="548" height="260" fill="url(#curveGrid)" rx="8"/>
+              <path d="M34 278H582 M34 18V278" stroke="#2a2a2e" stroke-width="1.2"/>
+              <text x="34" y="299" class="axis-label">0</text>
+              <text x="572" y="299" class="axis-label">1</text>
+              <text x="15" y="28" class="axis-label">1</text>
+              <text x="15" y="281" class="axis-label">0</text>
+              <path id="handleLine1" class="handle-line" d="M34 278 L180 200"/>
+              <path id="handleLine2" class="handle-line" d="M420 80 L582 18"/>
+              <path id="curvePath" class="curve-path" d="M34 278 C180 200 420 80 582 18"/>
+              <circle class="curve-end" cx="34" cy="278" r="5"/>
+              <circle class="curve-end" cx="582" cy="18" r="5"/>
+              <circle class="control-point" id="control1" data-point="1" cx="180" cy="200" r="7" tabindex="0" role="slider" aria-label="Control point 1"/>
+              <circle class="control-point" id="control2" data-point="2" cx="420" cy="80" r="7" tabindex="0" role="slider" aria-label="Control point 2"/>
+            </svg>
+          </div>
+          <div class="curve-values">
+            <span>Point 1 <b id="point1Value">27%, 30%</b></span>
+            <span>Point 2 <b id="point2Value">71%, 76%</b></span>
+          </div>
+        </div>
 
+        <div class="config-options">
+          <div class="content-panel">
+            <h2>General</h2>
+            <div class="setting-row"><div class="setting-title">Enabled</div><button class="toggle on" id="cfgEnabled" role="switch" aria-checked="true" aria-label="Enabled"></button></div>
+            <div class="setting-row"><div class="setting-title">Sticky mode</div><button class="toggle on" id="cfgStickyMode" role="switch" aria-checked="true" aria-label="Sticky mode"></button></div>
+            <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="cfgKeybind" type="text" value="Q" maxlength="8" readonly spellcheck="false" title="Right-click for hold/toggle"></div>
+            <div class="setting-row"><div class="setting-title">Unlock on death</div><button class="toggle on" id="cfgUnlockOnDeath" role="switch" aria-checked="true" aria-label="Unlock on death"></button></div>
+            <div class="setting-row"><div class="setting-title">Self death check</div><button class="toggle on" id="cfgSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button></div>
+          </div>
 
-@app.get("/api/me")
-async def get_current_user(request: Request):
-    username = request.cookies.get("username")
-    session_id = request.cookies.get("session_id")
-    if not username or not session_id:
-        return {"authenticated": False}
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT username FROM login_sessions WHERE session_id=%s AND expires_at > %s",
-                    (session_id, datetime.now().isoformat()))
-        result = cur.fetchone()
-        db.close()
-        if result:
-            return {"authenticated": True, "username": result[0], "license_key": ""}
-        return {"authenticated": False}
-    except:
-        db.close()
-        return {"authenticated": False}
+          <div class="content-panel">
+            <h2>Targeting</h2>
+            <div class="setting-row"><div class="setting-title">Predict target</div><button class="toggle on" id="cfgPredictTarget" role="switch" aria-checked="true" aria-label="Predict target"></button></div>
+            <label class="field-label">Prediction X</label>
+            <div class="fill-slider" id="slPredictionX" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.10">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.10</div><div class="fill-slider-value-inverse">0.10</div>
+            </div>
+            <label class="field-label">Prediction Y</label>
+            <div class="fill-slider" id="slPredictionY" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.10">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.10</div><div class="fill-slider-value-inverse">0.10</div>
+            </div>
+            <div class="setting-row"><div class="setting-title">Closest point</div><button class="toggle on" id="cfgClosestPoint" role="switch" aria-checked="true" aria-label="Closest point"></button></div>
+            <label class="field-label">Fixed part</label>
+            <div class="custom-select" id="cfgFixedPartSelect" data-value="Head">
+              <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                <span class="value">Head</span>
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="custom-select-options" role="listbox">
+                <div class="custom-option selected" data-value="Head" role="option"><span>Head</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="custom-option" data-value="Torso" role="option"><span>Torso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="custom-option" data-value="HumanoidRootPart" role="option"><span>HumanoidRootPart</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="custom-option" data-value="UpperTorso" role="option"><span>UpperTorso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="custom-option" data-value="LowerTorso" role="option"><span>LowerTorso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+              </div>
+            </div>
+          </div>
 
+          <div class="content-panel">
+            <h2>Smoothing & range</h2>
+            <label class="field-label">Smoothness</label>
+            <div class="fill-slider" id="slSmoothness" data-min="0" data-max="2" data-step="0.01" data-decimals="2" data-value="0.35">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.35</div><div class="fill-slider-value-inverse">0.35</div>
+            </div>
+            <div class="setting-row"><div class="setting-title">Max studs check</div><button class="toggle on" id="cfgMaxStudsCheck" role="switch" aria-checked="true" aria-label="Max studs check"></button></div>
+            <label class="field-label">Max studs</label>
+            <div class="fill-slider" id="slMaxStuds" data-min="0" data-max="2000" data-step="10" data-decimals="0" data-value="500">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">500</div><div class="fill-slider-value-inverse">500</div>
+            </div>
+            <label class="field-label">Stabilizer deadzone</label>
+            <div class="fill-slider" id="slDeadzone" data-min="0" data-max="20" data-step="0.5" data-decimals="1" data-value="3.0">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">3.0</div><div class="fill-slider-value-inverse">3.0</div>
+            </div>
+            <label class="field-label">Reaction delay</label>
+            <div class="fill-slider" id="slReactionDelay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.12">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.12</div><div class="fill-slider-value-inverse">0.12</div>
+            </div>
+            <div class="config-actions"><button class="text-button" id="cfgResetBtn">Reset</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-@app.post("/api/logout")
-async def logout():
-    resp = JSONResponse({"success": True})
-    resp.delete_cookie("session_id")
-    resp.delete_cookie("license_key")
-    resp.delete_cookie("username")
-    return resp
+    <div id="panel-triggerbot" style="display: none;">
+      <div class="config-options">
+        <div class="content-panel">
+          <h2>General</h2>
+          <div class="setting-row"><div class="setting-title">Enabled</div><button class="toggle" id="tbEnabled" role="switch" aria-checked="false" aria-label="Triggerbot enabled"></button></div>
+          <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="tbKeybind" type="text" value="E" maxlength="8" readonly spellcheck="false" title="Right-click for hold/toggle"></div>
+          <div class="setting-row"><div class="setting-title">Require camlock</div><button class="toggle on" id="tbRequireCamlock" role="switch" aria-checked="true" aria-label="Require camlock"></button></div>
+          <div class="setting-row"><div class="setting-title">Death check</div><button class="toggle on" id="tbDeathCheck" role="switch" aria-checked="true" aria-label="Death check"></button></div>
+          <div class="setting-row"><div class="setting-title">Self death check</div><button class="toggle on" id="tbSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button></div>
+        </div>
 
+        <div class="content-panel">
+          <h2>Targeting</h2>
+          <label class="field-label">Aim part</label>
+          <div class="custom-select" id="tbAimPart" data-value="Head">
+            <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="value">Head</span>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="custom-select-options" role="listbox">
+              <div class="custom-option selected" data-value="Head" role="option"><span>Head</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+              <div class="custom-option" data-value="Torso" role="option"><span>Torso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+              <div class="custom-option" data-value="Any" role="option"><span>Any</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+            </div>
+          </div>
+          <label class="field-label">Radius</label>
+          <div class="fill-slider" id="tbRadius" data-min="0" data-max="40" data-step="0.5" data-decimals="1" data-value="12.0">
+            <div class="fill-slider-fill"></div><div class="fill-slider-value">12.0</div><div class="fill-slider-value-inverse">12.0</div>
+          </div>
+          <label class="field-label">Delay</label>
+          <div class="fill-slider" id="tbDelay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.12">
+            <div class="fill-slider-fill"></div><div class="fill-slider-value">0.12</div><div class="fill-slider-value-inverse">0.12</div>
+          </div>
+        </div>
 
-@app.get("/api/dashboard")
-async def get_dashboard(request: Request):
-    username = request.cookies.get("username")
-    if not username:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT username, hwid, hwid_resets, created_at, active FROM user_accounts WHERE username=%s", (username,))
-        result = cur.fetchone()
-        db.close()
-        if not result:
-            raise HTTPException(status_code=404, detail="Not found")
-        u, hwid, resets, created, active = result
-        return {
-            "username": u, "hwid": hwid, "hwid_resets": resets or 0,
-            "created_at": created, "subscription": "Lifetime",
-            "license_key": "", "active": active,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+        <div class="content-panel">
+          <h2>Range & Weapons</h2>
+          <div class="setting-row"><div class="setting-title">Stud check</div><button class="toggle on" id="tbStudCheck" role="switch" aria-checked="true" aria-label="Stud check"></button></div>
+          <label class="field-label">Max studs</label>
+          <div class="fill-slider" id="tbMaxStuds" data-min="0" data-max="2000" data-step="10" data-decimals="0" data-value="500">
+            <div class="fill-slider-fill"></div><div class="fill-slider-value">500</div><div class="fill-slider-value-inverse">500</div>
+          </div>
+          <div class="setting-row"><div class="setting-title">Weapon specific</div><button class="toggle" id="tbWeaponSpecific" role="switch" aria-checked="false" aria-label="Weapon specific"></button></div>
+          <div id="weaponListWrap" style="display: none;">
+            <div class="weapon-cards" id="weaponCards"></div>
+            <button class="add-weapon-btn" id="addWeaponBtn">+ Add weapon</button>
+            <div class="weapon-name-input-wrap" id="weaponNameInputWrap" style="display: none;">
+              <input type="text" id="weaponNameInput" placeholder="Exact weapon name" maxlength="60">
+              <button class="text-button" id="weaponNameConfirm">Add</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
+  <section class="page" id="page-community">
+    <div class="community-toolbar">
+      <input class="community-search" id="communitySearch" type="text" placeholder="Search by name or author...">
+      <button class="text-button" id="publishConfigBtn">Publish config</button>
+    </div>
+    <div class="community-grid" id="communityGrid"></div>
+  </section>
+</main>
 
-@app.get("/api/config")
-async def get_config(request: Request):
-    username = request.cookies.get("username")
-    if not username:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT config FROM settings WHERE key=%s", (username,))
-        result = cur.fetchone()
-        if not result:
-            cur.execute("INSERT INTO settings (key, config) VALUES (%s, %s)",
-                        (username, json.dumps(DEFAULT_CONFIG)))
-            db.commit()
-            db.close()
-            return DEFAULT_CONFIG
-        db.close()
-        try:
-            return json.loads(result[0])
-        except:
-            return DEFAULT_CONFIG
-    except Exception as e:
-        db.close()
-        return DEFAULT_CONFIG
+<div class="cfg-modal-overlay" id="publishModal">
+  <div class="cfg-modal">
+    <h3>Publish config</h3>
+    <div><label>Config name</label><input type="text" id="publishName" maxlength="40" placeholder="e.g. Legit smooth"></div>
+    <div><label>Description</label><textarea id="publishDesc" maxlength="220" placeholder="What makes this config good?"></textarea></div>
+    <div class="cfg-modal-actions">
+      <button class="text-button" onclick="closePublishModal()">Cancel</button>
+      <button class="text-button" id="publishConfirm">Publish</button>
+    </div>
+  </div>
+</div>
 
+<div class="keybind-mode-popup" id="keybindModePopup">
+  <div class="popup-item" data-mode="toggle"><span>Toggle</span></div>
+  <div class="popup-item" data-mode="hold"><span>Hold</span></div>
+</div>
 
-@app.post("/api/config")
-async def set_config(request: Request, data: dict):
-    username = request.cookies.get("username")
-    if not username:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("INSERT INTO settings (key, config) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config",
-                    (username, json.dumps(data)))
-        db.commit()
-        db.close()
-        return {"status": "ok"}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+<div class="tab-popup" id="configTabPopup">
+  <div class="popup-item" data-mode="aim"><span>Aim assist</span></div>
+  <div class="popup-item" data-mode="triggerbot"><span>Triggerbot</span></div>
+</div>
 
+<div class="session-bar" id="sessionBar">00:00:00</div>
+<div id="toast" role="status"></div>
+<script>
+const pages = ["overview", "account", "configuration", "community"];
+let toastTimer;
+let currentUser = null;
+let saveTimer = null;
+let isDirty = false;
+let sessionStart = Date.now();
+let communityConfigs = [];
+let myLikes = new Set();
+let searchQuery = "";
+let keybindMode = "toggle";
+let tbKeybindMode = "hold";
+let configMode = "aim";
+let weaponConfigs = {};
 
-@app.post("/api/client/register")
-async def register_client(data: ClientRegister):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        session_token = secrets.token_hex(32)
-        now = datetime.now().isoformat()
-        cur.execute("SELECT client_id FROM clients WHERE client_id=%s", (data.client_id,))
-        if cur.fetchone():
-            cur.execute("""UPDATE clients SET hwid=%s, session_token=%s, last_ping=%s, authenticated=0
-                           WHERE client_id=%s""",
-                        (data.hwid, session_token, now, data.client_id))
-        else:
-            cur.execute("""INSERT INTO clients
-                           (client_id, hwid, session_token, created_at, last_ping, authenticated)
-                           VALUES (%s, %s, %s, %s, %s, 0)""",
-                        (data.client_id, data.hwid, session_token, now, now))
-        db.commit()
-        db.close()
-        return {"success": True, "session_token": session_token,
-                "client_id": data.client_id, "authenticated": False}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+const saveStatus = document.getElementById("saveStatus");
+const saveLabel = document.getElementById("saveLabel");
 
+function setSaveStatus(state, label) {
+  saveStatus.classList.remove("saving", "saved", "error");
+  if (state) saveStatus.classList.add(state);
+  saveLabel.textContent = label;
+}
 
-@app.post("/api/client/auth-status")
-async def client_auth_status(data: ClientAuthStatus):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("""SELECT authenticated, username, hwid
-                       FROM clients WHERE client_id=%s AND session_token=%s""",
-                    (data.client_id, data.session_token))
-        result = cur.fetchone()
-        if not result:
-            db.close()
-            return {"authenticated": False, "error": "Invalid credentials"}
-        authenticated, username, hwid = result
-        cur.execute("UPDATE clients SET last_ping=%s WHERE client_id=%s",
-                    (datetime.now().isoformat(), data.client_id))
-        db.commit()
-        db.close()
-        return {"authenticated": bool(authenticated), "license_key": "",
-                "username": username, "hwid": hwid}
-    except Exception as e:
-        db.close()
-        return {"authenticated": False, "error": str(e)}
+function showToast(message) {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 2500);
+}
 
+function navigate(page) {
+  if (!pages.includes(page)) return;
+  document.querySelectorAll(".page").forEach(s => s.classList.toggle("active", s.id === "page-" + page));
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.page === page));
+  if (page === "community") loadCommunity();
+  if (page === "configuration") applyConfigMode();
+}
 
-@app.post("/api/client/authenticate")
-async def client_authenticate(data: ClientAuthenticate):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT hwid FROM clients WHERE client_id=%s", (data.client_id,))
-        crow = cur.fetchone()
-        if not crow:
-            db.close()
-            raise HTTPException(status_code=404, detail="Client not registered")
-        client_hwid = crow[0]
-        cur.execute("""UPDATE clients
-                       SET authenticated=1, username=%s, last_ping=%s
-                       WHERE client_id=%s""",
-                    (data.username, datetime.now().isoformat(), data.client_id))
-        cur.execute("SELECT hwid FROM user_accounts WHERE username=%s", (data.username,))
-        urow = cur.fetchone()
-        if urow:
-            current_hwid = urow[0]
-            if not current_hwid:
-                cur.execute("UPDATE user_accounts SET hwid=%s WHERE username=%s", (client_hwid, data.username))
-                print(f"[HWID] Bound {client_hwid[:12]}... to {data.username}", flush=True)
-            elif current_hwid != client_hwid:
-                db.close()
-                raise HTTPException(status_code=403, detail="HWID mismatch — account bound to another PC")
-        db.commit()
-        db.close()
-        return {"success": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+function applyConfigMode() {
+  const aimPanel = document.getElementById("panel-aim");
+  const tbPanel = document.getElementById("panel-triggerbot");
+  if (configMode === "triggerbot") {
+    aimPanel.style.display = "none";
+    tbPanel.style.display = "block";
+  } else {
+    aimPanel.style.display = "block";
+    tbPanel.style.display = "none";
+  }
+}
 
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => navigate(t.dataset.page)));
+document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => navigate(b.dataset.go)));
 
-@app.post("/api/client/config")
-async def get_client_config(data: dict):
-    client_id = data.get("client_id")
-    session_token = data.get("session_token")
-    if not client_id or not session_token:
-        raise HTTPException(status_code=401, detail="Missing credentials")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT username FROM clients WHERE client_id=%s AND session_token=%s AND authenticated=1",
-                    (client_id, session_token))
-        result = cur.fetchone()
-        if not result:
-            db.close()
-            raise HTTPException(status_code=401, detail="Not authenticated")
-        username = result[0]
-        cur.execute("SELECT config FROM settings WHERE key=%s", (username,))
-        cfg = cur.fetchone()
-        db.close()
-        if not cfg:
-            return DEFAULT_CONFIG
-        try:
-            return json.loads(cfg[0])
-        except:
-            return DEFAULT_CONFIG
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+const configTabPopup = document.getElementById("configTabPopup");
+const configTabBtn = document.querySelector('.tab[data-page="configuration"]');
 
+configTabBtn.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  const rect = configTabBtn.getBoundingClientRect();
+  configTabPopup.style.top = (rect.bottom + 4) + "px";
+  configTabPopup.style.left = Math.max(8, rect.left - 30) + "px";
+  configTabPopup.querySelectorAll(".popup-item").forEach(item => {
+    item.classList.toggle("selected", item.dataset.mode === configMode);
+  });
+  configTabPopup.classList.add("show");
+});
 
-@app.post("/api/client/shutdown")
-async def client_shutdown(request: Request):
-    username = request.cookies.get("username")
-    if not username:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("UPDATE clients SET session_token = NULL WHERE username = %s", (username,))
-        db.commit()
-        db.close()
-        return {"ok": True}
-    except Exception as e:
-        db.close()
-        raise HTTPException(status_code=500, detail=str(e))
+configTabPopup.querySelectorAll(".popup-item").forEach(item => {
+  item.addEventListener("click", () => {
+    configMode = item.dataset.mode;
+    configTabPopup.classList.remove("show");
+    navigate("configuration");
+    showToast(configMode === "triggerbot" ? "Triggerbot panel" : "Aim assist panel");
+  });
+});
 
+document.addEventListener("click", e => {
+  if (!configTabPopup.contains(e.target) && e.target !== configTabBtn) configTabPopup.classList.remove("show");
+});
 
-@app.get("/api/client/status-by-user/{username}")
-async def client_status_by_user(request: Request, username: str):
-    if not request.cookies.get("username"):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("""SELECT last_ping FROM clients
-                       WHERE username=%s AND authenticated=1
-                       ORDER BY last_ping DESC LIMIT 1""", (username,))
-        row = cur.fetchone()
-        db.close()
-        if not row or not row[0]:
-            return {"connected": False}
-        try:
-            last = datetime.fromisoformat(row[0])
-            return {"connected": (datetime.now() - last).total_seconds() < 15}
-        except:
-            return {"connected": False}
-    except Exception as e:
-        db.close()
-        return {"connected": False, "error": str(e)}
+function tickTimer() {
+  const s = Math.floor((Date.now() - sessionStart) / 1000);
+  const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  document.getElementById("sessionBar").textContent = `${hh}:${mm}:${ss}`;
+}
+setInterval(tickTimer, 1000);
+tickTimer();
 
+async function refreshSession() {
+  try {
+    const response = await fetch("/api/me", { credentials: "include" });
+    if (!response.ok) throw new Error("fail");
+    const data = await response.json();
+    if (!data.authenticated) { window.location.href = "/"; return; }
+    const username = data.username || "user";
+    currentUser = username;
+    document.getElementById("userTag").textContent = "light";
+    document.getElementById("statUsername").textContent = username;
+    document.getElementById("accountUsername").textContent = username;
+    document.getElementById("accountStatus").textContent = "Active";
+    document.getElementById("accountSession").textContent = "Authenticated";
+    try {
+      const dRes = await fetch("/api/dashboard", { credentials: "include" });
+      if (dRes.ok) {
+        const d = await dRes.json();
+        document.getElementById("accountHwid").textContent = d.hwid || "not bound";
+      }
+    } catch (e) {}
+    refreshClientStatus();
+    setInterval(refreshClientStatus, 3000);
+  } catch {
+    document.getElementById("accountStatus").textContent = "Unknown";
+    document.getElementById("accountSession").textContent = "Unable to verify";
+  }
+}
 
-@app.get("/api/community/configs")
-async def list_community_configs(request: Request):
-    username = request.cookies.get("username")
-    if not username:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("""
-            SELECT id, author, name, description, config_data, likes, created_at
-            FROM community_configs
-            ORDER BY created_at DESC
-        """)
-        rows = cur.fetchall()
-        cur.execute("SELECT config_id FROM community_likes WHERE username=%s", (username,))
-        liked_ids = [r[0] for r in cur.fetchall()]
-        db.close()
-        configs = []
-        for row in rows:
-            cid, author, name, desc, cfg_json, likes, created = row
-            try:
-                cfg = json.loads(cfg_json)
-            except:
-                cfg = {}
-            configs.append({
-                "id": cid, "author": author, "name": name,
-                "description": desc or "", "config_data": cfg,
-                "likes": likes or 0, "created_at": created
-            })
-        return {"configs": configs, "liked_ids": liked_ids}
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+async function refreshClientStatus() {
+  if (!currentUser) return;
+  try {
+    const r = await fetch(`/api/client/status-by-user/${currentUser}`, { credentials: "include" });
+    if (!r.ok) return;
+    const d = await r.json();
+    const el = document.getElementById("clientStatus");
+    if (d.connected) { el.textContent = "Connected"; el.style.color = "#5a9e6e"; }
+    else { el.textContent = "Offline"; el.style.color = ""; }
+  } catch (e) {}
+}
 
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  try {
+    const r = await fetch("/api/logout", { method: "POST", credentials: "include" });
+    if (r.ok) window.location.href = "/";
+  } catch { showToast("couldn't sign out"); }
+});
 
-@app.post("/api/community/configs")
-async def create_community_config(request: Request, data: dict):
-    username = request.cookies.get("username")
-    if not username:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    name = (data.get("name") or "").strip()
-    desc = (data.get("description") or "").strip()
-    cfg = data.get("config_data")
-    if not name:
-        raise HTTPException(status_code=400, detail="Name required")
-    if not cfg or not isinstance(cfg, dict):
-        raise HTTPException(status_code=400, detail="Config data required")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("""
-            INSERT INTO community_configs (author, name, description, config_data, likes, created_at)
-            VALUES (%s, %s, %s, %s, 0, %s)
-            RETURNING id
-        """, (username, name[:60], desc[:500], json.dumps(cfg), datetime.now().isoformat()))
-        new_id = cur.fetchone()[0]
-        db.commit()
-        db.close()
-        return {"success": True, "id": new_id}
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+document.getElementById("closeAppBtn").addEventListener("click", async () => {
+  try {
+    await fetch("/api/client/shutdown", { method: "POST", credentials: "include" });
+    showToast("closing...");
+    setTimeout(() => { try { window.close(); } catch (e) {} }, 500);
+  } catch (e) { showToast("close failed"); }
+});
 
+function setupToggle(id) {
+  const button = document.getElementById(id);
+  const initial = button.classList.contains("on");
+  function setState(enabled) {
+    button.classList.toggle("on", enabled);
+    button.setAttribute("aria-checked", String(enabled));
+  }
+  setState(initial);
+  button.addEventListener("click", () => {
+    setState(!button.classList.contains("on"));
+    queueSave();
+  });
+  return { get: () => button.classList.contains("on"), set: setState };
+}
 
-@app.post("/api/community/configs/{config_id}/like")
-async def toggle_community_like(request: Request, config_id: int):
-    username = request.cookies.get("username")
-    if not username:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT id FROM community_likes WHERE config_id=%s AND username=%s", (config_id, username))
-        existing = cur.fetchone()
-        if existing:
-            cur.execute("DELETE FROM community_likes WHERE id=%s", (existing[0],))
-            cur.execute("UPDATE community_configs SET likes = GREATEST(likes - 1, 0) WHERE id=%s", (config_id,))
-            liked = False
-        else:
-            cur.execute("INSERT INTO community_likes (config_id, username, created_at) VALUES (%s, %s, %s)",
-                        (config_id, username, datetime.now().isoformat()))
-            cur.execute("UPDATE community_configs SET likes = likes + 1 WHERE id=%s", (config_id,))
-            liked = True
-        cur.execute("SELECT likes FROM community_configs WHERE id=%s", (config_id,))
-        row = cur.fetchone()
-        likes = row[0] if row else 0
-        db.commit()
-        db.close()
-        return {"success": True, "liked": liked, "likes": likes}
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+function initCustomSelect(root, onchange) {
+  const trigger = root.querySelector(".custom-select-trigger");
+  const options = root.querySelectorAll(".custom-option");
+  const valueEl = trigger.querySelector(".value");
+  function close() { root.classList.remove("open"); trigger.setAttribute("aria-expanded", "false"); }
+  function open() { root.classList.add("open"); trigger.setAttribute("aria-expanded", "true"); }
+  function select(option) {
+    options.forEach(o => o.classList.remove("selected"));
+    option.classList.add("selected");
+    root.dataset.value = option.dataset.value;
+    valueEl.textContent = option.querySelector("span").textContent;
+    close();
+    if (onchange) onchange(option.dataset.value);
+    queueSave();
+  }
+  trigger.addEventListener("click", e => {
+    e.stopPropagation();
+    if (root.classList.contains("open")) close();
+    else {
+      document.querySelectorAll(".custom-select.open").forEach(s => {
+        if (s !== root) { s.classList.remove("open"); s.querySelector(".custom-select-trigger").setAttribute("aria-expanded", "false"); }
+      });
+      open();
+    }
+  });
+  options.forEach(o => o.addEventListener("click", e => { e.stopPropagation(); select(o); }));
+  document.addEventListener("click", e => { if (!root.contains(e.target)) close(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+}
+document.querySelectorAll(".custom-select").forEach(root => initCustomSelect(root));
 
+function initFillSlider(el, onchange) {
+  const min = Number(el.dataset.min);
+  const max = Number(el.dataset.max);
+  const step = Number(el.dataset.step) || 1;
+  const decimals = Number(el.dataset.decimals) || 0;
+  const fill = el.querySelector(".fill-slider-fill");
+  const label = el.querySelector(".fill-slider-value");
+  const labelInv = el.querySelector(".fill-slider-value-inverse");
+  let value = Number(el.dataset.value);
+  let dragging = false;
 
-@app.post("/api/community/configs/save-mine")
-async def save_community_to_mine(request: Request, data: dict):
-    username = request.cookies.get("username")
-    if not username:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    cid = data.get("community_config_id")
-    if not cid:
-        raise HTTPException(status_code=400, detail="Missing config id")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT name, config_data FROM community_configs WHERE id=%s", (cid,))
-        row = cur.fetchone()
-        if not row:
-            db.close()
-            raise HTTPException(status_code=404, detail="Config not found")
-        base_name, cfg_json = row
-        name = base_name
-        suffix = 1
-        while True:
-            cur.execute("SELECT id FROM saved_configs WHERE username=%s AND config_name=%s", (username, name))
-            if not cur.fetchone():
-                break
-            name = f"{base_name} ({suffix})"
-            suffix += 1
-        cur.execute("""INSERT INTO saved_configs (username, config_name, config_data, created_at)
-                       VALUES (%s, %s, %s, %s)""",
-                    (username, name, cfg_json, datetime.now().isoformat()))
-        db.commit()
-        db.close()
-        return {"success": True, "name": name}
-    except HTTPException:
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+  function fmt(v) {
+    return decimals === 0 ? String(Math.round(v)) : v.toFixed(decimals);
+  }
+  function set(v, silent) {
+    v = Math.min(max, Math.max(min, v));
+    const steps = Math.round((v - min) / step);
+    v = min + steps * step;
+    if (decimals === 0) v = Math.round(v);
+    else v = Math.round(v * Math.pow(10, decimals)) / Math.pow(10, decimals);
+    value = v;
+    el.dataset.value = String(v);
+    const pct = ((v - min) / (max - min)) * 100;
+    fill.style.width = pct + "%";
+    el.style.setProperty("--fill-pct", pct + "%");
+    const text = fmt(v);
+    label.textContent = text;
+    labelInv.textContent = text;
+    if (!silent) {
+      if (onchange) onchange(v);
+      queueSave();
+    }
+  }
+  function fromEvent(e) {
+    const rect = el.getBoundingClientRect();
+    const x = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
+    set(min + Math.min(1, Math.max(0, x / rect.width)) * (max - min));
+  }
 
+  el.addEventListener("pointerdown", e => { e.preventDefault(); dragging = true; el.setPointerCapture?.(e.pointerId); fromEvent(e); });
+  el.addEventListener("pointermove", e => { if (dragging) { e.preventDefault(); fromEvent(e); } });
+  el.addEventListener("pointerup", e => { e.preventDefault(); dragging = false; try { el.releasePointerCapture?.(e.pointerId); } catch (err) {} });
+  el.addEventListener("pointercancel", () => { dragging = false; });
+  el.addEventListener("touchstart", e => e.preventDefault(), { passive: false });
 
-@app.get("/api/keepalive")
-def keepalive():
-    return {"status": "alive", "timestamp": datetime.now().isoformat()}
+  set(value, true);
+  return { get: () => value, set: v => set(v, true) };
+}
 
+const keybindInput = document.getElementById("cfgKeybind");
+const webviewKeybindInput = document.getElementById("cfgWebviewKeybind");
+const tbKeybindInput = document.getElementById("tbKeybind");
+let capturingKeybind = null;
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_login():
-    return HTMLResponse(content=LOGIN_HTML)
+function startCapture(input) {
+  capturingKeybind = input;
+  input.value = "…";
+  input.style.borderColor = "#35353a";
+}
 
-@app.get("/menu", response_class=HTMLResponse)
-async def serve_menu():
-    return HTMLResponse(content=LOGIN_HTML)
+function stopCapture() {
+  if (capturingKeybind) capturingKeybind.style.borderColor = "";
+  capturingKeybind = null;
+}
 
-@app.get("/dashboard", response_class=HTMLResponse)
-async def serve_dashboard(request: Request):
-    username = request.cookies.get("username")
-    session_id = request.cookies.get("session_id")
-    if not username or not session_id:
-        return RedirectResponse(url="/")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT username FROM login_sessions WHERE session_id=%s AND expires_at > %s",
-                    (session_id, datetime.now().isoformat()))
-        result = cur.fetchone()
-        db.close()
-        if not result:
-            return RedirectResponse(url="/")
-        return HTMLResponse(content=DASHBOARD_HTML)
-    except:
-        db.close()
-        return RedirectResponse(url="/")
+function setKeybindLabel(input, label) {
+  input.value = label;
+  stopCapture();
+  queueSave();
+}
 
+keybindInput.addEventListener("click", () => startCapture(keybindInput));
+webviewKeybindInput.addEventListener("click", () => startCapture(webviewKeybindInput));
+tbKeybindInput.addEventListener("click", () => startCapture(tbKeybindInput));
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+const keybindModePopup = document.getElementById("keybindModePopup");
+
+function openKeybindModePopup(inputEl, currentMode, targetTag) {
+  const rect = inputEl.getBoundingClientRect();
+  keybindModePopup.style.top = (rect.bottom + 4) + "px";
+  keybindModePopup.style.left = rect.left + "px";
+  keybindModePopup.dataset.target = targetTag;
+  keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
+    item.classList.toggle("selected", item.dataset.mode === currentMode);
+  });
+  keybindModePopup.classList.add("show");
+}
+
+keybindInput.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  openKeybindModePopup(keybindInput, keybindMode, "aim");
+});
+
+tbKeybindInput.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  openKeybindModePopup(tbKeybindInput, tbKeybindMode, "tb");
+});
+
+keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
+  item.addEventListener("click", () => {
+    const target = keybindModePopup.dataset.target;
+    if (target === "tb") {
+      tbKeybindMode = item.dataset.mode;
+    } else {
+      keybindMode = item.dataset.mode;
+    }
+    keybindModePopup.classList.remove("show");
+    queueSave();
+    showToast(`Keybind mode: ${item.dataset.mode === "hold" ? "Hold" : "Toggle"}`);
+  });
+});
+
+document.addEventListener("click", e => {
+  if (!keybindModePopup.contains(e.target) &&
+      e.target !== keybindInput &&
+      e.target !== tbKeybindInput) {
+    keybindModePopup.classList.remove("show");
+  }
+});
+
+document.addEventListener("keydown", e => {
+  if (!capturingKeybind) return;
+  e.preventDefault();
+  const k = e.key;
+  if (k === "Escape") {
+    if (capturingKeybind === keybindInput) capturingKeybind.value = "Q";
+    else if (capturingKeybind === tbKeybindInput) capturingKeybind.value = "E";
+    else capturingKeybind.value = "F8";
+    stopCapture();
+    return;
+  }
+  let label;
+  if (k.length === 1) label = k.toUpperCase();
+  else if (k.startsWith("F") && k.length <= 3) label = k;
+  else label = k;
+  setKeybindLabel(capturingKeybind, label);
+});
+
+document.addEventListener("pointerdown", e => {
+  if (!capturingKeybind) return;
+  if (e.button === 3) { e.preventDefault(); setKeybindLabel(capturingKeybind, "MB4"); }
+  else if (e.button === 4) { e.preventDefault(); setKeybindLabel(capturingKeybind, "MB5"); }
+}, true);
+
+document.addEventListener("contextmenu", e => { if (capturingKeybind) e.preventDefault(); });
+
+document.addEventListener("mousedown", e => {
+  if (!capturingKeybind) return;
+  if (e.button === 3 || e.button === 4) {
+    e.preventDefault();
+    setKeybindLabel(capturingKeybind, e.button === 3 ? "MB4" : "MB5");
+  }
+});
+
+const curveSvg = document.getElementById("bezierSvg");
+const curvePath = document.getElementById("curvePath");
+const control1 = document.getElementById("control1");
+const control2 = document.getElementById("control2");
+const curveBounds = { left: 34, right: 582, top: 18, bottom: 278 };
+const curveState = { p1: { x: 180, y: 200 }, p2: { x: 420, y: 80 }, dragging: null };
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
+function curvePointFromEvent(event) {
+  const point = curveSvg.createSVGPoint();
+  point.x = event.clientX; point.y = event.clientY;
+  const matrix = curveSvg.getScreenCTM();
+  if (!matrix) return null;
+  const local = point.matrixTransform(matrix.inverse());
+  return { x: clamp(local.x, curveBounds.left, curveBounds.right), y: clamp(local.y, curveBounds.top, curveBounds.bottom) };
+}
+
+function drawCurve() {
+  const p1 = curveState.p1, p2 = curveState.p2;
+  curvePath.setAttribute("d",
+    "M " + curveBounds.left + " " + curveBounds.bottom +
+    " C " + p1.x + " " + p1.y + " " + p2.x + " " + p2.y + " " +
+    curveBounds.right + " " + curveBounds.top);
+  document.getElementById("handleLine1").setAttribute("d", "M " + curveBounds.left + " " + curveBounds.bottom + " L " + p1.x + " " + p1.y);
+  document.getElementById("handleLine2").setAttribute("d", "M " + p2.x + " " + p2.y + " L " + curveBounds.right + " " + curveBounds.top);
+  control1.setAttribute("cx", p1.x); control1.setAttribute("cy", p1.y);
+  control2.setAttribute("cx", p2.x); control2.setAttribute("cy", p2.y);
+  document.getElementById("point1Value").textContent = Math.round((p1.x - 34) / 548 * 100) + "%, " + Math.round((278 - p1.y) / 260 * 100) + "%";
+  document.getElementById("point2Value").textContent = Math.round((p2.x - 34) / 548 * 100) + "%, " + Math.round((278 - p2.y) / 260 * 100) + "%";
+}
+
+curveSvg.addEventListener("pointermove", event => {
+  if (!curveState.dragging) return;
+  const p = curvePointFromEvent(event);
+  if (!p) return;
+  curveState[curveState.dragging] = p;
+  drawCurve();
+});
+curveSvg.addEventListener("pointerup", () => { if (curveState.dragging) { curveState.dragging = null; queueSave(); } });
+curveSvg.addEventListener("pointercancel", () => { curveState.dragging = null; });
+
+[control1, control2].forEach(point => {
+  point.addEventListener("pointerdown", event => {
+    curveState.dragging = point.dataset.point === "1" ? "p1" : "p2";
+    point.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+  point.addEventListener("keydown", event => {
+    const key = event.key;
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return;
+    event.preventDefault();
+    const p = curveState[point.dataset.point === "1" ? "p1" : "p2"];
+    const step = event.shiftKey ? 10 : 3;
+    if (key === "ArrowUp") p.y -= step;
+    if (key === "ArrowDown") p.y += step;
+    if (key === "ArrowLeft") p.x -= step;
+    if (key === "ArrowRight") p.x += step;
+    p.x = clamp(p.x, curveBounds.left, curveBounds.right);
+    p.y = clamp(p.y, curveBounds.top, curveBounds.bottom);
+    drawCurve();
+    queueSave();
+  });
+});
+
+document.getElementById("resetCurveBtn").addEventListener("click", () => {
+  curveState.p1 = { x: 180, y: 200 };
+  curveState.p2 = { x: 420, y: 80 };
+  drawCurve();
+  queueSave();
+});
+
+const defaults = {
+  Enabled: true, Keybind: "Q", KeybindMode: "toggle", WebviewKeybind: "F8",
+  PredictTarget: true, PredictionX: 0.10, PredictionY: 0.10,
+  ClosestPoint: true, FixedPart: "Head", Smoothness: 0.35,
+  MaxStudsCheck: true, MaxStuds: 500, UnlockOnDeath: true, SelfDeathCheck: true,
+  StickyMode: true,
+  StabilizerDeadzone: 3.0, ReactionDelay: 0.12,
+  Streamproof: false,
+  CurveP1: { x: 180, y: 200 }, CurveP2: { x: 420, y: 80 }
+};
+
+function queueSave() {
+  isDirty = true;
+  setSaveStatus("saving", "Saving...");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveConfig, 500);
+}
+
+async function saveConfig() {
+  try {
+    const payload = readConfigFromUI();
+    const r = await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    if (r.ok) {
+      isDirty = false;
+      setSaveStatus("saved", "Saved");
+      setTimeout(() => { if (!isDirty) setSaveStatus("", "Ready"); }, 1500);
+    } else {
+      setSaveStatus("error", "Save failed");
+    }
+  } catch (e) {
+    setSaveStatus("error", "Error");
+  }
+}
+
+const cfgToggles = {
+  Enabled: setupToggle("cfgEnabled"),
+  StickyMode: setupToggle("cfgStickyMode"),
+  PredictTarget: setupToggle("cfgPredictTarget"),
+  ClosestPoint: setupToggle("cfgClosestPoint"),
+  MaxStudsCheck: setupToggle("cfgMaxStudsCheck"),
+  UnlockOnDeath: setupToggle("cfgUnlockOnDeath"),
+  SelfDeathCheck: setupToggle("cfgSelfDeathCheck"),
+  Streamproof: setupToggle("cfgStreamproof")
+};
+
+const tbToggles = {
+  Enabled: setupToggle("tbEnabled"),
+  RequireCamlock: setupToggle("tbRequireCamlock"),
+  DeathCheck: setupToggle("tbDeathCheck"),
+  SelfDeathCheck: setupToggle("tbSelfDeathCheck"),
+  StudCheck: setupToggle("tbStudCheck"),
+  WeaponSpecific: setupToggle("tbWeaponSpecific")
+};
+
+document.getElementById("tbWeaponSpecific").addEventListener("click", () => {
+  const isOn = document.getElementById("tbWeaponSpecific").classList.contains("on");
+  document.getElementById("weaponListWrap").style.display = isOn ? "block" : "none";
+});
+
+const sliders = {
+  PredictionX: initFillSlider(document.getElementById("slPredictionX")),
+  PredictionY: initFillSlider(document.getElementById("slPredictionY")),
+  Smoothness: initFillSlider(document.getElementById("slSmoothness")),
+  MaxStuds: initFillSlider(document.getElementById("slMaxStuds")),
+  Deadzone: initFillSlider(document.getElementById("slDeadzone")),
+  ReactionDelay: initFillSlider(document.getElementById("slReactionDelay"))
+};
+
+const tbSliders = {
+  Radius: initFillSlider(document.getElementById("tbRadius")),
+  Delay: initFillSlider(document.getElementById("tbDelay")),
+  MaxStuds: initFillSlider(document.getElementById("tbMaxStuds"))
+};
+
+function renderWeapons() {
+  const container = document.getElementById("weaponCards");
+  container.innerHTML = "";
+  const names = Object.keys(weaponConfigs);
+  if (names.length === 0) {
+    container.innerHTML = '<div style="text-align: center; padding: 12px; color: var(--muted); font-size: 9px;">No weapons. Click + Add weapon.</div>';
+    return;
+  }
+  names.forEach(name => {
+    const cfg = weaponConfigs[name];
+    const card = document.createElement("div");
+    card.className = "weapon-card";
+    card.innerHTML = `
+      <div class="weapon-card-head">
+        <div class="weapon-card-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+        <button class="weapon-card-del" data-weapon-del="${escapeHtml(name)}">×</button>
+      </div>
+      <div class="weapon-card-row">
+        <span class="weapon-card-label">Aim part</span>
+        <div class="custom-select weapon-aimpart" data-value="${cfg.AimPart || 'Head'}">
+          <button type="button" class="custom-select-trigger"><span class="value">${cfg.AimPart || 'Head'}</span><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+          <div class="custom-select-options">
+            <div class="custom-option ${cfg.AimPart === 'Head' ? 'selected' : ''}" data-value="Head"><span>Head</span></div>
+            <div class="custom-option ${cfg.AimPart === 'Torso' ? 'selected' : ''}" data-value="Torso"><span>Torso</span></div>
+            <div class="custom-option ${cfg.AimPart === 'Any' ? 'selected' : ''}" data-value="Any"><span>Any</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="weapon-card-row">
+        <span class="weapon-card-label">Radius</span>
+        <div class="fill-slider weapon-radius" data-min="0" data-max="40" data-step="0.5" data-decimals="1" data-value="${cfg.Radius ?? 12.0}">
+          <div class="fill-slider-fill"></div><div class="fill-slider-value">${(cfg.Radius ?? 12.0).toFixed(1)}</div><div class="fill-slider-value-inverse">${(cfg.Radius ?? 12.0).toFixed(1)}</div>
+        </div>
+      </div>
+      <div class="weapon-card-row">
+        <span class="weapon-card-label">Delay</span>
+        <div class="fill-slider weapon-delay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="${cfg.Delay ?? 0.12}">
+          <div class="fill-slider-fill"></div><div class="fill-slider-value">${(cfg.Delay ?? 0.12).toFixed(2)}</div><div class="fill-slider-value-inverse">${(cfg.Delay ?? 0.12).toFixed(2)}</div>
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+
+    card.querySelector(".weapon-card-del").addEventListener("click", () => {
+      delete weaponConfigs[name];
+      renderWeapons();
+      queueSave();
+    });
+
+    const aimPartSel = card.querySelector(".weapon-aimpart");
+    initCustomSelect(aimPartSel, val => {
+      weaponConfigs[name].AimPart = val;
+    });
+
+    const radiusSlider = card.querySelector(".weapon-radius");
+    const radiusInst = initFillSlider(radiusSlider, val => {
+      weaponConfigs[name].Radius = val;
+    });
+    radiusInst.set(weaponConfigs[name].Radius ?? 12.0, true);
+
+    const delaySlider = card.querySelector(".weapon-delay");
+    const delayInst = initFillSlider(delaySlider, val => {
+      weaponConfigs[name].Delay = val;
+    });
+    delayInst.set(weaponConfigs[name].Delay ?? 0.12, true);
+  });
+}
+
+document.getElementById("addWeaponBtn").addEventListener("click", () => {
+  document.getElementById("weaponNameInputWrap").style.display = "flex";
+  document.getElementById("weaponNameInput").value = "";
+  document.getElementById("weaponNameInput").focus();
+});
+
+document.getElementById("weaponNameConfirm").addEventListener("click", () => {
+  const name = document.getElementById("weaponNameInput").value.trim();
+  if (!name) { showToast("Weapon name required"); return; }
+  if (weaponConfigs[name]) { showToast("Weapon already exists"); return; }
+  weaponConfigs[name] = { AimPart: "Head", Radius: 12.0, Delay: 0.12 };
+  document.getElementById("weaponNameInputWrap").style.display = "none";
+  renderWeapons();
+  queueSave();
+});
+
+document.getElementById("weaponNameInput").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.getElementById("weaponNameConfirm").click();
+  if (e.key === "Escape") document.getElementById("weaponNameInputWrap").style.display = "none";
+});
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+}
+
+function readConfigFromUI() {
+  const tbCfg = {
+    Enabled: tbToggles.Enabled.get(),
+    Keybind: tbKeybindInput.value || "E",
+    KeybindMode: tbKeybindMode,
+    RequireCamlock: tbToggles.RequireCamlock.get(),
+    AimPart: document.getElementById("tbAimPart").dataset.value || "Head",
+    Radius: tbSliders.Radius.get(),
+    Delay: tbSliders.Delay.get(),
+    StudCheck: tbToggles.StudCheck.get(),
+    MaxStuds: tbSliders.MaxStuds.get(),
+    DeathCheck: tbToggles.DeathCheck.get(),
+    SelfDeathCheck: tbToggles.SelfDeathCheck.get(),
+    WeaponSpecific: tbToggles.WeaponSpecific.get(),
+    WeaponConfigs: weaponConfigs
+  };
+  return {
+    Enabled: cfgToggles.Enabled.get(),
+    Keybind: keybindInput.value || "Q",
+    KeybindMode: keybindMode,
+    WebviewKeybind: webviewKeybindInput.value || "F8",
+    PredictTarget: cfgToggles.PredictTarget.get(),
+    PredictionX: sliders.PredictionX.get(),
+    PredictionY: sliders.PredictionY.get(),
+    ClosestPoint: cfgToggles.ClosestPoint.get(),
+    FixedPart: document.getElementById("cfgFixedPartSelect").dataset.value || "Head",
+    Smoothness: sliders.Smoothness.get(),
+    MaxStudsCheck: cfgToggles.MaxStudsCheck.get(),
+    MaxStuds: sliders.MaxStuds.get(),
+    UnlockOnDeath: cfgToggles.UnlockOnDeath.get(),
+    SelfDeathCheck: cfgToggles.SelfDeathCheck.get(),
+    StickyMode: cfgToggles.StickyMode.get(),
+    StabilizerDeadzone: sliders.Deadzone.get(),
+    ReactionDelay: sliders.ReactionDelay.get(),
+    Streamproof: cfgToggles.Streamproof.get(),
+    CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
+    CurveP2: { x: curveState.p2.x, y: curveState.p2.y },
+    triggerbot: tbCfg
+  };
+}
+
+function applyConfigToUI(c) {
+  if (!c || typeof c !== "object") return;
+  cfgToggles.Enabled.set(c.Enabled !== false);
+  cfgToggles.StickyMode.set(c.StickyMode !== false);
+  keybindInput.value = c.Keybind || "Q";
+  keybindMode = c.KeybindMode || "toggle";
+  webviewKeybindInput.value = c.WebviewKeybind || "F8";
+  cfgToggles.PredictTarget.set(c.PredictTarget !== false);
+  sliders.PredictionX.set(c.PredictionX !== undefined ? c.PredictionX : (c.Prediction !== undefined ? c.Prediction : 0.10));
+  sliders.PredictionY.set(c.PredictionY !== undefined ? c.PredictionY : (c.Prediction !== undefined ? c.Prediction : 0.10));
+  const closestPoint = c.ClosestPoint !== undefined ? c.ClosestPoint : (c.ClosestPart !== undefined ? c.ClosestPart : true);
+  cfgToggles.ClosestPoint.set(closestPoint !== false);
+  const fixedPart = c.FixedPart || "Head";
+  const select = document.getElementById("cfgFixedPartSelect");
+  select.dataset.value = fixedPart;
+  select.querySelector(".value").textContent = fixedPart;
+  select.querySelectorAll(".custom-option").forEach(o => o.classList.toggle("selected", o.dataset.value === fixedPart));
+  sliders.Smoothness.set(c.Smoothness !== undefined ? c.Smoothness : 0.35);
+  cfgToggles.MaxStudsCheck.set(c.MaxStudsCheck !== false);
+  sliders.MaxStuds.set(c.MaxStuds !== undefined ? c.MaxStuds : 500);
+  cfgToggles.UnlockOnDeath.set(c.UnlockOnDeath !== false);
+  cfgToggles.SelfDeathCheck.set(c.SelfDeathCheck !== false);
+  sliders.Deadzone.set(c.StabilizerDeadzone !== undefined ? c.StabilizerDeadzone : 3.0);
+  sliders.ReactionDelay.set(c.ReactionDelay !== undefined ? c.ReactionDelay : 0.12);
+  cfgToggles.Streamproof.set(c.Streamproof === true);
+  if (c.CurveP1) curveState.p1 = { x: c.CurveP1.x, y: c.CurveP1.y };
+  if (c.CurveP2) curveState.p2 = { x: c.CurveP2.x, y: c.CurveP2.y };
+  drawCurve();
+
+  const tb = c.triggerbot || {};
+  tbToggles.Enabled.set(tb.Enabled === true);
+  tbKeybindInput.value = tb.Keybind || "E";
+  tbKeybindMode = tb.KeybindMode || "hold";
+  tbToggles.RequireCamlock.set(tb.RequireCamlock !== false);
+  const tbAimPart = tb.AimPart || "Head";
+  const tbSel = document.getElementById("tbAimPart");
+  tbSel.dataset.value = tbAimPart;
+  tbSel.querySelector(".value").textContent = tbAimPart;
+  tbSel.querySelectorAll(".custom-option").forEach(o => o.classList.toggle("selected", o.dataset.value === tbAimPart));
+  tbSliders.Radius.set(tb.Radius !== undefined ? tb.Radius : 12.0);
+  tbSliders.Delay.set(tb.Delay !== undefined ? tb.Delay : 0.12);
+  tbToggles.StudCheck.set(tb.StudCheck !== false);
+  tbSliders.MaxStuds.set(tb.MaxStuds !== undefined ? tb.MaxStuds : 500);
+  tbToggles.DeathCheck.set(tb.DeathCheck !== false);
+  tbToggles.SelfDeathCheck.set(tb.SelfDeathCheck !== false);
+  tbToggles.WeaponSpecific.set(tb.WeaponSpecific === true);
+  weaponConfigs = tb.WeaponConfigs || {};
+  document.getElementById("weaponListWrap").style.display = tb.WeaponSpecific ? "block" : "none";
+  renderWeapons();
+}
+
+async function loadConfig() {
+  try {
+    const r = await fetch("/api/config", { credentials: "include" });
+    if (!r.ok) return;
+    const cfg = await r.json();
+    if (cfg && Object.keys(cfg).length > 0) {
+      applyConfigToUI(cfg);
+    }
+    setSaveStatus("", "Ready");
+  } catch (e) {
+    setSaveStatus("error", "Load failed");
+  }
+}
+
+document.getElementById("cfgResetBtn").addEventListener("click", () => {
+  applyConfigToUI(defaults);
+  queueSave();
+  showToast("Config reset to defaults.");
+});
+
+const communityGrid = document.getElementById("communityGrid");
+const communitySearch = document.getElementById("communitySearch");
+const publishModal = document.getElementById("publishModal");
+
+communitySearch.addEventListener("input", () => {
+  searchQuery = communitySearch.value.trim().toLowerCase();
+  renderCommunity();
+});
+
+document.getElementById("publishConfigBtn").addEventListener("click", () => {
+  document.getElementById("publishName").value = "";
+  document.getElementById("publishDesc").value = "";
+  publishModal.classList.add("show");
+});
+
+function closePublishModal() { publishModal.classList.remove("show"); }
+publishModal.addEventListener("click", e => { if (e.target === publishModal) closePublishModal(); });
+
+document.getElementById("publishConfirm").addEventListener("click", async () => {
+  const name = document.getElementById("publishName").value.trim();
+  const desc = document.getElementById("publishDesc").value.trim();
+  if (!name) { showToast("Name required"); return; }
+  const config = readConfigFromUI();
+  try {
+    const r = await fetch("/api/community/configs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ name, description: desc, config_data: config })
+    });
+    if (r.ok) {
+      showToast("Published!");
+      closePublishModal();
+      await loadCommunity();
+    } else {
+      const err = await r.json().catch(() => ({}));
+      showToast(err.detail || "Publish failed");
+    }
+  } catch (e) { showToast("Connection error"); }
+});
+
+async function loadCommunity() {
+  try {
+    const r = await fetch("/api/community/configs", { credentials: "include" });
+    if (!r.ok) { showToast("Failed to load configs"); return; }
+    const data = await r.json();
+    communityConfigs = data.configs || [];
+    myLikes = new Set(data.liked_ids || []);
+    renderCommunity();
+  } catch (e) { showToast("Connection error"); }
+}
+
+function renderCommunity() {
+  const q = searchQuery;
+  const filtered = communityConfigs.filter(c => {
+    if (!q) return true;
+    const hay = (c.name + " " + (c.author || "") + " " + (c.description || "")).toLowerCase();
+    return hay.includes(q);
+  });
+
+  if (filtered.length === 0) {
+    communityGrid.innerHTML = '<div class="community-empty" style="grid-column: 1/-1;">No configs yet. Click "Publish config" to share yours.</div>';
+    return;
+  }
+
+  communityGrid.innerHTML = filtered.map(c => {
+    const liked = myLikes.has(c.id);
+    const likeCount = c.likes || 0;
+    const desc = c.description || "No description.";
+    const when = formatWhen(c.created_at);
+    const smoothVal = c.config_data?.Smoothness;
+    const smoothTag = "smooth " + (typeof smoothVal === "number" ? smoothVal.toFixed(2) : "?");
+    const predTag = c.config_data?.PredictTarget ? "predict on" : "predict off";
+    const partTag = c.config_data?.ClosestPoint || c.config_data?.ClosestPart ? "closest point" : (c.config_data?.FixedPart || "head");
+    return `
+      <div class="cfg-card">
+        <div class="cfg-card-header">
+          <div>
+            <div class="cfg-card-title">${escapeHtml(c.name)}</div>
+            <div class="cfg-card-author">by ${escapeHtml(c.author || "unknown")} · ${when}</div>
+          </div>
+        </div>
+        <div class="cfg-card-desc">${escapeHtml(desc)}</div>
+        <div class="cfg-card-tags">
+          <span class="cfg-tag">${escapeHtml(smoothTag)}</span>
+          <span class="cfg-tag">${escapeHtml(predTag)}</span>
+          <span class="cfg-tag">${escapeHtml(partTag)}</span>
+        </div>
+        <div class="cfg-card-footer">
+          <button class="cfg-like-btn ${liked ? "liked" : ""}" data-like="${c.id}">
+            <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            ${likeCount}
+          </button>
+          <div class="cfg-card-actions">
+            <button class="cfg-mini-btn" data-save="${c.id}">Save mine</button>
+            <button class="cfg-mini-btn primary" data-load="${c.id}">Load</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  communityGrid.querySelectorAll("[data-like]").forEach(b => b.addEventListener("click", () => toggleLike(Number(b.dataset.like))));
+  communityGrid.querySelectorAll("[data-load]").forEach(b => b.addEventListener("click", () => loadCommunityConfig(Number(b.dataset.load))));
+  communityGrid.querySelectorAll("[data-save]").forEach(b => b.addEventListener("click", () => saveCommunityConfig(Number(b.dataset.save))));
+}
+
+function formatWhen(iso) {
+  if (!iso) return "recently";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "recently";
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+  if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+  if (diff < 604800) return Math.floor(diff / 86400) + "d ago";
+  return d.toLocaleDateString();
+}
+
+async function toggleLike(id) {
+  try {
+    const r = await fetch(`/api/community/configs/${id}/like`, { method: "POST", credentials: "include" });
+    if (!r.ok) { showToast("Couldn't like"); return; }
+    const data = await r.json();
+    const cfg = communityConfigs.find(c => c.id === id);
+    if (cfg) cfg.likes = data.likes;
+    if (data.liked) myLikes.add(id); else myLikes.delete(id);
+    renderCommunity();
+  } catch (e) { showToast("Connection error"); }
+}
+
+async function loadCommunityConfig(id) {
+  const cfg = communityConfigs.find(c => c.id === id);
+  if (!cfg) return;
+  applyConfigToUI(cfg.config_data || {});
+  queueSave();
+  navigate("configuration");
+  showToast("Config loaded");
+}
+
+async function saveCommunityConfig(id) {
+  const cfg = communityConfigs.find(c => c.id === id);
+  if (!cfg) return;
+  try {
+    const r = await fetch("/api/community/configs/save-mine", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ community_config_id: id })
+    });
+    if (r.ok) showToast("Added to your configs");
+    else showToast("Save failed");
+  } catch (e) { showToast("Connection error"); }
+}
+
+async function boot() {
+  await refreshSession();
+  await loadConfig();
+}
+
+drawCurve();
+boot();
+</script>
+</body>
+</html>
