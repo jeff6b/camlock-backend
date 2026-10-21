@@ -517,6 +517,251 @@ main {
   transform: translateY(0);
 }
 
+/* Keybind mode popup (right-click) */
+.keybind-mode-popup {
+  position: fixed;
+  z-index: 300;
+  min-width: 90px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #131316;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity .15s ease, transform .15s ease;
+}
+.keybind-mode-popup.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.keybind-mode-popup .popup-item {
+  padding: 5px 9px;
+  border-radius: 4px;
+  font-size: 9px;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.keybind-mode-popup .popup-item:hover {
+  background: #16161a;
+  color: var(--text);
+}
+.keybind-mode-popup .popup-item.selected {
+  color: var(--accent);
+}
+
+/* Community configs */
+.community-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  align-items: center;
+}
+.community-search {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  outline: none;
+}
+.community-search:focus { border-color: #35353a; }
+.community-search::placeholder { color: var(--muted); }
+
+.community-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+
+.cfg-card {
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color .15s ease;
+}
+.cfg-card:hover { border-color: #262629; }
+
+.cfg-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.cfg-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+.cfg-card-author {
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.cfg-card-desc {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  min-height: 15px;
+}
+
+.cfg-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cfg-tag {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.cfg-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+.cfg-like-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+  cursor: pointer;
+  transition: color .14s ease, border-color .14s ease;
+}
+.cfg-like-btn:hover { color: var(--accent); border-color: #2a2a2e; }
+.cfg-like-btn.liked { color: var(--accent); border-color: #2a2a2e; }
+.cfg-like-btn svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cfg-like-btn.liked svg { fill: var(--accent); }
+
+.cfg-card-actions {
+  display: flex;
+  gap: 4px;
+}
+.cfg-mini-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+  cursor: pointer;
+  transition: color .14s ease, border-color .14s ease;
+}
+.cfg-mini-btn:hover { color: var(--text); border-color: #2a2a2e; }
+.cfg-mini-btn.primary:hover { color: var(--accent); }
+
+.community-empty {
+  padding: 30px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+/* Publish modal */
+.cfg-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease;
+}
+.cfg-modal-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+.cfg-modal {
+  width: 90%;
+  max-width: 420px;
+  background: var(--bg);
+  border: 1px solid #2a2a2e;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+}
+.cfg-modal h3 {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+.cfg-modal label {
+  display: block;
+  font-size: 9px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.cfg-modal input,
+.cfg-modal textarea {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid #2a2a2e;
+  border-radius: 5px;
+  background: #0a0a0c;
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  outline: none;
+  resize: vertical;
+  transition: border-color .14s ease;
+}
+.cfg-modal input:focus,
+.cfg-modal textarea:focus { border-color: #4a4a52; }
+.cfg-modal textarea { min-height: 60px; }
+.cfg-modal-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.cfg-modal-actions .text-button { padding: 6px 14px; }
+
 main::-webkit-scrollbar { width: 4px; }
 main::-webkit-scrollbar-track { background: transparent; }
 main::-webkit-scrollbar-thumb {
@@ -537,6 +782,9 @@ main::-webkit-scrollbar-thumb {
     </button>
     <button class="tab" data-page="configuration" title="Configuration" aria-label="Configuration">
       <svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+    </button>
+    <button class="tab" data-page="community" title="Community" aria-label="Community">
+      <svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>
     </button>
   </nav>
   <div class="status-badge" id="saveStatus"><span id="saveLabel">Ready</span></div>
@@ -656,19 +904,6 @@ main::-webkit-scrollbar-thumb {
             <input class="dark-input keybind-input" id="cfgKeybind" type="text" value="Q" maxlength="8" readonly spellcheck="false">
           </div>
           <div class="setting-row">
-            <div class="setting-title">Keybind mode</div>
-            <div class="custom-select" id="cfgKeybindModeSelect" data-value="toggle" style="width: 90px;">
-              <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
-                <span class="value">Toggle</span>
-                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
-              <div class="custom-select-options" role="listbox">
-                <div class="custom-option selected" data-value="toggle" role="option"><span>Toggle</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-                <div class="custom-option" data-value="hold" role="option"><span>Hold</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-              </div>
-            </div>
-          </div>
-          <div class="setting-row">
             <div class="setting-title">Unlock on death</div>
             <button class="toggle on" id="cfgUnlockOnDeath" role="switch" aria-checked="true" aria-label="Unlock on death"></button>
           </div>
@@ -747,7 +982,7 @@ main::-webkit-scrollbar-thumb {
             <div class="fill-slider-value-inverse">3.0</div>
           </div>
           <div class="setting-row">
-            <div class="setting-title">Curve type (off = quad)</div>
+            <div class="setting-title">Curve type</div>
             <button class="toggle" id="cfgCurveType" role="switch" aria-checked="false" aria-label="Curve type"></button>
           </div>
           <label class="field-label">Curve bend</label>
@@ -762,30 +997,61 @@ main::-webkit-scrollbar-thumb {
             <div class="fill-slider-value">0.12</div>
             <div class="fill-slider-value-inverse">0.12</div>
           </div>
-          <label class="field-label">Jitter</label>
-          <div class="fill-slider" id="slJitter" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.2">
-            <div class="fill-slider-fill"></div>
-            <div class="fill-slider-value">0.20</div>
-            <div class="fill-slider-value-inverse">0.20</div>
-          </div>
           <div class="config-actions">
             <button class="text-button" id="cfgResetBtn">Reset</button>
-            <button class="text-button" id="cfgCopyBtn">Copy config</button>
           </div>
         </div>
       </div>
     </div>
   </section>
+
+  <section class="page" id="page-community">
+    <div class="community-toolbar">
+      <input class="community-search" id="communitySearch" type="text" placeholder="Search by name or author...">
+      <button class="text-button" id="publishConfigBtn">Publish config</button>
+    </div>
+    <div class="community-grid" id="communityGrid"></div>
+  </section>
 </main>
+
+<!-- Publish modal -->
+<div class="cfg-modal-overlay" id="publishModal">
+  <div class="cfg-modal">
+    <h3>Publish config</h3>
+    <div>
+      <label>Config name</label>
+      <input type="text" id="publishName" maxlength="40" placeholder="e.g. Legit smooth">
+    </div>
+    <div>
+      <label>Description</label>
+      <textarea id="publishDesc" maxlength="220" placeholder="What makes this config good?"></textarea>
+    </div>
+    <div class="cfg-modal-actions">
+      <button class="text-button" onclick="closePublishModal()">Cancel</button>
+      <button class="text-button" id="publishConfirm">Publish</button>
+    </div>
+  </div>
+</div>
+
+<!-- Keybind mode right-click popup -->
+<div class="keybind-mode-popup" id="keybindModePopup">
+  <div class="popup-item" data-mode="toggle"><span>Toggle</span></div>
+  <div class="popup-item" data-mode="hold"><span>Hold</span></div>
+</div>
+
 <div class="session-bar" id="sessionBar">00:00:00</div>
 <div id="toast" role="status"></div>
 <script>
-const pages = ["overview", "account", "configuration"];
+const pages = ["overview", "account", "configuration", "community"];
 let toastTimer;
 let currentUser = null;
 let saveTimer = null;
 let isDirty = false;
 let sessionStart = Date.now();
+let communityConfigs = [];
+let myLikes = new Set();
+let searchQuery = "";
+let keybindMode = "toggle";
 
 const saveStatus = document.getElementById("saveStatus");
 const saveLabel = document.getElementById("saveLabel");
@@ -812,6 +1078,7 @@ function navigate(page) {
   document.querySelectorAll(".tab").forEach(t => {
     t.classList.toggle("active", t.dataset.page === page);
   });
+  if (page === "community") loadCommunity();
 }
 
 document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => navigate(t.dataset.page)));
@@ -1031,6 +1298,35 @@ function setKeybindLabel(input, label) {
 keybindInput.addEventListener("click", () => startCapture(keybindInput));
 webviewKeybindInput.addEventListener("click", () => startCapture(webviewKeybindInput));
 
+// Right-click on keybind input opens keybind mode popup
+const keybindModePopup = document.getElementById("keybindModePopup");
+
+keybindInput.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  const rect = keybindInput.getBoundingClientRect();
+  keybindModePopup.style.top = (rect.bottom + 4) + "px";
+  keybindModePopup.style.left = rect.left + "px";
+  keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
+    item.classList.toggle("selected", item.dataset.mode === keybindMode);
+  });
+  keybindModePopup.classList.add("show");
+});
+
+keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
+  item.addEventListener("click", () => {
+    keybindMode = item.dataset.mode;
+    keybindModePopup.classList.remove("show");
+    queueSave();
+    showToast(`Keybind mode: ${keybindMode === "hold" ? "Hold" : "Toggle"}`);
+  });
+});
+
+document.addEventListener("click", e => {
+  if (!keybindModePopup.contains(e.target) && e.target !== keybindInput) {
+    keybindModePopup.classList.remove("show");
+  }
+});
+
 document.addEventListener("keydown", e => {
   if (!capturingKeybind) return;
   e.preventDefault();
@@ -1165,7 +1461,7 @@ const defaults = {
   MaxStudsCheck: true, MaxStuds: 500, UnlockOnDeath: true, SelfDeathCheck: true,
   StickyMode: true,
   CurveType: "quadratic", CurveBend: 0.05, OvershootAmount: 0.08,
-  StabilizerDeadzone: 3.0, ReactionDelay: 0.12, Jitter: 0.2,
+  StabilizerDeadzone: 3.0, ReactionDelay: 0.12,
   Streamproof: false,
   CurveP1: { x: 180, y: 200 }, CurveP2: { x: 420, y: 80 }
 };
@@ -1220,15 +1516,14 @@ const sliders = {
   Overshoot: initFillSlider(document.getElementById("slOvershoot")),
   Deadzone: initFillSlider(document.getElementById("slDeadzone")),
   CurveBend: initFillSlider(document.getElementById("slCurveBend")),
-  ReactionDelay: initFillSlider(document.getElementById("slReactionDelay")),
-  Jitter: initFillSlider(document.getElementById("slJitter"))
+  ReactionDelay: initFillSlider(document.getElementById("slReactionDelay"))
 };
 
 function readConfigFromUI() {
   return {
     Enabled: cfgToggles.Enabled.get(),
     Keybind: keybindInput.value || "Q",
-    KeybindMode: document.getElementById("cfgKeybindModeSelect").dataset.value || "toggle",
+    KeybindMode: keybindMode,
     WebviewKeybind: webviewKeybindInput.value || "F8",
     PredictTarget: cfgToggles.PredictTarget.get(),
     PredictionX: sliders.PredictionX.get(),
@@ -1246,7 +1541,6 @@ function readConfigFromUI() {
     OvershootAmount: sliders.Overshoot.get(),
     StabilizerDeadzone: sliders.Deadzone.get(),
     ReactionDelay: sliders.ReactionDelay.get(),
-    Jitter: sliders.Jitter.get(),
     Streamproof: cfgToggles.Streamproof.get(),
     CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
     CurveP2: { x: curveState.p2.x, y: curveState.p2.y }
@@ -1258,13 +1552,7 @@ function applyConfigToUI(c) {
   cfgToggles.Enabled.set(c.Enabled !== false);
   cfgToggles.StickyMode.set(c.StickyMode !== false);
   keybindInput.value = c.Keybind || "Q";
-  const kbMode = c.KeybindMode || "toggle";
-  const kbSelect = document.getElementById("cfgKeybindModeSelect");
-  kbSelect.dataset.value = kbMode;
-  kbSelect.querySelector(".value").textContent = kbMode === "hold" ? "Hold" : "Toggle";
-  kbSelect.querySelectorAll(".custom-option").forEach(o => {
-    o.classList.toggle("selected", o.dataset.value === kbMode);
-  });
+  keybindMode = c.KeybindMode || "toggle";
   webviewKeybindInput.value = c.WebviewKeybind || "F8";
   cfgToggles.PredictTarget.set(c.PredictTarget !== false);
   sliders.PredictionX.set(c.PredictionX !== undefined ? c.PredictionX : (c.Prediction !== undefined ? c.Prediction : 0.10));
@@ -1288,7 +1576,6 @@ function applyConfigToUI(c) {
   sliders.Overshoot.set(c.OvershootAmount !== undefined ? c.OvershootAmount : 0.08);
   sliders.Deadzone.set(c.StabilizerDeadzone !== undefined ? c.StabilizerDeadzone : 3.0);
   sliders.ReactionDelay.set(c.ReactionDelay !== undefined ? c.ReactionDelay : 0.12);
-  sliders.Jitter.set(c.Jitter !== undefined ? c.Jitter : 0.2);
   cfgToggles.Streamproof.set(c.Streamproof === true);
   if (c.CurveP1) curveState.p1 = { x: c.CurveP1.x, y: c.CurveP1.y };
   if (c.CurveP2) curveState.p2 = { x: c.CurveP2.x, y: c.CurveP2.y };
@@ -1314,14 +1601,204 @@ document.getElementById("cfgResetBtn").addEventListener("click", () => {
   queueSave();
   showToast("Config reset to defaults.");
 });
-document.getElementById("cfgCopyBtn").addEventListener("click", async () => {
+
+// ═══════════════════════════════════════════════════════════
+// COMMUNITY CONFIGS
+// ═══════════════════════════════════════════════════════════
+
+const communityGrid = document.getElementById("communityGrid");
+const communitySearch = document.getElementById("communitySearch");
+const publishModal = document.getElementById("publishModal");
+
+communitySearch.addEventListener("input", () => {
+  searchQuery = communitySearch.value.trim().toLowerCase();
+  renderCommunity();
+});
+
+document.getElementById("publishConfigBtn").addEventListener("click", () => {
+  document.getElementById("publishName").value = "";
+  document.getElementById("publishDesc").value = "";
+  publishModal.classList.add("show");
+});
+
+function closePublishModal() {
+  publishModal.classList.remove("show");
+}
+
+publishModal.addEventListener("click", e => {
+  if (e.target === publishModal) closePublishModal();
+});
+
+document.getElementById("publishConfirm").addEventListener("click", async () => {
+  const name = document.getElementById("publishName").value.trim();
+  const desc = document.getElementById("publishDesc").value.trim();
+  if (!name) { showToast("Name required"); return; }
+
+  const config = readConfigFromUI();
+
   try {
-    await navigator.clipboard.writeText(JSON.stringify(readConfigFromUI(), null, 2));
-    showToast("Config copied.");
-  } catch {
-    showToast("Couldn't copy.");
+    const r = await fetch("/api/community/configs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        name: name,
+        description: desc,
+        config_data: config
+      })
+    });
+    if (r.ok) {
+      showToast("Published!");
+      closePublishModal();
+      await loadCommunity();
+    } else {
+      const err = await r.json().catch(() => ({}));
+      showToast(err.detail || "Publish failed");
+    }
+  } catch (e) {
+    showToast("Connection error");
   }
 });
+
+async function loadCommunity() {
+  try {
+    const r = await fetch("/api/community/configs", { credentials: "include" });
+    if (!r.ok) { showToast("Failed to load configs"); return; }
+    const data = await r.json();
+    communityConfigs = data.configs || [];
+    myLikes = new Set(data.liked_ids || []);
+    renderCommunity();
+  } catch (e) {
+    showToast("Connection error");
+  }
+}
+
+function renderCommunity() {
+  const q = searchQuery;
+  const filtered = communityConfigs.filter(c => {
+    if (!q) return true;
+    const hay = (c.name + " " + (c.author || "") + " " + (c.description || "")).toLowerCase();
+    return hay.includes(q);
+  });
+
+  if (filtered.length === 0) {
+    communityGrid.innerHTML = '<div class="community-empty" style="grid-column: 1/-1;">No configs yet. Click "Publish config" to share yours.</div>';
+    return;
+  }
+
+  communityGrid.innerHTML = filtered.map(c => {
+    const liked = myLikes.has(c.id);
+    const likeCount = c.likes || 0;
+    const desc = c.description || "No description.";
+    const when = formatWhen(c.created_at);
+    const smoothVal = c.config_data?.Smoothness;
+    const smoothTag = "smooth " + (typeof smoothVal === "number" ? smoothVal.toFixed(2) : "?");
+    const predTag = c.config_data?.PredictTarget ? "predict on" : "predict off";
+    const partTag = c.config_data?.ClosestPoint || c.config_data?.ClosestPart ? "closest point" : (c.config_data?.FixedPart || "head");
+    return `
+      <div class="cfg-card">
+        <div class="cfg-card-header">
+          <div>
+            <div class="cfg-card-title">${escapeHtml(c.name)}</div>
+            <div class="cfg-card-author">by ${escapeHtml(c.author || "unknown")} · ${when}</div>
+          </div>
+        </div>
+        <div class="cfg-card-desc">${escapeHtml(desc)}</div>
+        <div class="cfg-card-tags">
+          <span class="cfg-tag">${escapeHtml(smoothTag)}</span>
+          <span class="cfg-tag">${escapeHtml(predTag)}</span>
+          <span class="cfg-tag">${escapeHtml(partTag)}</span>
+        </div>
+        <div class="cfg-card-footer">
+          <button class="cfg-like-btn ${liked ? "liked" : ""}" data-like="${c.id}">
+            <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            ${likeCount}
+          </button>
+          <div class="cfg-card-actions">
+            <button class="cfg-mini-btn" data-save="${c.id}">Save mine</button>
+            <button class="cfg-mini-btn primary" data-load="${c.id}">Load</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  communityGrid.querySelectorAll("[data-like]").forEach(b => {
+    b.addEventListener("click", () => toggleLike(Number(b.dataset.like)));
+  });
+  communityGrid.querySelectorAll("[data-load]").forEach(b => {
+    b.addEventListener("click", () => loadCommunityConfig(Number(b.dataset.load)));
+  });
+  communityGrid.querySelectorAll("[data-save]").forEach(b => {
+    b.addEventListener("click", () => saveCommunityConfig(Number(b.dataset.save)));
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+  })[ch]);
+}
+
+function formatWhen(iso) {
+  if (!iso) return "recently";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "recently";
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+  if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+  if (diff < 604800) return Math.floor(diff / 86400) + "d ago";
+  return d.toLocaleDateString();
+}
+
+async function toggleLike(id) {
+  try {
+    const r = await fetch(`/api/community/configs/${id}/like`, {
+      method: "POST",
+      credentials: "include"
+    });
+    if (!r.ok) { showToast("Couldn't like"); return; }
+    const data = await r.json();
+    const cfg = communityConfigs.find(c => c.id === id);
+    if (cfg) cfg.likes = data.likes;
+    if (data.liked) myLikes.add(id);
+    else myLikes.delete(id);
+    renderCommunity();
+  } catch (e) {
+    showToast("Connection error");
+  }
+}
+
+async function loadCommunityConfig(id) {
+  const cfg = communityConfigs.find(c => c.id === id);
+  if (!cfg) return;
+  applyConfigToUI(cfg.config_data || {});
+  queueSave();
+  navigate("configuration");
+  showToast("Config loaded");
+}
+
+async function saveCommunityConfig(id) {
+  const cfg = communityConfigs.find(c => c.id === id);
+  if (!cfg) return;
+  try {
+    const r = await fetch("/api/community/configs/save-mine", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ community_config_id: id })
+    });
+    if (r.ok) showToast("Added to your configs");
+    else showToast("Save failed");
+  } catch (e) {
+    showToast("Connection error");
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════
 
 async function boot() {
   await refreshSession();
