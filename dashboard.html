@@ -16,758 +16,381 @@
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: var(--bg);
-  color: var(--text);
-  font-family: Inter, sans-serif;
-  font-size: 11px;
+  width: 100%; height: 100%; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: Inter, sans-serif; font-size: 11px;
   -webkit-font-smoothing: antialiased;
 }
 button { font: inherit; color: inherit; }
 button:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
 
 .header {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  position: relative;
-  padding: 8px 10px 0;
-  height: 36px;
-  -webkit-app-region: drag;
-  app-region: drag;
+  display: flex; justify-content: center; align-items: center;
+  position: relative; padding: 8px 10px 0; height: 36px;
+  -webkit-app-region: drag; app-region: drag;
 }
 .user-tag {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 11px;
-  color: var(--text);
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  font-size: 11px; color: var(--text);
+  -webkit-app-region: no-drag; app-region: no-drag;
 }
 .tabs {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
+  display: flex; align-items: center; gap: 1px; padding: 2px;
+  border: 1px solid var(--border); border-radius: 7px;
+  -webkit-app-region: no-drag; app-region: no-drag;
 }
 .tab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 24px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  transition: color .16s ease;
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 24px; border: 1px solid transparent;
+  border-radius: 5px; background: transparent; color: var(--muted);
+  cursor: pointer; transition: color .16s ease;
 }
-.tab svg {
-  width: 11px;
-  height: 11px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
+.tab svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--accent); }
 
 .status-badge {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 9px;
-  color: var(--muted);
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  font-size: 9px; color: var(--muted);
+  -webkit-app-region: no-drag; app-region: no-drag;
 }
 .status-badge.saving { color: #9a7540; }
 .status-badge.saved { color: #5a9e6e; }
 .status-badge.error { color: #a85555; }
 
 main {
-  width: 100%;
-  height: calc(100% - 36px - 24px);
-  margin: 0;
-  padding: 10px 14px 12px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
+  width: 100%; height: calc(100% - 36px - 24px);
+  margin: 0; padding: 10px 14px 12px;
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
 }
 .page { display: none; }
 .page.active { display: block; }
 
+/* Generic popup */
+.tab-popup, .keybind-mode-popup {
+  position: fixed; z-index: 300; min-width: 100px; padding: 3px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: #131316; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  opacity: 0; pointer-events: none; transform: translateY(-3px);
+  transition: opacity .15s ease, transform .15s ease;
+}
+.tab-popup.show, .keybind-mode-popup.show {
+  opacity: 1; pointer-events: auto; transform: translateY(0);
+}
+.tab-popup .popup-item, .keybind-mode-popup .popup-item {
+  padding: 5px 10px; border-radius: 4px; font-size: 9px;
+  color: var(--muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.tab-popup .popup-item:hover, .keybind-mode-popup .popup-item:hover {
+  background: #16161a; color: var(--text);
+}
+.tab-popup .popup-item.selected, .keybind-mode-popup .popup-item.selected { color: var(--accent); }
+
 .stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  margin-bottom: 10px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px; margin-bottom: 10px;
 }
-.stat {
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-}
-.stat-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: var(--muted);
-  font-size: 9px;
-}
-.stat-value {
-  margin-top: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -.3px;
-  color: var(--text);
-}
+.stat { padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; }
+.stat-top { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 9px; }
+.stat-value { margin-top: 6px; font-size: 13px; font-weight: 600; letter-spacing: -.3px; color: var(--text); }
 .stat-value.accent { color: var(--accent); }
 
-.overview-tools {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
+.overview-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .overview-tool {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-align: left;
-  min-width: 0;
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: transparent;
-  cursor: pointer;
-  transition: border-color .15s ease;
+  display: flex; align-items: center; gap: 8px; text-align: left; min-width: 0;
+  padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px;
+  background: transparent; cursor: pointer; transition: border-color .15s ease;
 }
 .overview-tool:hover { border-color: #2a2a2e; }
 .overview-tool strong { font-size: 10px; font-weight: 500; flex: 1; color: var(--text); }
-.tool-arrow {
-  width: 11px;
-  height: 11px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  color: var(--muted);
-  flex-shrink: 0;
-}
+.tool-arrow { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); flex-shrink: 0; }
 
 .content-panel {
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 8px;
+  padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 8px; margin-bottom: 8px;
 }
-.content-panel h2 {
-  margin-bottom: 2px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text);
+.content-panel h2 { margin-bottom: 2px; font-size: 11px; font-weight: 600; color: var(--text); }
+.info-row, .setting-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border);
 }
-.info-row,
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
-.info-row:first-of-type,
-.setting-row:first-of-type { margin-top: 2px; }
-.info-row:last-child,
-.setting-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.info-row:first-of-type, .setting-row:first-of-type { margin-top: 2px; }
+.info-row:last-child, .setting-row:last-child { border-bottom: 0; padding-bottom: 0; }
 .info-label { color: var(--muted); font-size: 10px; }
-.info-value {
-  max-width: 60%;
-  color: var(--text);
-  font-size: 10px;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
+.info-value { max-width: 60%; color: var(--text); font-size: 10px; text-align: right; overflow-wrap: anywhere; }
 .setting-title { font-size: 10px; font-weight: 500; color: var(--text); }
 
 .toggle {
-  width: 13px;
-  height: 13px;
-  border: 1.5px solid #262629;
-  border-radius: 3px;
-  background: transparent;
-  cursor: pointer;
-  flex-shrink: 0;
+  width: 13px; height: 13px; border: 1.5px solid #262629; border-radius: 3px;
+  background: transparent; cursor: pointer; flex-shrink: 0;
   transition: background .12s ease, border-color .12s ease;
 }
-.toggle.on {
-  background: var(--accent);
-  border-color: var(--accent);
-}
+.toggle.on { background: var(--accent); border-color: var(--accent); }
 .toggle:hover { border-color: #35353a; }
 
 .text-button {
-  padding: 5px 9px;
-  border: 1px solid #262629;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text);
-  font-size: 9px;
-  cursor: pointer;
+  padding: 5px 9px; border: 1px solid #262629; border-radius: 5px;
+  background: transparent; color: var(--text); font-size: 9px; cursor: pointer;
 }
-.text-button:hover {
-  border-color: #35353a;
-  color: var(--accent);
-}
-.text-button.danger {
-  border-color: #262629;
-  color: var(--text);
-}
-.text-button.danger:hover {
-  border-color: #35353a;
-  color: #a85555;
-}
+.text-button:hover { border-color: #35353a; color: var(--accent); }
+.text-button.danger { border-color: #262629; color: var(--text); }
+.text-button.danger:hover { border-color: #35353a; color: #a85555; }
 
-.config-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+.config-layout { display: flex; flex-direction: column; gap: 8px; }
 .config-layout > .curve-panel { margin-bottom: 0; }
 .config-options {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  align-items: start;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px; align-items: start;
 }
-.config-options .content-panel {
-  margin-bottom: 0;
-  height: 100%;
-  padding: 9px 10px;
-}
+.config-options .content-panel { margin-bottom: 0; height: 100%; padding: 9px 10px; }
 
-.curve-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
+.curve-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
 .curve-heading h2 { margin-bottom: 0; font-size: 11px; }
 .curve-wrap { width: 100%; overflow: hidden; }
-#bezierSvg {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 118px;
-  overflow: visible;
-  touch-action: none;
-  user-select: none;
-}
+#bezierSvg { display: block; width: 100%; height: auto; max-height: 118px; overflow: visible; touch-action: none; user-select: none; }
 .axis-label { fill: var(--muted); font-size: 8px; }
-.handle-line {
-  stroke: #202024;
-  stroke-width: 1.2;
-  stroke-dasharray: 3 4;
-}
-.curve-path {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-linecap: round;
-}
-.curve-end {
-  fill: var(--bg);
-  stroke: var(--accent);
-  stroke-width: 1.5;
-}
-.control-point {
-  fill: var(--accent);
-  stroke: var(--bg);
-  stroke-width: 2;
-  cursor: grab;
-}
-.control-point:hover,
-.control-point:focus { r: 8; outline: none; }
+.handle-line { stroke: #202024; stroke-width: 1.2; stroke-dasharray: 3 4; }
+.curve-path { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+.curve-end { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; }
+.control-point { fill: var(--accent); stroke: var(--bg); stroke-width: 2; cursor: grab; }
+.control-point:hover, .control-point:focus { r: 8; outline: none; }
 .control-point:active { cursor: grabbing; }
 .curve-values {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 8px;
+  display: flex; justify-content: space-between; gap: 8px;
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border);
+  color: var(--muted); font-size: 8px;
 }
 .curve-values span { display: flex; flex-direction: column; gap: 2px; }
 .curve-values b { color: var(--text); font-weight: 500; }
 
-.field-label {
-  display: block;
-  margin: 8px 0 4px;
-  color: var(--muted);
-  font-size: 8px;
-}
+.field-label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 8px; }
 .field-label:first-child { margin-top: 4px; }
 
 .dark-input {
-  width: 100%;
-  padding: 5px 7px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  outline: none;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 10px;
+  width: 100%; padding: 5px 7px; border: 1px solid var(--border);
+  border-radius: 5px; outline: none; background: transparent;
+  color: var(--text); font: inherit; font-size: 10px;
 }
 .dark-input:focus { border-color: #35353a; }
-.keybind-input {
-  width: 52px;
-  text-align: center;
-  letter-spacing: .4px;
-  font-weight: 500;
-  cursor: pointer;
-}
+.keybind-input { width: 52px; text-align: center; letter-spacing: .4px; font-weight: 500; cursor: pointer; }
 
 .fill-slider {
-  position: relative;
-  width: 100%;
-  height: 22px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: transparent;
-  cursor: pointer;
-  overflow: hidden;
-  user-select: none;
-  touch-action: none;
-  overscroll-behavior: contain;
+  position: relative; width: 100%; height: 22px;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: transparent; cursor: pointer; overflow: hidden;
+  user-select: none; touch-action: none; overscroll-behavior: contain;
 }
-.fill-slider-fill {
-  position: absolute;
-  top: 0; left: 0; bottom: 0;
-  width: 0%;
-  background: var(--accent);
-  pointer-events: none;
-}
+.fill-slider-fill { position: absolute; top: 0; left: 0; bottom: 0; width: 0%; background: var(--accent); pointer-events: none; }
 .fill-slider-value {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 9px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-  letter-spacing: -.2px;
-  white-space: nowrap;
-  color: var(--text);
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 9px; font-weight: 600; font-variant-numeric: tabular-nums;
+  pointer-events: none; letter-spacing: -.2px; white-space: nowrap; color: var(--text);
 }
 .fill-slider-value-inverse {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 9px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-  letter-spacing: -.2px;
-  white-space: nowrap;
-  color: var(--bg);
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 9px; font-weight: 600; font-variant-numeric: tabular-nums;
+  pointer-events: none; letter-spacing: -.2px; white-space: nowrap; color: var(--bg);
   clip-path: inset(0 calc(100% - var(--fill-pct, 0%)) 0 0);
 }
 .fill-slider:hover { border-color: #2a2a2e; }
 
-.custom-select {
-  position: relative;
-  width: 100%;
-  user-select: none;
-}
+.custom-select { position: relative; width: 100%; user-select: none; }
 .custom-select-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 5px 7px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text);
-  font-size: 10px;
-  cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 5px 7px; border: 1px solid var(--border);
+  border-radius: 5px; background: transparent; color: var(--text);
+  font-size: 10px; cursor: pointer;
 }
 .custom-select-trigger:hover { border-color: #2a2a2e; }
 .custom-select.open .custom-select-trigger { border-color: #35353a; }
-.custom-select-trigger .value {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.custom-select-trigger .value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .custom-select-trigger .chevron {
-  width: 11px;
-  height: 11px;
-  flex-shrink: 0;
-  margin-left: 6px;
-  color: var(--muted);
-  transition: transform .18s ease, color .15s ease;
+  width: 11px; height: 11px; flex-shrink: 0; margin-left: 6px;
+  color: var(--muted); transition: transform .18s ease, color .15s ease;
 }
-.custom-select.open .custom-select-trigger .chevron {
-  transform: rotate(180deg);
-  color: var(--accent);
-}
+.custom-select.open .custom-select-trigger .chevron { transform: rotate(180deg); color: var(--accent); }
 .custom-select-options {
-  position: absolute;
-  top: calc(100% + 3px);
-  left: 0; right: 0;
-  z-index: 50;
-  max-height: 0;
-  overflow: hidden;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: var(--bg);
-  opacity: 0;
-  transform: translateY(-3px);
+  position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 50;
+  max-height: 0; overflow: hidden; border: 1px solid transparent;
+  border-radius: 6px; background: var(--bg); opacity: 0; transform: translateY(-3px);
   pointer-events: none;
   transition: max-height .2s ease, opacity .16s ease, transform .16s ease, border-color .16s ease;
 }
 .custom-select.open .custom-select-options {
-  max-height: 140px;
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-  border-color: var(--border);
-  overflow-y: auto;
+  max-height: 140px; opacity: 1; transform: translateY(0);
+  pointer-events: auto; border-color: var(--border); overflow-y: auto;
 }
 .custom-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 8px;
-  color: var(--muted);
-  font-size: 9px;
-  cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 8px; color: var(--muted); font-size: 9px; cursor: pointer;
 }
-.custom-option:hover {
-  background: #16161a;
-  color: var(--text);
-}
-.custom-option.selected {
-  color: var(--accent);
-  background: transparent;
-}
-.custom-option .check {
-  width: 10px;
-  height: 10px;
-  opacity: 0;
-  color: var(--accent);
-}
+.custom-option:hover { background: #16161a; color: var(--text); }
+.custom-option.selected { color: var(--accent); background: transparent; }
+.custom-option .check { width: 10px; height: 10px; opacity: 0; color: var(--accent); }
 .custom-option.selected .check { opacity: 1; }
 
-.config-actions {
-  display: flex;
-  gap: 5px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
+.config-actions { display: flex; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
+/* Weapon cards */
+.weapon-cards {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 8px; max-height: 340px; overflow-y: auto; padding-right: 4px;
 }
+.weapon-cards::-webkit-scrollbar { width: 3px; }
+.weapon-cards::-webkit-scrollbar-thumb { background: #222226; border-radius: 2px; }
+.weapon-card {
+  padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 6px; background: rgba(20,20,23,0.5);
+  position: relative;
+}
+.weapon-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 6px;
+}
+.weapon-card-name {
+  font-size: 10px; font-weight: 600; color: var(--text);
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.weapon-card-del {
+  width: 16px; height: 16px; border: 1px solid var(--border);
+  border-radius: 3px; background: transparent; color: var(--muted);
+  font-size: 10px; line-height: 1; cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.weapon-card-del:hover { color: #a85555; border-color: #35353a; }
+.weapon-card-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.weapon-card-label {
+  width: 56px; font-size: 8px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0;
+}
+.weapon-card-row .custom-select, .weapon-card-row .fill-slider { flex: 1; }
+.weapon-card-row .custom-select-trigger { padding: 3px 6px; font-size: 9px; }
+.weapon-card-row .fill-slider { height: 18px; }
+.weapon-card-row .fill-slider-value, .weapon-card-row .fill-slider-value-inverse { font-size: 8px; }
+
+.add-weapon-btn {
+  padding: 6px 10px; border: 1px dashed var(--border);
+  border-radius: 6px; background: transparent; color: var(--muted);
+  font-size: 9px; cursor: pointer; margin-top: 6px;
+}
+.add-weapon-btn:hover { color: var(--text); border-color: #35353a; }
+
+.weapon-name-input-wrap { display: flex; gap: 4px; margin-top: 6px; }
+.weapon-name-input-wrap input {
+  flex: 1; padding: 5px 7px; border: 1px solid var(--border);
+  border-radius: 5px; background: transparent; color: var(--text);
+  font: inherit; font-size: 10px; outline: none;
+}
+.weapon-name-input-wrap input:focus { border-color: #35353a; }
 
 .session-bar {
-  position: fixed;
-  bottom: 8px;
-  right: 12px;
-  font-size: 9px;
-  color: var(--muted);
-  pointer-events: none;
+  position: fixed; bottom: 8px; right: 12px;
+  font-size: 9px; color: var(--muted); pointer-events: none;
 }
 
 #toast {
-  position: fixed;
-  right: 10px;
-  bottom: 26px;
-  max-width: 220px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #131316;
-  color: var(--text);
-  font-size: 9px;
-  opacity: 0;
-  transform: translateY(4px);
-  pointer-events: none;
-  transition: .2s ease;
-  z-index: 100;
+  position: fixed; right: 10px; bottom: 26px; max-width: 220px;
+  padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 6px; background: #131316; color: var(--text);
+  font-size: 9px; opacity: 0; transform: translateY(4px);
+  pointer-events: none; transition: .2s ease; z-index: 100;
 }
-#toast.show {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* Keybind mode popup (right-click) */
-.keybind-mode-popup {
-  position: fixed;
-  z-index: 300;
-  min-width: 90px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #131316;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-3px);
-  transition: opacity .15s ease, transform .15s ease;
-}
-.keybind-mode-popup.show {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-.keybind-mode-popup .popup-item {
-  padding: 5px 9px;
-  border-radius: 4px;
-  font-size: 9px;
-  color: var(--muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.keybind-mode-popup .popup-item:hover {
-  background: #16161a;
-  color: var(--text);
-}
-.keybind-mode-popup .popup-item.selected {
-  color: var(--accent);
-}
+#toast.show { opacity: 1; transform: translateY(0); }
 
 /* Community configs */
-.community-toolbar {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-  align-items: center;
-}
+.community-toolbar { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
 .community-search {
-  flex: 1;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 10px;
-  outline: none;
+  flex: 1; padding: 6px 10px; border: 1px solid var(--border);
+  border-radius: 6px; background: transparent; color: var(--text);
+  font: inherit; font-size: 10px; outline: none;
 }
 .community-search:focus { border-color: #35353a; }
 .community-search::placeholder { color: var(--muted); }
 
-.community-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 8px;
-}
+.community-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
 
 .cfg-card {
-  padding: 11px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  transition: border-color .15s ease;
+  padding: 11px 12px; border: 1px solid var(--border);
+  border-radius: 8px; display: flex; flex-direction: column;
+  gap: 8px; transition: border-color .15s ease;
 }
 .cfg-card:hover { border-color: #262629; }
 
-.cfg-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
-}
-.cfg-card-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text);
-  overflow-wrap: anywhere;
-  line-height: 1.3;
-}
-.cfg-card-author {
-  font-size: 9px;
-  color: var(--muted);
-  margin-top: 2px;
-}
+.cfg-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.cfg-card-title { font-size: 11px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; line-height: 1.3; }
+.cfg-card-author { font-size: 9px; color: var(--muted); margin-top: 2px; }
 
-.cfg-card-desc {
-  font-size: 10px;
-  color: var(--muted);
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  min-height: 15px;
-}
+.cfg-card-desc { font-size: 10px; color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; min-height: 15px; }
 
-.cfg-card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
+.cfg-card-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .cfg-tag {
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  font-size: 8px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  padding: 2px 6px; border: 1px solid var(--border);
+  border-radius: 3px; font-size: 8px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.3px;
 }
 
 .cfg-card-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 6px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 6px; padding-top: 8px; border-top: 1px solid var(--border);
   margin-top: auto;
 }
 .cfg-like-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 7px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 9px;
-  cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 7px; border: 1px solid var(--border);
+  border-radius: 4px; background: transparent; color: var(--muted);
+  font-size: 9px; cursor: pointer;
   transition: color .14s ease, border-color .14s ease;
 }
 .cfg-like-btn:hover { color: var(--accent); border-color: #2a2a2e; }
 .cfg-like-btn.liked { color: var(--accent); border-color: #2a2a2e; }
-.cfg-like-btn svg {
-  width: 10px;
-  height: 10px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
+.cfg-like-btn svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .cfg-like-btn.liked svg { fill: var(--accent); }
 
-.cfg-card-actions {
-  display: flex;
-  gap: 4px;
-}
+.cfg-card-actions { display: flex; gap: 4px; }
 .cfg-mini-btn {
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 9px;
-  cursor: pointer;
+  padding: 3px 8px; border: 1px solid var(--border);
+  border-radius: 4px; background: transparent; color: var(--muted);
+  font-size: 9px; cursor: pointer;
   transition: color .14s ease, border-color .14s ease;
 }
 .cfg-mini-btn:hover { color: var(--text); border-color: #2a2a2e; }
 .cfg-mini-btn.primary:hover { color: var(--accent); }
 
 .community-empty {
-  padding: 30px 16px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 10px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
+  padding: 30px 16px; text-align: center; color: var(--muted);
+  font-size: 10px; border: 1px dashed var(--border); border-radius: 8px;
 }
 
 /* Publish modal */
 .cfg-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .2s ease;
+  position: fixed; inset: 0; background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s ease;
 }
-.cfg-modal-overlay.show {
-  opacity: 1;
-  pointer-events: auto;
-}
+.cfg-modal-overlay.show { opacity: 1; pointer-events: auto; }
 .cfg-modal {
-  width: 90%;
-  max-width: 420px;
-  background: var(--bg);
-  border: 1px solid #2a2a2e;
-  border-radius: 8px;
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  width: 90%; max-width: 420px; background: var(--bg);
+  border: 1px solid #2a2a2e; border-radius: 8px;
+  padding: 14px 16px; display: flex; flex-direction: column;
+  gap: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.6);
 }
-.cfg-modal h3 {
-  font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 4px;
-  color: var(--text);
-}
-.cfg-modal label {
-  display: block;
-  font-size: 9px;
-  color: var(--muted);
-  margin-bottom: 3px;
-}
-.cfg-modal input,
-.cfg-modal textarea {
-  width: 100%;
-  padding: 6px 9px;
-  border: 1px solid #2a2a2e;
-  border-radius: 5px;
-  background: #0a0a0c;
-  color: var(--text);
-  font: inherit;
-  font-size: 10px;
-  outline: none;
-  resize: vertical;
+.cfg-modal h3 { font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+.cfg-modal label { display: block; font-size: 9px; color: var(--muted); margin-bottom: 3px; }
+.cfg-modal input, .cfg-modal textarea {
+  width: 100%; padding: 6px 9px; border: 1px solid #2a2a2e;
+  border-radius: 5px; background: #0a0a0c; color: var(--text);
+  font: inherit; font-size: 10px; outline: none; resize: vertical;
   transition: border-color .14s ease;
 }
-.cfg-modal input:focus,
-.cfg-modal textarea:focus { border-color: #4a4a52; }
+.cfg-modal input:focus, .cfg-modal textarea:focus { border-color: #4a4a52; }
 .cfg-modal textarea { min-height: 60px; }
-.cfg-modal-actions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-  margin-top: 6px;
-}
+.cfg-modal-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
 .cfg-modal-actions .text-button { padding: 6px 14px; }
 
 main::-webkit-scrollbar { width: 4px; }
 main::-webkit-scrollbar-track { background: transparent; }
-main::-webkit-scrollbar-thumb {
-  background: #222226;
-  border-radius: 4px;
-}
+main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
 </style>
 </head>
 <body>
@@ -792,51 +415,27 @@ main::-webkit-scrollbar-thumb {
 <main>
   <section class="page active" id="page-overview">
     <div class="stats">
-      <div class="stat">
-        <div class="stat-top">Account status</div>
-        <div class="stat-value accent" id="accountStatus">Checking</div>
-      </div>
-      <div class="stat">
-        <div class="stat-top">Client</div>
-        <div class="stat-value" id="clientStatus">—</div>
-      </div>
-      <div class="stat">
-        <div class="stat-top">Signed in as</div>
-        <div class="stat-value" id="statUsername">—</div>
-      </div>
+      <div class="stat"><div class="stat-top">Account status</div><div class="stat-value accent" id="accountStatus">Checking</div></div>
+      <div class="stat"><div class="stat-top">Client</div><div class="stat-value" id="clientStatus">—</div></div>
+      <div class="stat"><div class="stat-top">Signed in as</div><div class="stat-value" id="statUsername">—</div></div>
     </div>
     <div class="overview-tools">
-      <button class="overview-tool" data-go="account">
-        <strong>Account details</strong>
-        <svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
-      </button>
-      <button class="overview-tool" data-go="configuration">
-        <strong>Configuration</strong>
-        <svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
-      </button>
+      <button class="overview-tool" data-go="account"><strong>Account details</strong><svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+      <button class="overview-tool" data-go="configuration"><strong>Configuration</strong><svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
     </div>
   </section>
 
   <section class="page" id="page-account">
     <div class="content-panel">
       <h2>Account</h2>
-      <div class="info-row">
-        <span class="info-label">Username</span>
-        <span class="info-value" id="accountUsername">—</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Session status</span>
-        <span class="info-value" id="accountSession">—</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">HWID</span>
-        <span class="info-value" id="accountHwid">—</span>
-      </div>
+      <div class="info-row"><span class="info-label">Username</span><span class="info-value" id="accountUsername">—</span></div>
+      <div class="info-row"><span class="info-label">Session status</span><span class="info-value" id="accountSession">—</span></div>
+      <div class="info-row"><span class="info-label">HWID</span><span class="info-value" id="accountHwid">—</span></div>
     </div>
     <div class="content-panel">
       <h2>Hotkeys</h2>
       <div class="setting-row">
-        <div class="setting-title">uiiii toggle</div>
+        <div class="setting-title">Webview toggle</div>
         <input class="dark-input keybind-input" id="cfgWebviewKeybind" type="text" value="F8" maxlength="8" readonly spellcheck="false">
       </div>
     </div>
@@ -854,89 +453,121 @@ main::-webkit-scrollbar-thumb {
   </section>
 
   <section class="page" id="page-configuration">
-    <div class="config-layout">
-      <div class="content-panel curve-panel">
-        <div class="curve-heading">
-          <h2>Bezier curve</h2>
-          <button class="text-button" id="resetCurveBtn">Reset</button>
+    <!-- AIM ASSIST PANEL -->
+    <div id="panel-aim">
+      <div class="config-layout">
+        <div class="content-panel curve-panel">
+          <div class="curve-heading">
+            <h2>Bezier curve</h2>
+            <button class="text-button" id="resetCurveBtn">Reset</button>
+          </div>
+          <div class="curve-wrap">
+            <svg id="bezierSvg" viewBox="0 0 600 310" role="img" aria-label="Bezier curve editor">
+              <defs>
+                <pattern id="curveGrid" width="30" height="30" patternUnits="userSpaceOnUse">
+                  <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#18181b" stroke-width="1"/>
+                </pattern>
+              </defs>
+              <rect x="34" y="18" width="548" height="260" fill="url(#curveGrid)" rx="8"/>
+              <path d="M34 278H582 M34 18V278" stroke="#2a2a2e" stroke-width="1.2"/>
+              <text x="34" y="299" class="axis-label">0</text>
+              <text x="572" y="299" class="axis-label">1</text>
+              <text x="15" y="28" class="axis-label">1</text>
+              <text x="15" y="281" class="axis-label">0</text>
+              <path id="handleLine1" class="handle-line" d="M34 278 L180 200"/>
+              <path id="handleLine2" class="handle-line" d="M420 80 L582 18"/>
+              <path id="curvePath" class="curve-path" d="M34 278 C180 200 420 80 582 18"/>
+              <circle class="curve-end" cx="34" cy="278" r="5"/>
+              <circle class="curve-end" cx="582" cy="18" r="5"/>
+              <circle class="control-point" id="control1" data-point="1" cx="180" cy="200" r="7" tabindex="0" role="slider" aria-label="Control point 1"/>
+              <circle class="control-point" id="control2" data-point="2" cx="420" cy="80" r="7" tabindex="0" role="slider" aria-label="Control point 2"/>
+            </svg>
+          </div>
+          <div class="curve-values">
+            <span>Point 1 <b id="point1Value">27%, 30%</b></span>
+            <span>Point 2 <b id="point2Value">71%, 76%</b></span>
+          </div>
         </div>
-        <div class="curve-wrap">
-          <svg id="bezierSvg" viewBox="0 0 600 310" role="img" aria-label="Bezier curve editor">
-            <defs>
-              <pattern id="curveGrid" width="30" height="30" patternUnits="userSpaceOnUse">
-                <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#18181b" stroke-width="1"/>
-              </pattern>
-            </defs>
-            <rect x="34" y="18" width="548" height="260" fill="url(#curveGrid)" rx="8"/>
-            <path d="M34 278H582 M34 18V278" stroke="#2a2a2e" stroke-width="1.2"/>
-            <text x="34" y="299" class="axis-label">0</text>
-            <text x="572" y="299" class="axis-label">1</text>
-            <text x="15" y="28" class="axis-label">1</text>
-            <text x="15" y="281" class="axis-label">0</text>
-            <path id="handleLine1" class="handle-line" d="M34 278 L180 200"/>
-            <path id="handleLine2" class="handle-line" d="M420 80 L582 18"/>
-            <path id="curvePath" class="curve-path" d="M34 278 C180 200 420 80 582 18"/>
-            <circle class="curve-end" cx="34" cy="278" r="5"/>
-            <circle class="curve-end" cx="582" cy="18" r="5"/>
-            <circle class="control-point" id="control1" data-point="1" cx="180" cy="200" r="7" tabindex="0" role="slider" aria-label="Control point 1"/>
-            <circle class="control-point" id="control2" data-point="2" cx="420" cy="80" r="7" tabindex="0" role="slider" aria-label="Control point 2"/>
-          </svg>
-        </div>
-        <div class="curve-values">
-          <span>Point 1 <b id="point1Value">27%, 30%</b></span>
-          <span>Point 2 <b id="point2Value">71%, 76%</b></span>
+
+        <div class="config-options">
+          <div class="content-panel">
+            <h2>General</h2>
+            <div class="setting-row"><div class="setting-title">Enabled</div><button class="toggle on" id="cfgEnabled" role="switch" aria-checked="true" aria-label="Enabled"></button></div>
+            <div class="setting-row"><div class="setting-title">Sticky mode</div><button class="toggle on" id="cfgStickyMode" role="switch" aria-checked="true" aria-label="Sticky mode"></button></div>
+            <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="cfgKeybind" type="text" value="Q" maxlength="8" readonly spellcheck="false"></div>
+            <div class="setting-row"><div class="setting-title">Unlock on death</div><button class="toggle on" id="cfgUnlockOnDeath" role="switch" aria-checked="true" aria-label="Unlock on death"></button></div>
+            <div class="setting-row"><div class="setting-title">Self death check</div><button class="toggle on" id="cfgSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button></div>
+          </div>
+
+          <div class="content-panel">
+            <h2>Targeting</h2>
+            <div class="setting-row"><div class="setting-title">Predict target</div><button class="toggle on" id="cfgPredictTarget" role="switch" aria-checked="true" aria-label="Predict target"></button></div>
+            <label class="field-label">Prediction X</label>
+            <div class="fill-slider" id="slPredictionX" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.10">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.10</div><div class="fill-slider-value-inverse">0.10</div>
+            </div>
+            <label class="field-label">Prediction Y</label>
+            <div class="fill-slider" id="slPredictionY" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.10">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.10</div><div class="fill-slider-value-inverse">0.10</div>
+            </div>
+            <div class="setting-row"><div class="setting-title">Closest point</div><button class="toggle on" id="cfgClosestPoint" role="switch" aria-checked="true" aria-label="Closest point"></button></div>
+            <label class="field-label">Fixed part</label>
+            <div class="custom-select" id="cfgFixedPartSelect" data-value="Head">
+              <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                <span class="value">Head</span>
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="custom-select-options" role="listbox">
+                <div class="custom-option selected" data-value="Head" role="option"><span>Head</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="custom-option" data-value="Torso" role="option"><span>Torso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="custom-option" data-value="HumanoidRootPart" role="option"><span>HumanoidRootPart</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="custom-option" data-value="UpperTorso" role="option"><span>UpperTorso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="custom-option" data-value="LowerTorso" role="option"><span>LowerTorso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="content-panel">
+            <h2>Smoothing & range</h2>
+            <label class="field-label">Smoothness</label>
+            <div class="fill-slider" id="slSmoothness" data-min="0" data-max="2" data-step="0.01" data-decimals="2" data-value="0.35">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.35</div><div class="fill-slider-value-inverse">0.35</div>
+            </div>
+            <div class="setting-row"><div class="setting-title">Max studs check</div><button class="toggle on" id="cfgMaxStudsCheck" role="switch" aria-checked="true" aria-label="Max studs check"></button></div>
+            <label class="field-label">Max studs</label>
+            <div class="fill-slider" id="slMaxStuds" data-min="0" data-max="2000" data-step="10" data-decimals="0" data-value="500">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">500</div><div class="fill-slider-value-inverse">500</div>
+            </div>
+            <label class="field-label">Stabilizer deadzone</label>
+            <div class="fill-slider" id="slDeadzone" data-min="0" data-max="20" data-step="0.5" data-decimals="1" data-value="3.0">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">3.0</div><div class="fill-slider-value-inverse">3.0</div>
+            </div>
+            <label class="field-label">Reaction delay</label>
+            <div class="fill-slider" id="slReactionDelay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.12">
+              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.12</div><div class="fill-slider-value-inverse">0.12</div>
+            </div>
+            <div class="config-actions"><button class="text-button" id="cfgResetBtn">Reset</button></div>
+          </div>
         </div>
       </div>
+    </div>
 
+    <!-- TRIGGERBOT PANEL -->
+    <div id="panel-triggerbot" style="display: none;">
       <div class="config-options">
         <div class="content-panel">
           <h2>General</h2>
-          <div class="setting-row">
-            <div class="setting-title">Enabled</div>
-            <button class="toggle on" id="cfgEnabled" role="switch" aria-checked="true" aria-label="Enabled"></button>
-          </div>
-          <div class="setting-row">
-            <div class="setting-title">Sticky mode</div>
-            <button class="toggle on" id="cfgStickyMode" role="switch" aria-checked="true" aria-label="Sticky mode"></button>
-          </div>
-          <div class="setting-row">
-            <div class="setting-title">Keybind</div>
-            <input class="dark-input keybind-input" id="cfgKeybind" type="text" value="Q" maxlength="8" readonly spellcheck="false">
-          </div>
-          <div class="setting-row">
-            <div class="setting-title">Unlock on death</div>
-            <button class="toggle on" id="cfgUnlockOnDeath" role="switch" aria-checked="true" aria-label="Unlock on death"></button>
-          </div>
-          <div class="setting-row">
-            <div class="setting-title">Self death check</div>
-            <button class="toggle on" id="cfgSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button>
-          </div>
+          <div class="setting-row"><div class="setting-title">Enabled</div><button class="toggle" id="tbEnabled" role="switch" aria-checked="false" aria-label="Triggerbot enabled"></button></div>
+          <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="tbKeybind" type="text" value="E" maxlength="8" readonly spellcheck="false"></div>
+          <div class="setting-row"><div class="setting-title">Require camlock</div><button class="toggle on" id="tbRequireCamlock" role="switch" aria-checked="true" aria-label="Require camlock"></button></div>
+          <div class="setting-row"><div class="setting-title">Death check</div><button class="toggle on" id="tbDeathCheck" role="switch" aria-checked="true" aria-label="Death check"></button></div>
+          <div class="setting-row"><div class="setting-title">Self death check</div><button class="toggle on" id="tbSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button></div>
         </div>
 
         <div class="content-panel">
           <h2>Targeting</h2>
-          <div class="setting-row">
-            <div class="setting-title">Predict target</div>
-            <button class="toggle on" id="cfgPredictTarget" role="switch" aria-checked="true" aria-label="Predict target"></button>
-          </div>
-          <label class="field-label">Prediction X</label>
-          <div class="fill-slider" id="slPredictionX" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.10">
-            <div class="fill-slider-fill"></div>
-            <div class="fill-slider-value">0.10</div>
-            <div class="fill-slider-value-inverse">0.10</div>
-          </div>
-          <label class="field-label">Prediction Y</label>
-          <div class="fill-slider" id="slPredictionY" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.10">
-            <div class="fill-slider-fill"></div>
-            <div class="fill-slider-value">0.10</div>
-            <div class="fill-slider-value-inverse">0.10</div>
-          </div>
-          <div class="setting-row">
-            <div class="setting-title">Closest point</div>
-            <button class="toggle on" id="cfgClosestPoint" role="switch" aria-checked="true" aria-label="Closest point"></button>
-          </div>
-          <label class="field-label">Fixed part</label>
-          <div class="custom-select" id="cfgFixedPartSelect" data-value="Head">
+          <label class="field-label">Aim part</label>
+          <div class="custom-select" id="tbAimPart" data-value="Head">
             <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
               <span class="value">Head</span>
               <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
@@ -944,45 +575,34 @@ main::-webkit-scrollbar-thumb {
             <div class="custom-select-options" role="listbox">
               <div class="custom-option selected" data-value="Head" role="option"><span>Head</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
               <div class="custom-option" data-value="Torso" role="option"><span>Torso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-              <div class="custom-option" data-value="HumanoidRootPart" role="option"><span>HumanoidRootPart</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-              <div class="custom-option" data-value="UpperTorso" role="option"><span>UpperTorso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-              <div class="custom-option" data-value="LowerTorso" role="option"><span>LowerTorso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+              <div class="custom-option" data-value="Any" role="option"><span>Any</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
             </div>
+          </div>
+          <label class="field-label">Radius</label>
+          <div class="fill-slider" id="tbRadius" data-min="0" data-max="40" data-step="0.5" data-decimals="1" data-value="12.0">
+            <div class="fill-slider-fill"></div><div class="fill-slider-value">12.0</div><div class="fill-slider-value-inverse">12.0</div>
+          </div>
+          <label class="field-label">Delay</label>
+          <div class="fill-slider" id="tbDelay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.12">
+            <div class="fill-slider-fill"></div><div class="fill-slider-value">0.12</div><div class="fill-slider-value-inverse">0.12</div>
           </div>
         </div>
 
         <div class="content-panel">
-          <h2>Smoothing & range</h2>
-          <label class="field-label">Smoothness</label>
-          <div class="fill-slider" id="slSmoothness" data-min="0" data-max="2" data-step="0.01" data-decimals="2" data-value="0.35">
-            <div class="fill-slider-fill"></div>
-            <div class="fill-slider-value">0.35</div>
-            <div class="fill-slider-value-inverse">0.35</div>
-          </div>
-          <div class="setting-row">
-            <div class="setting-title">Max studs check</div>
-            <button class="toggle on" id="cfgMaxStudsCheck" role="switch" aria-checked="true" aria-label="Max studs check"></button>
-          </div>
+          <h2>Range & Weapons</h2>
+          <div class="setting-row"><div class="setting-title">Stud check</div><button class="toggle on" id="tbStudCheck" role="switch" aria-checked="true" aria-label="Stud check"></button></div>
           <label class="field-label">Max studs</label>
-          <div class="fill-slider" id="slMaxStuds" data-min="0" data-max="2000" data-step="10" data-decimals="0" data-value="500">
-            <div class="fill-slider-fill"></div>
-            <div class="fill-slider-value">500</div>
-            <div class="fill-slider-value-inverse">500</div>
+          <div class="fill-slider" id="tbMaxStuds" data-min="0" data-max="2000" data-step="10" data-decimals="0" data-value="500">
+            <div class="fill-slider-fill"></div><div class="fill-slider-value">500</div><div class="fill-slider-value-inverse">500</div>
           </div>
-          <label class="field-label">Stabilizer deadzone</label>
-          <div class="fill-slider" id="slDeadzone" data-min="0" data-max="20" data-step="0.5" data-decimals="1" data-value="3.0">
-            <div class="fill-slider-fill"></div>
-            <div class="fill-slider-value">3.0</div>
-            <div class="fill-slider-value-inverse">3.0</div>
-          </div>
-          <label class="field-label">Reaction delay</label>
-          <div class="fill-slider" id="slReactionDelay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.12">
-            <div class="fill-slider-fill"></div>
-            <div class="fill-slider-value">0.12</div>
-            <div class="fill-slider-value-inverse">0.12</div>
-          </div>
-          <div class="config-actions">
-            <button class="text-button" id="cfgResetBtn">Reset</button>
+          <div class="setting-row"><div class="setting-title">Weapon specific</div><button class="toggle" id="tbWeaponSpecific" role="switch" aria-checked="false" aria-label="Weapon specific"></button></div>
+          <div id="weaponListWrap" style="display: none;">
+            <div class="weapon-cards" id="weaponCards"></div>
+            <button class="add-weapon-btn" id="addWeaponBtn">+ Add weapon</button>
+            <div class="weapon-name-input-wrap" id="weaponNameInputWrap" style="display: none;">
+              <input type="text" id="weaponNameInput" placeholder="Exact weapon name" maxlength="60">
+              <button class="text-button" id="weaponNameConfirm">Add</button>
+            </div>
           </div>
         </div>
       </div>
@@ -998,18 +618,11 @@ main::-webkit-scrollbar-thumb {
   </section>
 </main>
 
-<!-- Publish modal -->
 <div class="cfg-modal-overlay" id="publishModal">
   <div class="cfg-modal">
     <h3>Publish config</h3>
-    <div>
-      <label>Config name</label>
-      <input type="text" id="publishName" maxlength="40" placeholder="e.g. Legit smooth">
-    </div>
-    <div>
-      <label>Description</label>
-      <textarea id="publishDesc" maxlength="220" placeholder="What makes this config good?"></textarea>
-    </div>
+    <div><label>Config name</label><input type="text" id="publishName" maxlength="40" placeholder="e.g. Legit smooth"></div>
+    <div><label>Description</label><textarea id="publishDesc" maxlength="220" placeholder="What makes this config good?"></textarea></div>
     <div class="cfg-modal-actions">
       <button class="text-button" onclick="closePublishModal()">Cancel</button>
       <button class="text-button" id="publishConfirm">Publish</button>
@@ -1017,10 +630,14 @@ main::-webkit-scrollbar-thumb {
   </div>
 </div>
 
-<!-- Keybind mode right-click popup -->
 <div class="keybind-mode-popup" id="keybindModePopup">
   <div class="popup-item" data-mode="toggle"><span>Toggle</span></div>
   <div class="popup-item" data-mode="hold"><span>Hold</span></div>
+</div>
+
+<div class="tab-popup" id="configTabPopup">
+  <div class="popup-item" data-mode="aim"><span>Aim assist</span></div>
+  <div class="popup-item" data-mode="triggerbot"><span>Triggerbot</span></div>
 </div>
 
 <div class="session-bar" id="sessionBar">00:00:00</div>
@@ -1036,6 +653,9 @@ let communityConfigs = [];
 let myLikes = new Set();
 let searchQuery = "";
 let keybindMode = "toggle";
+let tbKeybindMode = "hold";
+let configMode = "aim";
+let weaponConfigs = {};
 
 const saveStatus = document.getElementById("saveStatus");
 const saveLabel = document.getElementById("saveLabel");
@@ -1056,17 +676,54 @@ function showToast(message) {
 
 function navigate(page) {
   if (!pages.includes(page)) return;
-  document.querySelectorAll(".page").forEach(s => {
-    s.classList.toggle("active", s.id === "page-" + page);
-  });
-  document.querySelectorAll(".tab").forEach(t => {
-    t.classList.toggle("active", t.dataset.page === page);
-  });
+  document.querySelectorAll(".page").forEach(s => s.classList.toggle("active", s.id === "page-" + page));
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.page === page));
   if (page === "community") loadCommunity();
+  if (page === "configuration") applyConfigMode();
+}
+
+function applyConfigMode() {
+  const aimPanel = document.getElementById("panel-aim");
+  const tbPanel = document.getElementById("panel-triggerbot");
+  if (configMode === "triggerbot") {
+    aimPanel.style.display = "none";
+    tbPanel.style.display = "block";
+  } else {
+    aimPanel.style.display = "block";
+    tbPanel.style.display = "none";
+  }
 }
 
 document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => navigate(t.dataset.page)));
 document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => navigate(b.dataset.go)));
+
+// Right-click Configuration tab
+const configTabPopup = document.getElementById("configTabPopup");
+const configTabBtn = document.querySelector('.tab[data-page="configuration"]');
+
+configTabBtn.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  const rect = configTabBtn.getBoundingClientRect();
+  configTabPopup.style.top = (rect.bottom + 4) + "px";
+  configTabPopup.style.left = Math.max(8, rect.left - 30) + "px";
+  configTabPopup.querySelectorAll(".popup-item").forEach(item => {
+    item.classList.toggle("selected", item.dataset.mode === configMode);
+  });
+  configTabPopup.classList.add("show");
+});
+
+configTabPopup.querySelectorAll(".popup-item").forEach(item => {
+  item.addEventListener("click", () => {
+    configMode = item.dataset.mode;
+    configTabPopup.classList.remove("show");
+    navigate("configuration");
+    showToast(configMode === "triggerbot" ? "Triggerbot panel" : "Aim assist panel");
+  });
+});
+
+document.addEventListener("click", e => {
+  if (!configTabPopup.contains(e.target) && e.target !== configTabBtn) configTabPopup.classList.remove("show");
+});
 
 function tickTimer() {
   const s = Math.floor((Date.now() - sessionStart) / 1000);
@@ -1091,7 +748,6 @@ async function refreshSession() {
     document.getElementById("accountUsername").textContent = username;
     document.getElementById("accountStatus").textContent = "Active";
     document.getElementById("accountSession").textContent = "Authenticated";
-
     try {
       const dRes = await fetch("/api/dashboard", { credentials: "include" });
       if (dRes.ok) {
@@ -1099,7 +755,6 @@ async function refreshSession() {
         document.getElementById("accountHwid").textContent = d.hwid || "not bound";
       }
     } catch (e) {}
-
     refreshClientStatus();
     setInterval(refreshClientStatus, 3000);
   } catch {
@@ -1115,13 +770,8 @@ async function refreshClientStatus() {
     if (!r.ok) return;
     const d = await r.json();
     const el = document.getElementById("clientStatus");
-    if (d.connected) {
-      el.textContent = "Connected";
-      el.style.color = "#5a9e6e";
-    } else {
-      el.textContent = "Offline";
-      el.style.color = "";
-    }
+    if (d.connected) { el.textContent = "Connected"; el.style.color = "#5a9e6e"; }
+    else { el.textContent = "Offline"; el.style.color = ""; }
   } catch (e) {}
 }
 
@@ -1129,9 +779,7 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
   try {
     const r = await fetch("/api/logout", { method: "POST", credentials: "include" });
     if (r.ok) window.location.href = "/";
-  } catch {
-    showToast("couldn't sign out");
-  }
+  } catch { showToast("couldn't sign out"); }
 });
 
 document.getElementById("closeAppBtn").addEventListener("click", async () => {
@@ -1139,9 +787,7 @@ document.getElementById("closeAppBtn").addEventListener("click", async () => {
     await fetch("/api/client/shutdown", { method: "POST", credentials: "include" });
     showToast("closing...");
     setTimeout(() => { try { window.close(); } catch (e) {} }, 500);
-  } catch (e) {
-    showToast("close failed");
-  }
+  } catch (e) { showToast("close failed"); }
 });
 
 function setupToggle(id) {
@@ -1159,24 +805,19 @@ function setupToggle(id) {
   return { get: () => button.classList.contains("on"), set: setState };
 }
 
-function initCustomSelect(root) {
+function initCustomSelect(root, onchange) {
   const trigger = root.querySelector(".custom-select-trigger");
   const options = root.querySelectorAll(".custom-option");
   const valueEl = trigger.querySelector(".value");
-  function close() {
-    root.classList.remove("open");
-    trigger.setAttribute("aria-expanded", "false");
-  }
-  function open() {
-    root.classList.add("open");
-    trigger.setAttribute("aria-expanded", "true");
-  }
+  function close() { root.classList.remove("open"); trigger.setAttribute("aria-expanded", "false"); }
+  function open() { root.classList.add("open"); trigger.setAttribute("aria-expanded", "true"); }
   function select(option) {
     options.forEach(o => o.classList.remove("selected"));
     option.classList.add("selected");
     root.dataset.value = option.dataset.value;
     valueEl.textContent = option.querySelector("span").textContent;
     close();
+    if (onchange) onchange(option.dataset.value);
     queueSave();
   }
   trigger.addEventListener("click", e => {
@@ -1184,10 +825,7 @@ function initCustomSelect(root) {
     if (root.classList.contains("open")) close();
     else {
       document.querySelectorAll(".custom-select.open").forEach(s => {
-        if (s !== root) {
-          s.classList.remove("open");
-          s.querySelector(".custom-select-trigger").setAttribute("aria-expanded", "false");
-        }
+        if (s !== root) { s.classList.remove("open"); s.querySelector(".custom-select-trigger").setAttribute("aria-expanded", "false"); }
       });
       open();
     }
@@ -1196,9 +834,9 @@ function initCustomSelect(root) {
   document.addEventListener("click", e => { if (!root.contains(e.target)) close(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
 }
-document.querySelectorAll(".custom-select").forEach(initCustomSelect);
+document.querySelectorAll(".custom-select").forEach(root => initCustomSelect(root));
 
-function initFillSlider(el) {
+function initFillSlider(el, onchange) {
   const min = Number(el.dataset.min);
   const max = Number(el.dataset.max);
   const step = Number(el.dataset.step) || 1;
@@ -1226,7 +864,10 @@ function initFillSlider(el) {
     const text = fmt(v);
     label.textContent = text;
     labelInv.textContent = text;
-    if (!silent) queueSave();
+    if (!silent) {
+      if (onchange) onchange(v);
+      queueSave();
+    }
   }
   function fromEvent(e) {
     const rect = el.getBoundingClientRect();
@@ -1234,23 +875,9 @@ function initFillSlider(el) {
     set(min + Math.min(1, Math.max(0, x / rect.width)) * (max - min));
   }
 
-  el.addEventListener("pointerdown", e => {
-    e.preventDefault();
-    dragging = true;
-    el.setPointerCapture?.(e.pointerId);
-    fromEvent(e);
-  });
-  el.addEventListener("pointermove", e => {
-    if (dragging) {
-      e.preventDefault();
-      fromEvent(e);
-    }
-  });
-  el.addEventListener("pointerup", e => {
-    e.preventDefault();
-    dragging = false;
-    try { el.releasePointerCapture?.(e.pointerId); } catch (err) {}
-  });
+  el.addEventListener("pointerdown", e => { e.preventDefault(); dragging = true; el.setPointerCapture?.(e.pointerId); fromEvent(e); });
+  el.addEventListener("pointermove", e => { if (dragging) { e.preventDefault(); fromEvent(e); } });
+  el.addEventListener("pointerup", e => { e.preventDefault(); dragging = false; try { el.releasePointerCapture?.(e.pointerId); } catch (err) {} });
   el.addEventListener("pointercancel", () => { dragging = false; });
   el.addEventListener("touchstart", e => e.preventDefault(), { passive: false });
 
@@ -1260,6 +887,7 @@ function initFillSlider(el) {
 
 const keybindInput = document.getElementById("cfgKeybind");
 const webviewKeybindInput = document.getElementById("cfgWebviewKeybind");
+const tbKeybindInput = document.getElementById("tbKeybind");
 let capturingKeybind = null;
 
 function startCapture(input) {
@@ -1281,8 +909,8 @@ function setKeybindLabel(input, label) {
 
 keybindInput.addEventListener("click", () => startCapture(keybindInput));
 webviewKeybindInput.addEventListener("click", () => startCapture(webviewKeybindInput));
+tbKeybindInput.addEventListener("click", () => startCapture(tbKeybindInput));
 
-// Right-click on keybind input opens keybind mode popup
 const keybindModePopup = document.getElementById("keybindModePopup");
 
 keybindInput.addEventListener("contextmenu", e => {
@@ -1306,9 +934,7 @@ keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
 });
 
 document.addEventListener("click", e => {
-  if (!keybindModePopup.contains(e.target) && e.target !== keybindInput) {
-    keybindModePopup.classList.remove("show");
-  }
+  if (!keybindModePopup.contains(e.target) && e.target !== keybindInput) keybindModePopup.classList.remove("show");
 });
 
 document.addEventListener("keydown", e => {
@@ -1316,7 +942,9 @@ document.addEventListener("keydown", e => {
   e.preventDefault();
   const k = e.key;
   if (k === "Escape") {
-    capturingKeybind.value = capturingKeybind === keybindInput ? "Q" : "F8";
+    if (capturingKeybind === keybindInput) capturingKeybind.value = "Q";
+    else if (capturingKeybind === tbKeybindInput) capturingKeybind.value = "E";
+    else capturingKeybind.value = "F8";
     stopCapture();
     return;
   }
@@ -1329,18 +957,11 @@ document.addEventListener("keydown", e => {
 
 document.addEventListener("pointerdown", e => {
   if (!capturingKeybind) return;
-  if (e.button === 3) {
-    e.preventDefault();
-    setKeybindLabel(capturingKeybind, "MB4");
-  } else if (e.button === 4) {
-    e.preventDefault();
-    setKeybindLabel(capturingKeybind, "MB5");
-  }
+  if (e.button === 3) { e.preventDefault(); setKeybindLabel(capturingKeybind, "MB4"); }
+  else if (e.button === 4) { e.preventDefault(); setKeybindLabel(capturingKeybind, "MB5"); }
 }, true);
 
-document.addEventListener("contextmenu", e => {
-  if (capturingKeybind) e.preventDefault();
-});
+document.addEventListener("contextmenu", e => { if (capturingKeybind) e.preventDefault(); });
 
 document.addEventListener("mousedown", e => {
   if (!capturingKeybind) return;
@@ -1355,24 +976,16 @@ const curvePath = document.getElementById("curvePath");
 const control1 = document.getElementById("control1");
 const control2 = document.getElementById("control2");
 const curveBounds = { left: 34, right: 582, top: 18, bottom: 278 };
-const curveState = {
-  p1: { x: 180, y: 200 },
-  p2: { x: 420, y: 80 },
-  dragging: null
-};
+const curveState = { p1: { x: 180, y: 200 }, p2: { x: 420, y: 80 }, dragging: null };
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
 function curvePointFromEvent(event) {
   const point = curveSvg.createSVGPoint();
-  point.x = event.clientX;
-  point.y = event.clientY;
+  point.x = event.clientX; point.y = event.clientY;
   const matrix = curveSvg.getScreenCTM();
   if (!matrix) return null;
   const local = point.matrixTransform(matrix.inverse());
-  return {
-    x: clamp(local.x, curveBounds.left, curveBounds.right),
-    y: clamp(local.y, curveBounds.top, curveBounds.bottom)
-  };
+  return { x: clamp(local.x, curveBounds.left, curveBounds.right), y: clamp(local.y, curveBounds.top, curveBounds.bottom) };
 }
 
 function drawCurve() {
@@ -1381,16 +994,12 @@ function drawCurve() {
     "M " + curveBounds.left + " " + curveBounds.bottom +
     " C " + p1.x + " " + p1.y + " " + p2.x + " " + p2.y + " " +
     curveBounds.right + " " + curveBounds.top);
-  document.getElementById("handleLine1").setAttribute("d",
-    "M " + curveBounds.left + " " + curveBounds.bottom + " L " + p1.x + " " + p1.y);
-  document.getElementById("handleLine2").setAttribute("d",
-    "M " + p2.x + " " + p2.y + " L " + curveBounds.right + " " + curveBounds.top);
+  document.getElementById("handleLine1").setAttribute("d", "M " + curveBounds.left + " " + curveBounds.bottom + " L " + p1.x + " " + p1.y);
+  document.getElementById("handleLine2").setAttribute("d", "M " + p2.x + " " + p2.y + " L " + curveBounds.right + " " + curveBounds.top);
   control1.setAttribute("cx", p1.x); control1.setAttribute("cy", p1.y);
   control2.setAttribute("cx", p2.x); control2.setAttribute("cy", p2.y);
-  document.getElementById("point1Value").textContent =
-    Math.round((p1.x - 34) / 548 * 100) + "%, " + Math.round((278 - p1.y) / 260 * 100) + "%";
-  document.getElementById("point2Value").textContent =
-    Math.round((p2.x - 34) / 548 * 100) + "%, " + Math.round((278 - p2.y) / 260 * 100) + "%";
+  document.getElementById("point1Value").textContent = Math.round((p1.x - 34) / 548 * 100) + "%, " + Math.round((278 - p1.y) / 260 * 100) + "%";
+  document.getElementById("point2Value").textContent = Math.round((p2.x - 34) / 548 * 100) + "%, " + Math.round((278 - p2.y) / 260 * 100) + "%";
 }
 
 curveSvg.addEventListener("pointermove", event => {
@@ -1400,12 +1009,7 @@ curveSvg.addEventListener("pointermove", event => {
   curveState[curveState.dragging] = p;
   drawCurve();
 });
-curveSvg.addEventListener("pointerup", () => {
-  if (curveState.dragging) {
-    curveState.dragging = null;
-    queueSave();
-  }
-});
+curveSvg.addEventListener("pointerup", () => { if (curveState.dragging) { curveState.dragging = null; queueSave(); } });
 curveSvg.addEventListener("pointercancel", () => { curveState.dragging = null; });
 
 [control1, control2].forEach(point => {
@@ -1468,9 +1072,7 @@ async function saveConfig() {
     if (r.ok) {
       isDirty = false;
       setSaveStatus("saved", "Saved");
-      setTimeout(() => {
-        if (!isDirty) setSaveStatus("", "Ready");
-      }, 1500);
+      setTimeout(() => { if (!isDirty) setSaveStatus("", "Ready"); }, 1500);
     } else {
       setSaveStatus("error", "Save failed");
     }
@@ -1490,6 +1092,15 @@ const cfgToggles = {
   Streamproof: setupToggle("cfgStreamproof")
 };
 
+const tbToggles = {
+  Enabled: setupToggle("tbEnabled"),
+  RequireCamlock: setupToggle("tbRequireCamlock"),
+  DeathCheck: setupToggle("tbDeathCheck"),
+  SelfDeathCheck: setupToggle("tbSelfDeathCheck"),
+  StudCheck: setupToggle("tbStudCheck"),
+  WeaponSpecific: setupToggle("tbWeaponSpecific")
+};
+
 const sliders = {
   PredictionX: initFillSlider(document.getElementById("slPredictionX")),
   PredictionY: initFillSlider(document.getElementById("slPredictionY")),
@@ -1499,7 +1110,128 @@ const sliders = {
   ReactionDelay: initFillSlider(document.getElementById("slReactionDelay"))
 };
 
+const tbSliders = {
+  Radius: initFillSlider(document.getElementById("tbRadius")),
+  Delay: initFillSlider(document.getElementById("tbDelay")),
+  MaxStuds: initFillSlider(document.getElementById("tbMaxStuds"))
+};
+
+function renderWeapons() {
+  const container = document.getElementById("weaponCards");
+  container.innerHTML = "";
+  const names = Object.keys(weaponConfigs);
+  if (names.length === 0) {
+    container.innerHTML = '<div style="text-align: center; padding: 12px; color: var(--muted); font-size: 9px;">No weapons. Click + Add weapon.</div>';
+    return;
+  }
+  names.forEach(name => {
+    const cfg = weaponConfigs[name];
+    const card = document.createElement("div");
+    card.className = "weapon-card";
+    card.innerHTML = `
+      <div class="weapon-card-head">
+        <div class="weapon-card-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+        <button class="weapon-card-del" data-weapon-del="${escapeHtml(name)}">×</button>
+      </div>
+      <div class="weapon-card-row">
+        <span class="weapon-card-label">Aim part</span>
+        <div class="custom-select weapon-aimpart" data-value="${cfg.AimPart || 'Head'}">
+          <button type="button" class="custom-select-trigger"><span class="value">${cfg.AimPart || 'Head'}</span><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+          <div class="custom-select-options">
+            <div class="custom-option ${cfg.AimPart === 'Head' ? 'selected' : ''}" data-value="Head"><span>Head</span></div>
+            <div class="custom-option ${cfg.AimPart === 'Torso' ? 'selected' : ''}" data-value="Torso"><span>Torso</span></div>
+            <div class="custom-option ${cfg.AimPart === 'Any' ? 'selected' : ''}" data-value="Any"><span>Any</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="weapon-card-row">
+        <span class="weapon-card-label">Radius</span>
+        <div class="fill-slider weapon-radius" data-min="0" data-max="40" data-step="0.5" data-decimals="1" data-value="${cfg.Radius ?? 12.0}">
+          <div class="fill-slider-fill"></div><div class="fill-slider-value">${(cfg.Radius ?? 12.0).toFixed(1)}</div><div class="fill-slider-value-inverse">${(cfg.Radius ?? 12.0).toFixed(1)}</div>
+        </div>
+      </div>
+      <div class="weapon-card-row">
+        <span class="weapon-card-label">Delay</span>
+        <div class="fill-slider weapon-delay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="${cfg.Delay ?? 0.12}">
+          <div class="fill-slider-fill"></div><div class="fill-slider-value">${(cfg.Delay ?? 0.12).toFixed(2)}</div><div class="fill-slider-value-inverse">${(cfg.Delay ?? 0.12).toFixed(2)}</div>
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+
+    card.querySelector(".weapon-card-del").addEventListener("click", () => {
+      delete weaponConfigs[name];
+      renderWeapons();
+      queueSave();
+    });
+
+    const aimPartSel = card.querySelector(".weapon-aimpart");
+    initCustomSelect(aimPartSel, val => {
+      weaponConfigs[name].AimPart = val;
+    });
+
+    const radiusSlider = card.querySelector(".weapon-radius");
+    const radiusInst = initFillSlider(radiusSlider, val => {
+      weaponConfigs[name].Radius = val;
+    });
+    radiusInst.set(weaponConfigs[name].Radius ?? 12.0, true);
+
+    const delaySlider = card.querySelector(".weapon-delay");
+    const delayInst = initFillSlider(delaySlider, val => {
+      weaponConfigs[name].Delay = val;
+    });
+    delayInst.set(weaponConfigs[name].Delay ?? 0.12, true);
+  });
+}
+
+document.getElementById("addWeaponBtn").addEventListener("click", () => {
+  document.getElementById("weaponNameInputWrap").style.display = "flex";
+  document.getElementById("weaponNameInput").value = "";
+  document.getElementById("weaponNameInput").focus();
+});
+
+document.getElementById("weaponNameConfirm").addEventListener("click", () => {
+  const name = document.getElementById("weaponNameInput").value.trim();
+  if (!name) { showToast("Weapon name required"); return; }
+  if (weaponConfigs[name]) { showToast("Weapon already exists"); return; }
+  weaponConfigs[name] = { AimPart: "Head", Radius: 12.0, Delay: 0.12 };
+  document.getElementById("weaponNameInputWrap").style.display = "none";
+  renderWeapons();
+  queueSave();
+});
+
+document.getElementById("weaponNameInput").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.getElementById("weaponNameConfirm").click();
+  if (e.key === "Escape") document.getElementById("weaponNameInputWrap").style.display = "none";
+});
+
+tbToggles.WeaponSpecific = setupToggle("tbWeaponSpecific");
+const originalWeaponSpecificClick = document.getElementById("tbWeaponSpecific").onclick;
+document.getElementById("tbWeaponSpecific").addEventListener("click", () => {
+  document.getElementById("weaponListWrap").style.display =
+    document.getElementById("tbWeaponSpecific").classList.contains("on") ? "block" : "none";
+});
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+}
+
 function readConfigFromUI() {
+  const tbCfg = {
+    Enabled: tbToggles.Enabled.get(),
+    Keybind: tbKeybindInput.value || "E",
+    KeybindMode: tbKeybindMode,
+    RequireCamlock: tbToggles.RequireCamlock.get(),
+    AimPart: document.getElementById("tbAimPart").dataset.value || "Head",
+    Radius: tbSliders.Radius.get(),
+    Delay: tbSliders.Delay.get(),
+    StudCheck: tbToggles.StudCheck.get(),
+    MaxStuds: tbSliders.MaxStuds.get(),
+    DeathCheck: tbToggles.DeathCheck.get(),
+    SelfDeathCheck: tbToggles.SelfDeathCheck.get(),
+    WeaponSpecific: tbToggles.WeaponSpecific.get(),
+    WeaponConfigs: weaponConfigs
+  };
   return {
     Enabled: cfgToggles.Enabled.get(),
     Keybind: keybindInput.value || "Q",
@@ -1520,7 +1252,8 @@ function readConfigFromUI() {
     ReactionDelay: sliders.ReactionDelay.get(),
     Streamproof: cfgToggles.Streamproof.get(),
     CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
-    CurveP2: { x: curveState.p2.x, y: curveState.p2.y }
+    CurveP2: { x: curveState.p2.x, y: curveState.p2.y },
+    triggerbot: tbCfg
   };
 }
 
@@ -1540,9 +1273,7 @@ function applyConfigToUI(c) {
   const select = document.getElementById("cfgFixedPartSelect");
   select.dataset.value = fixedPart;
   select.querySelector(".value").textContent = fixedPart;
-  select.querySelectorAll(".custom-option").forEach(o => {
-    o.classList.toggle("selected", o.dataset.value === fixedPart);
-  });
+  select.querySelectorAll(".custom-option").forEach(o => o.classList.toggle("selected", o.dataset.value === fixedPart));
   sliders.Smoothness.set(c.Smoothness !== undefined ? c.Smoothness : 0.35);
   cfgToggles.MaxStudsCheck.set(c.MaxStudsCheck !== false);
   sliders.MaxStuds.set(c.MaxStuds !== undefined ? c.MaxStuds : 500);
@@ -1554,6 +1285,27 @@ function applyConfigToUI(c) {
   if (c.CurveP1) curveState.p1 = { x: c.CurveP1.x, y: c.CurveP1.y };
   if (c.CurveP2) curveState.p2 = { x: c.CurveP2.x, y: c.CurveP2.y };
   drawCurve();
+
+  const tb = c.triggerbot || {};
+  tbToggles.Enabled.set(tb.Enabled === true);
+  tbKeybindInput.value = tb.Keybind || "E";
+  tbKeybindMode = tb.KeybindMode || "hold";
+  tbToggles.RequireCamlock.set(tb.RequireCamlock !== false);
+  const tbAimPart = tb.AimPart || "Head";
+  const tbSel = document.getElementById("tbAimPart");
+  tbSel.dataset.value = tbAimPart;
+  tbSel.querySelector(".value").textContent = tbAimPart;
+  tbSel.querySelectorAll(".custom-option").forEach(o => o.classList.toggle("selected", o.dataset.value === tbAimPart));
+  tbSliders.Radius.set(tb.Radius !== undefined ? tb.Radius : 12.0);
+  tbSliders.Delay.set(tb.Delay !== undefined ? tb.Delay : 0.12);
+  tbToggles.StudCheck.set(tb.StudCheck !== false);
+  tbSliders.MaxStuds.set(tb.MaxStuds !== undefined ? tb.MaxStuds : 500);
+  tbToggles.DeathCheck.set(tb.DeathCheck !== false);
+  tbToggles.SelfDeathCheck.set(tb.SelfDeathCheck !== false);
+  tbToggles.WeaponSpecific.set(tb.WeaponSpecific === true);
+  weaponConfigs = tb.WeaponConfigs || {};
+  document.getElementById("weaponListWrap").style.display = tb.WeaponSpecific ? "block" : "none";
+  renderWeapons();
 }
 
 async function loadConfig() {
@@ -1576,10 +1328,7 @@ document.getElementById("cfgResetBtn").addEventListener("click", () => {
   showToast("Config reset to defaults.");
 });
 
-// ═══════════════════════════════════════════════════════════
-// COMMUNITY CONFIGS
-// ═══════════════════════════════════════════════════════════
-
+// Community configs
 const communityGrid = document.getElementById("communityGrid");
 const communitySearch = document.getElementById("communitySearch");
 const publishModal = document.getElementById("publishModal");
@@ -1595,31 +1344,20 @@ document.getElementById("publishConfigBtn").addEventListener("click", () => {
   publishModal.classList.add("show");
 });
 
-function closePublishModal() {
-  publishModal.classList.remove("show");
-}
-
-publishModal.addEventListener("click", e => {
-  if (e.target === publishModal) closePublishModal();
-});
+function closePublishModal() { publishModal.classList.remove("show"); }
+publishModal.addEventListener("click", e => { if (e.target === publishModal) closePublishModal(); });
 
 document.getElementById("publishConfirm").addEventListener("click", async () => {
   const name = document.getElementById("publishName").value.trim();
   const desc = document.getElementById("publishDesc").value.trim();
   if (!name) { showToast("Name required"); return; }
-
   const config = readConfigFromUI();
-
   try {
     const r = await fetch("/api/community/configs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({
-        name: name,
-        description: desc,
-        config_data: config
-      })
+      body: JSON.stringify({ name, description: desc, config_data: config })
     });
     if (r.ok) {
       showToast("Published!");
@@ -1629,9 +1367,7 @@ document.getElementById("publishConfirm").addEventListener("click", async () => 
       const err = await r.json().catch(() => ({}));
       showToast(err.detail || "Publish failed");
     }
-  } catch (e) {
-    showToast("Connection error");
-  }
+  } catch (e) { showToast("Connection error"); }
 });
 
 async function loadCommunity() {
@@ -1642,9 +1378,7 @@ async function loadCommunity() {
     communityConfigs = data.configs || [];
     myLikes = new Set(data.liked_ids || []);
     renderCommunity();
-  } catch (e) {
-    showToast("Connection error");
-  }
+  } catch (e) { showToast("Connection error"); }
 }
 
 function renderCommunity() {
@@ -1697,21 +1431,9 @@ function renderCommunity() {
     `;
   }).join("");
 
-  communityGrid.querySelectorAll("[data-like]").forEach(b => {
-    b.addEventListener("click", () => toggleLike(Number(b.dataset.like)));
-  });
-  communityGrid.querySelectorAll("[data-load]").forEach(b => {
-    b.addEventListener("click", () => loadCommunityConfig(Number(b.dataset.load)));
-  });
-  communityGrid.querySelectorAll("[data-save]").forEach(b => {
-    b.addEventListener("click", () => saveCommunityConfig(Number(b.dataset.save)));
-  });
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, ch => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
-  })[ch]);
+  communityGrid.querySelectorAll("[data-like]").forEach(b => b.addEventListener("click", () => toggleLike(Number(b.dataset.like))));
+  communityGrid.querySelectorAll("[data-load]").forEach(b => b.addEventListener("click", () => loadCommunityConfig(Number(b.dataset.load))));
+  communityGrid.querySelectorAll("[data-save]").forEach(b => b.addEventListener("click", () => saveCommunityConfig(Number(b.dataset.save))));
 }
 
 function formatWhen(iso) {
@@ -1728,20 +1450,14 @@ function formatWhen(iso) {
 
 async function toggleLike(id) {
   try {
-    const r = await fetch(`/api/community/configs/${id}/like`, {
-      method: "POST",
-      credentials: "include"
-    });
+    const r = await fetch(`/api/community/configs/${id}/like`, { method: "POST", credentials: "include" });
     if (!r.ok) { showToast("Couldn't like"); return; }
     const data = await r.json();
     const cfg = communityConfigs.find(c => c.id === id);
     if (cfg) cfg.likes = data.likes;
-    if (data.liked) myLikes.add(id);
-    else myLikes.delete(id);
+    if (data.liked) myLikes.add(id); else myLikes.delete(id);
     renderCommunity();
-  } catch (e) {
-    showToast("Connection error");
-  }
+  } catch (e) { showToast("Connection error"); }
 }
 
 async function loadCommunityConfig(id) {
@@ -1765,14 +1481,8 @@ async function saveCommunityConfig(id) {
     });
     if (r.ok) showToast("Added to your configs");
     else showToast("Save failed");
-  } catch (e) {
-    showToast("Connection error");
-  }
+  } catch (e) { showToast("Connection error"); }
 }
-
-// ═══════════════════════════════════════════════════════════
-// BOOT
-// ═══════════════════════════════════════════════════════════
 
 async function boot() {
   await refreshSession();
