@@ -438,7 +438,7 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
         <input class="dark-input keybind-input" id="cfgWebviewKeybind" type="text" value="F8" maxlength="8" readonly spellcheck="false">
       </div>
     </div>
-       <div class="content-panel">
+    <div class="content-panel">
       <h2>Security</h2>
       <div class="setting-row">
         <div class="setting-title">Streamproof</div>
@@ -610,7 +610,7 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
           </div>
         </div>
       </div>
-        </div>
+    </div>
 
     <div id="panel-movement" style="display: none;">
       <div class="config-options">
@@ -706,15 +706,6 @@ let tbKeybindMode = "hold";
 let configMode = "aim";
 let weaponConfigs = {};
 let macroKeybindMode = "toggle";
-let macroConfig = {
-  Enabled: false,
-  Keybind: "F",
-  KeybindMode: "toggle",
-  OutputMode: "keyboard",
-  Keys: ["I", "O"],
-  Delay: 0.05,
-  SelfDeathCheck: true
-};
 
 const saveStatus = document.getElementById("saveStatus");
 const saveLabel = document.getElementById("saveLabel");
@@ -772,7 +763,8 @@ configTabPopup.querySelectorAll(".popup-item").forEach(item => {
     configMode = item.dataset.mode;
     configTabPopup.classList.remove("show");
     navigate("configuration");
-    showToast(configMode === "triggerbot" ? "@ggalexwyd" : (configMode === "movement" ? "movement" : "ggalexwyd"));
+    const label = configMode === "aim" ? "Aim assist" : configMode === "triggerbot" ? "Triggerbot" : "Movement";
+    showToast(label);
   });
 });
 
@@ -943,6 +935,7 @@ function initFillSlider(el, onchange) {
 const keybindInput = document.getElementById("cfgKeybind");
 const webviewKeybindInput = document.getElementById("cfgWebviewKeybind");
 const tbKeybindInput = document.getElementById("tbKeybind");
+const macroKeybindInput = document.getElementById("macroKeybind");
 let capturingKeybind = null;
 
 function startCapture(input) {
@@ -965,14 +958,7 @@ function setKeybindLabel(input, label) {
 keybindInput.addEventListener("click", () => startCapture(keybindInput));
 webviewKeybindInput.addEventListener("click", () => startCapture(webviewKeybindInput));
 tbKeybindInput.addEventListener("click", () => startCapture(tbKeybindInput));
-
-const macroKeybindInput = document.getElementById("macroKeybind");
 macroKeybindInput.addEventListener("click", () => startCapture(macroKeybindInput));
-
-macroKeybindInput.addEventListener("contextmenu", e => {
-  e.preventDefault();
-  openKeybindModePopup(macroKeybindInput, macroKeybindMode, "macro");
-});
 
 const keybindModePopup = document.getElementById("keybindModePopup");
 
@@ -982,20 +968,6 @@ function openKeybindModePopup(inputEl, currentMode, targetTag) {
   keybindModePopup.style.left = rect.left + "px";
   keybindModePopup.dataset.target = targetTag;
   keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
-  item.addEventListener("click", () => {
-    const target = keybindModePopup.dataset.target;
-    if (target === "tb") {
-      tbKeybindMode = item.dataset.mode;
-    } else if (target === "macro") {
-      macroKeybindMode = item.dataset.mode;
-    } else {
-      keybindMode = item.dataset.mode;
-    }
-    keybindModePopup.classList.remove("show");
-    queueSave();
-    showToast(`Keybind mode: ${item.dataset.mode === "hold" ? "Hold" : "Toggle"}`);
-  });
-});
     item.classList.toggle("selected", item.dataset.mode === currentMode);
   });
   keybindModePopup.classList.add("show");
@@ -1011,11 +983,18 @@ tbKeybindInput.addEventListener("contextmenu", e => {
   openKeybindModePopup(tbKeybindInput, tbKeybindMode, "tb");
 });
 
+macroKeybindInput.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  openKeybindModePopup(macroKeybindInput, macroKeybindMode, "macro");
+});
+
 keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
   item.addEventListener("click", () => {
     const target = keybindModePopup.dataset.target;
     if (target === "tb") {
       tbKeybindMode = item.dataset.mode;
+    } else if (target === "macro") {
+      macroKeybindMode = item.dataset.mode;
     } else {
       keybindMode = item.dataset.mode;
     }
@@ -1028,7 +1007,8 @@ keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
 document.addEventListener("click", e => {
   if (!keybindModePopup.contains(e.target) &&
       e.target !== keybindInput &&
-      e.target !== tbKeybindInput) {
+      e.target !== tbKeybindInput &&
+      e.target !== macroKeybindInput) {
     keybindModePopup.classList.remove("show");
   }
 });
@@ -1040,6 +1020,7 @@ document.addEventListener("keydown", e => {
   if (k === "Escape") {
     if (capturingKeybind === keybindInput) capturingKeybind.value = "Q";
     else if (capturingKeybind === tbKeybindInput) capturingKeybind.value = "E";
+    else if (capturingKeybind === macroKeybindInput) capturingKeybind.value = "F";
     else capturingKeybind.value = "F8";
     stopCapture();
     return;
@@ -1358,7 +1339,7 @@ function readConfigFromUI() {
     StabilizerDeadzone: sliders.Deadzone.get(),
     ReactionDelay: sliders.ReactionDelay.get(),
     Streamproof: cfgToggles.Streamproof.get(),
-        CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
+    CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
     CurveP2: { x: curveState.p2.x, y: curveState.p2.y },
     triggerbot: tbCfg,
     macro: {
@@ -1423,7 +1404,7 @@ function applyConfigToUI(c) {
   tbToggles.DeathCheck.set(tb.DeathCheck !== false);
   tbToggles.SelfDeathCheck.set(tb.SelfDeathCheck !== false);
   tbToggles.WeaponSpecific.set(tb.WeaponSpecific === true);
-    weaponConfigs = tb.WeaponConfigs || {};
+  weaponConfigs = tb.WeaponConfigs || {};
   document.getElementById("weaponListWrap").style.display = tb.WeaponSpecific ? "block" : "none";
   renderWeapons();
 
