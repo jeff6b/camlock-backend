@@ -171,6 +171,7 @@ DEFAULT_TRIGGERBOT = {
     "AimPart": "Head",
     "Radius": 12.0,
     "Delay": 0.12,
+    "GunswitchDelay": 0.0,
     "StudCheck": True,
     "MaxStuds": 500,
     "DeathCheck": True,
