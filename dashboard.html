@@ -640,17 +640,7 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
           </div>
         </div>
 
-        <div class="content-panel">
-          <h2>Keys (keyboard mode)</h2>
-          <label class="field-label">First key</label>
-          <input class="dark-input" id="macroKey1" type="text" value="I" maxlength="8" spellcheck="false">
-          <label class="field-label">Second key</label>
-          <input class="dark-input" id="macroKey2" type="text" value="O" maxlength="8" spellcheck="false">
-          <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border); color:var(--muted); font-size:9px; line-height:1.5;">
-            Keyboard mode alternates the two keys.<br>
-            Mouse mode alternates scroll forward/back.
-          </div>
-        </div>
+    
       </div>
     </div>
   </section>
@@ -1208,10 +1198,7 @@ const macroToggles = {
   SelfDeathCheck: setupToggle("macroSelfDeathCheck")
 };
 const macroDelaySlider = initFillSlider(document.getElementById("macroDelay"));
-const macroKey1Input = document.getElementById("macroKey1");
-const macroKey2Input = document.getElementById("macroKey2");
-macroKey1Input.addEventListener("input", queueSave);
-macroKey2Input.addEventListener("input", queueSave);
+
 
 const uiBgEnabledToggle = setupToggle("cfgUIBackgroundEnabled");
 const uiBgURLInput = document.getElementById("cfgUIBackgroundURL");
@@ -1341,15 +1328,12 @@ function readConfigFromUI() {
     CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
     CurveP2: { x: curveState.p2.x, y: curveState.p2.y },
     triggerbot: tbCfg,
-    macro: {
+        macro: {
       Enabled: macroToggles.Enabled.get(),
       Keybind: macroKeybindInput.value || "F",
       KeybindMode: macroKeybindMode,
       OutputMode: document.getElementById("macroOutputMode").dataset.value || "keyboard",
-      Keys: [
-        (macroKey1Input.value || "I").toUpperCase(),
-        (macroKey2Input.value || "O").toUpperCase()
-      ],
+      Keys: ["I", "O"],
       Delay: macroDelaySlider.get(),
       SelfDeathCheck: macroToggles.SelfDeathCheck.get()
     },
@@ -1416,9 +1400,7 @@ function applyConfigToUI(c) {
   omSel.dataset.value = outMode;
   omSel.querySelector(".value").textContent = outMode === "mouse" ? "Mouse (scroll)" : "Keyboard";
   omSel.querySelectorAll(".custom-option").forEach(o => o.classList.toggle("selected", o.dataset.value === outMode));
-  const keys = Array.isArray(mc.Keys) && mc.Keys.length >= 2 ? mc.Keys : ["I", "O"];
-  macroKey1Input.value = keys[0] || "I";
-  macroKey2Input.value = keys[1] || "O";
+  
   macroDelaySlider.set(mc.Delay !== undefined ? mc.Delay : 0.05);
   macroToggles.SelfDeathCheck.set(mc.SelfDeathCheck !== false);
 
