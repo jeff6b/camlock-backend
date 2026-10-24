@@ -1305,7 +1305,6 @@ function readConfigFromUI() {
     GunswitchDelay: tbSliders.GunswitchDelay.get(),
     Radius: tbSliders.Radius.get(),
     Delay: tbSliders.Delay.get(),
-    tbSliders.GunswitchDelay.set(tb.GunswitchDelay !== undefined ? tb.GunswitchDelay : 0.0);
     StudCheck: tbToggles.StudCheck.get(),
     MaxStuds: tbSliders.MaxStuds.get(),
     DeathCheck: tbToggles.DeathCheck.get(),
@@ -1356,6 +1355,7 @@ function applyConfigToUI(c) {
   keybindMode = c.KeybindMode || "toggle";
   webviewKeybindInput.value = c.WebviewKeybind || "F8";
   cfgToggles.PredictTarget.set(c.PredictTarget !== false);
+  tbSliders.GunswitchDelay.set(tb.GunswitchDelay !== undefined ? tb.GunswitchDelay : 0.0);
   sliders.PredictionX.set(c.PredictionX !== undefined ? c.PredictionX : (c.Prediction !== undefined ? c.Prediction : 0.10));
   sliders.PredictionY.set(c.PredictionY !== undefined ? c.PredictionY : (c.Prediction !== undefined ? c.Prediction : 0.10));
   const closestPoint = c.ClosestPoint !== undefined ? c.ClosestPoint : (c.ClosestPart !== undefined ? c.ClosestPart : true);
@@ -1389,6 +1389,7 @@ function applyConfigToUI(c) {
   tbSel.querySelectorAll(".custom-option").forEach(o => o.classList.toggle("selected", o.dataset.value === tbAimPart));
   tbSliders.Radius.set(tb.Radius !== undefined ? tb.Radius : 12.0);
   tbSliders.Delay.set(tb.Delay !== undefined ? tb.Delay : 0.12);
+  tbSliders.GunswitchDelay.set(tb.GunswitchDelay !== undefined ? tb.GunswitchDelay : 0.0);
   tbToggles.StudCheck.set(tb.StudCheck !== false);
   tbSliders.MaxStuds.set(tb.MaxStuds !== undefined ? tb.MaxStuds : 500);
   tbToggles.DeathCheck.set(tb.DeathCheck !== false);
