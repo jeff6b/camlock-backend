@@ -596,6 +596,10 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
             <div class="fill-slider-fill"></div><div class="fill-slider-value">0.12</div><div class="fill-slider-value-inverse">0.12</div>
           </div>
         </div>
+        <label class="field-label">Gunswitch delay</label>
+        <div class="fill-slider" id="tbGunswitchDelay" data-min="0" data-max="2" data-step="0.01" data-decimals="2" data-value="0.00">
+          <div class="fill-slider-fill"></div><div class="fill-slider-value">0.00</div><div class="fill-slider-value-inverse">0.00</div>
+        </div>
 
         <div class="content-panel">
           <h2>Range & Weapons</h2>
@@ -1190,7 +1194,8 @@ const sliders = {
 const tbSliders = {
   Radius: initFillSlider(document.getElementById("tbRadius")),
   Delay: initFillSlider(document.getElementById("tbDelay")),
-  MaxStuds: initFillSlider(document.getElementById("tbMaxStuds"))
+  MaxStuds: initFillSlider(document.getElementById("tbMaxStuds")),
+  GunswitchDelay: initFillSlider(document.getElementById("tbGunswitchDelay"))
 };
 
 const macroToggles = {
@@ -1297,8 +1302,10 @@ function readConfigFromUI() {
     KeybindMode: tbKeybindMode,
     RequireCamlock: tbToggles.RequireCamlock.get(),
     AimPart: document.getElementById("tbAimPart").dataset.value || "Head",
+    GunswitchDelay: tbSliders.GunswitchDelay.get(),
     Radius: tbSliders.Radius.get(),
     Delay: tbSliders.Delay.get(),
+    tbSliders.GunswitchDelay.set(tb.GunswitchDelay !== undefined ? tb.GunswitchDelay : 0.0);
     StudCheck: tbToggles.StudCheck.get(),
     MaxStuds: tbSliders.MaxStuds.get(),
     DeathCheck: tbToggles.DeathCheck.get(),
