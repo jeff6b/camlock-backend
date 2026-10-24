@@ -183,7 +183,22 @@ DEFAULT_TRIGGERBOT = {
     },
 }
 
-DEFAULT_CONFIG = {**DEFAULT_CAMLOCK, "triggerbot": DEFAULT_TRIGGERBOT}
+DEFAULT_MACRO = {
+    "Enabled": False,
+    "Keybind": "F",
+    "KeybindMode": "toggle",
+    "OutputMode": "keyboard",
+    "Keys": ["I", "O"],
+    "Delay": 0.05,
+    "SelfDeathCheck": True,
+}
+
+DEFAULT_CONFIG = {
+    **DEFAULT_CAMLOCK,
+    "triggerbot": DEFAULT_TRIGGERBOT,
+    "macro": DEFAULT_MACRO,
+    "UIBackground": {"Enabled": False, "URL": ""},
+}
 
 class UserLogin(BaseModel):
     username: str
