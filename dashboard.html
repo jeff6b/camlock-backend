@@ -22,6 +22,25 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 button { font: inherit; color: inherit; }
+body.ui-bg {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+body.ui-bg::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 12, 14, 0.75);
+  pointer-events: none;
+  z-index: 0;
+}
+body.ui-bg .header,
+body.ui-bg main {
+  position: relative;
+  z-index: 1;
+}
 button:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
 
 .header {
@@ -419,7 +438,7 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
         <input class="dark-input keybind-input" id="cfgWebviewKeybind" type="text" value="F8" maxlength="8" readonly spellcheck="false">
       </div>
     </div>
-    <div class="content-panel">
+       <div class="content-panel">
       <h2>Security</h2>
       <div class="setting-row">
         <div class="setting-title">Streamproof</div>
@@ -428,6 +447,18 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
       <div style="margin-top:10px; display:flex; gap:6px;">
         <button class="text-button" id="logoutBtn">Sign out</button>
         <button class="text-button danger" id="closeAppBtn">Close App</button>
+      </div>
+    </div>
+    <div class="content-panel">
+      <h2>UI background</h2>
+      <div class="setting-row">
+        <div class="setting-title">Background changer</div>
+        <button class="toggle" id="cfgUIBackgroundEnabled" role="switch" aria-checked="false" aria-label="UI background enabled"></button>
+      </div>
+      <label class="field-label">Image URL</label>
+      <input class="dark-input" id="cfgUIBackgroundURL" type="text" placeholder="https://example.com/image.png" spellcheck="false">
+      <div style="margin-top:8px; color:var(--muted); font-size:9px; line-height:1.5;">
+        The image is set as the background of the UI. Leave empty for default.
       </div>
     </div>
   </section>
@@ -579,6 +610,48 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
           </div>
         </div>
       </div>
+        </div>
+
+    <div id="panel-movement" style="display: none;">
+      <div class="config-options">
+        <div class="content-panel">
+          <h2>Macro</h2>
+          <div class="setting-row"><div class="setting-title">Enabled</div><button class="toggle" id="macroEnabled" role="switch" aria-checked="false" aria-label="Macro enabled"></button></div>
+          <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="macroKeybind" type="text" value="F" maxlength="8" readonly spellcheck="false" title="Right-click for hold/toggle"></div>
+          <div class="setting-row"><div class="setting-title">Self death check</div><button class="toggle on" id="macroSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button></div>
+        </div>
+
+        <div class="content-panel">
+          <h2>Output</h2>
+          <label class="field-label">Mode</label>
+          <div class="custom-select" id="macroOutputMode" data-value="keyboard">
+            <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="value">Keyboard</span>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="custom-select-options" role="listbox">
+              <div class="custom-option selected" data-value="keyboard" role="option"><span>Keyboard</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+              <div class="custom-option" data-value="mouse" role="option"><span>Mouse (scroll)</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+            </div>
+          </div>
+          <label class="field-label">Delay</label>
+          <div class="fill-slider" id="macroDelay" data-min="0.01" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.05">
+            <div class="fill-slider-fill"></div><div class="fill-slider-value">0.05</div><div class="fill-slider-value-inverse">0.05</div>
+          </div>
+        </div>
+
+        <div class="content-panel">
+          <h2>Keys (keyboard mode)</h2>
+          <label class="field-label">First key</label>
+          <input class="dark-input" id="macroKey1" type="text" value="I" maxlength="8" spellcheck="false">
+          <label class="field-label">Second key</label>
+          <input class="dark-input" id="macroKey2" type="text" value="O" maxlength="8" spellcheck="false">
+          <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border); color:var(--muted); font-size:9px; line-height:1.5;">
+            Keyboard mode alternates the two keys.<br>
+            Mouse mode alternates scroll forward/back.
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -611,6 +684,7 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
 <div class="tab-popup" id="configTabPopup">
   <div class="popup-item" data-mode="aim"><span>Aim assist</span></div>
   <div class="popup-item" data-mode="triggerbot"><span>Triggerbot</span></div>
+  <div class="popup-item" data-mode="movement"><span>Movement</span></div>
 </div>
 
 <div class="session-bar" id="sessionBar">00:00:00</div>
@@ -631,6 +705,16 @@ let keybindMode = "toggle";
 let tbKeybindMode = "hold";
 let configMode = "aim";
 let weaponConfigs = {};
+let macroKeybindMode = "toggle";
+let macroConfig = {
+  Enabled: false,
+  Keybind: "F",
+  KeybindMode: "toggle",
+  OutputMode: "keyboard",
+  Keys: ["I", "O"],
+  Delay: 0.05,
+  SelfDeathCheck: true
+};
 
 const saveStatus = document.getElementById("saveStatus");
 const saveLabel = document.getElementById("saveLabel");
@@ -660,13 +744,10 @@ function navigate(page) {
 function applyConfigMode() {
   const aimPanel = document.getElementById("panel-aim");
   const tbPanel = document.getElementById("panel-triggerbot");
-  if (configMode === "triggerbot") {
-    aimPanel.style.display = "none";
-    tbPanel.style.display = "block";
-  } else {
-    aimPanel.style.display = "block";
-    tbPanel.style.display = "none";
-  }
+  const mvPanel = document.getElementById("panel-movement");
+  aimPanel.style.display = configMode === "aim" ? "block" : "none";
+  tbPanel.style.display = configMode === "triggerbot" ? "block" : "none";
+  mvPanel.style.display = configMode === "movement" ? "block" : "none";
 }
 
 document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => navigate(t.dataset.page)));
@@ -691,7 +772,7 @@ configTabPopup.querySelectorAll(".popup-item").forEach(item => {
     configMode = item.dataset.mode;
     configTabPopup.classList.remove("show");
     navigate("configuration");
-    showToast(configMode === "triggerbot" ? "@ggalexwyd" : "ggalexwyd");
+    showToast(configMode === "triggerbot" ? "@ggalexwyd" : (configMode === "movement" ? "movement" : "ggalexwyd"));
   });
 });
 
@@ -885,6 +966,14 @@ keybindInput.addEventListener("click", () => startCapture(keybindInput));
 webviewKeybindInput.addEventListener("click", () => startCapture(webviewKeybindInput));
 tbKeybindInput.addEventListener("click", () => startCapture(tbKeybindInput));
 
+const macroKeybindInput = document.getElementById("macroKeybind");
+macroKeybindInput.addEventListener("click", () => startCapture(macroKeybindInput));
+
+macroKeybindInput.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  openKeybindModePopup(macroKeybindInput, macroKeybindMode, "macro");
+});
+
 const keybindModePopup = document.getElementById("keybindModePopup");
 
 function openKeybindModePopup(inputEl, currentMode, targetTag) {
@@ -893,6 +982,20 @@ function openKeybindModePopup(inputEl, currentMode, targetTag) {
   keybindModePopup.style.left = rect.left + "px";
   keybindModePopup.dataset.target = targetTag;
   keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
+  item.addEventListener("click", () => {
+    const target = keybindModePopup.dataset.target;
+    if (target === "tb") {
+      tbKeybindMode = item.dataset.mode;
+    } else if (target === "macro") {
+      macroKeybindMode = item.dataset.mode;
+    } else {
+      keybindMode = item.dataset.mode;
+    }
+    keybindModePopup.classList.remove("show");
+    queueSave();
+    showToast(`Keybind mode: ${item.dataset.mode === "hold" ? "Hold" : "Toggle"}`);
+  });
+});
     item.classList.toggle("selected", item.dataset.mode === currentMode);
   });
   keybindModePopup.classList.add("show");
@@ -1043,7 +1146,12 @@ const defaults = {
   StickyMode: true,
   StabilizerDeadzone: 3.0, ReactionDelay: 0.12,
   Streamproof: false,
-  CurveP1: { x: 180, y: 200 }, CurveP2: { x: 420, y: 80 }
+  CurveP1: { x: 180, y: 200 }, CurveP2: { x: 420, y: 80 },
+  macro: {
+    Enabled: false, Keybind: "F", KeybindMode: "toggle",
+    OutputMode: "keyboard", Keys: ["I", "O"], Delay: 0.05, SelfDeathCheck: true
+  },
+  UIBackground: { Enabled: false, URL: "" }
 };
 
 function queueSave() {
@@ -1113,6 +1221,44 @@ const tbSliders = {
   Delay: initFillSlider(document.getElementById("tbDelay")),
   MaxStuds: initFillSlider(document.getElementById("tbMaxStuds"))
 };
+
+const macroToggles = {
+  Enabled: setupToggle("macroEnabled"),
+  SelfDeathCheck: setupToggle("macroSelfDeathCheck")
+};
+const macroDelaySlider = initFillSlider(document.getElementById("macroDelay"));
+initCustomSelect(document.getElementById("macroOutputMode"));
+const macroKey1Input = document.getElementById("macroKey1");
+const macroKey2Input = document.getElementById("macroKey2");
+macroKey1Input.addEventListener("input", queueSave);
+macroKey2Input.addEventListener("input", queueSave);
+
+const uiBgEnabledToggle = setupToggle("cfgUIBackgroundEnabled");
+const uiBgURLInput = document.getElementById("cfgUIBackgroundURL");
+uiBgURLInput.addEventListener("input", queueSave);
+uiBgURLInput.addEventListener("change", () => applyUIBackground(readUIBackgroundFromUI()));
+uiBgEnabledToggle.set = (v) => {
+  document.getElementById("cfgUIBackgroundEnabled").classList.toggle("on", v);
+  document.getElementById("cfgUIBackgroundEnabled").setAttribute("aria-checked", String(v));
+  applyUIBackground(readUIBackgroundFromUI());
+};
+
+function readUIBackgroundFromUI() {
+  return {
+    Enabled: document.getElementById("cfgUIBackgroundEnabled").classList.contains("on"),
+    URL: uiBgURLInput.value.trim()
+  };
+}
+
+function applyUIBackground(bg) {
+  if (!bg || !bg.Enabled || !bg.URL) {
+    document.body.classList.remove("ui-bg");
+    document.body.style.backgroundImage = "";
+    return;
+  }
+  document.body.style.backgroundImage = `url("${bg.URL.replace(/"/g, '\\"')}")`;
+  document.body.classList.add("ui-bg");
+}
 
 function renderWeapons() {
   const container = document.getElementById("weaponCards");
@@ -1212,9 +1358,22 @@ function readConfigFromUI() {
     StabilizerDeadzone: sliders.Deadzone.get(),
     ReactionDelay: sliders.ReactionDelay.get(),
     Streamproof: cfgToggles.Streamproof.get(),
-    CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
+        CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
     CurveP2: { x: curveState.p2.x, y: curveState.p2.y },
-    triggerbot: tbCfg
+    triggerbot: tbCfg,
+    macro: {
+      Enabled: macroToggles.Enabled.get(),
+      Keybind: macroKeybindInput.value || "F",
+      KeybindMode: macroKeybindMode,
+      OutputMode: document.getElementById("macroOutputMode").dataset.value || "keyboard",
+      Keys: [
+        (macroKey1Input.value || "I").toUpperCase(),
+        (macroKey2Input.value || "O").toUpperCase()
+      ],
+      Delay: macroDelaySlider.get(),
+      SelfDeathCheck: macroToggles.SelfDeathCheck.get()
+    },
+    UIBackground: readUIBackgroundFromUI()
   };
 }
 
@@ -1264,9 +1423,30 @@ function applyConfigToUI(c) {
   tbToggles.DeathCheck.set(tb.DeathCheck !== false);
   tbToggles.SelfDeathCheck.set(tb.SelfDeathCheck !== false);
   tbToggles.WeaponSpecific.set(tb.WeaponSpecific === true);
-  weaponConfigs = tb.WeaponConfigs || {};
+    weaponConfigs = tb.WeaponConfigs || {};
   document.getElementById("weaponListWrap").style.display = tb.WeaponSpecific ? "block" : "none";
   renderWeapons();
+
+  const mc = c.macro || {};
+  macroToggles.Enabled.set(mc.Enabled === true);
+  macroKeybindInput.value = mc.Keybind || "F";
+  macroKeybindMode = mc.KeybindMode || "toggle";
+  const outMode = mc.OutputMode || "keyboard";
+  const omSel = document.getElementById("macroOutputMode");
+  omSel.dataset.value = outMode;
+  omSel.querySelector(".value").textContent = outMode === "mouse" ? "Mouse (scroll)" : "Keyboard";
+  omSel.querySelectorAll(".custom-option").forEach(o => o.classList.toggle("selected", o.dataset.value === outMode));
+  const keys = Array.isArray(mc.Keys) && mc.Keys.length >= 2 ? mc.Keys : ["I", "O"];
+  macroKey1Input.value = keys[0] || "I";
+  macroKey2Input.value = keys[1] || "O";
+  macroDelaySlider.set(mc.Delay !== undefined ? mc.Delay : 0.05);
+  macroToggles.SelfDeathCheck.set(mc.SelfDeathCheck !== false);
+
+  const bg = c.UIBackground || { Enabled: false, URL: "" };
+  document.getElementById("cfgUIBackgroundEnabled").classList.toggle("on", bg.Enabled === true);
+  document.getElementById("cfgUIBackgroundEnabled").setAttribute("aria-checked", String(bg.Enabled === true));
+  uiBgURLInput.value = bg.URL || "";
+  applyUIBackground(bg);
 }
 
 async function loadConfig() {
@@ -1447,6 +1627,7 @@ async function saveCommunityConfig(id) {
 async function boot() {
   await refreshSession();
   await loadConfig();
+  applyUIBackground(readUIBackgroundFromUI());
 }
 
 drawCurve();
