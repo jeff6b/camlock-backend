@@ -595,10 +595,10 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
           <div class="fill-slider" id="tbDelay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.12">
             <div class="fill-slider-fill"></div><div class="fill-slider-value">0.12</div><div class="fill-slider-value-inverse">0.12</div>
           </div>
-        </div>
-        <label class="field-label">Gunswitch delay</label>
-        <div class="fill-slider" id="tbGunswitchDelay" data-min="0" data-max="2" data-step="0.01" data-decimals="2" data-value="0.00">
-          <div class="fill-slider-fill"></div><div class="fill-slider-value">0.00</div><div class="fill-slider-value-inverse">0.00</div>
+          <label class="field-label">Gunswitch delay</label>
+          <div class="fill-slider" id="tbGunswitchDelay" data-min="0" data-max="2" data-step="0.01" data-decimals="2" data-value="0.00">
+            <div class="fill-slider-fill"></div><div class="fill-slider-value">0.00</div><div class="fill-slider-value-inverse">0.00</div>
+          </div>
         </div>
 
         <div class="content-panel">
@@ -643,8 +643,6 @@ main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
             <div class="fill-slider-fill"></div><div class="fill-slider-value">0.05</div><div class="fill-slider-value-inverse">0.05</div>
           </div>
         </div>
-
-    
       </div>
     </div>
   </section>
@@ -1204,7 +1202,6 @@ const macroToggles = {
 };
 const macroDelaySlider = initFillSlider(document.getElementById("macroDelay"));
 
-
 const uiBgEnabledToggle = setupToggle("cfgUIBackgroundEnabled");
 const uiBgURLInput = document.getElementById("cfgUIBackgroundURL");
 uiBgURLInput.addEventListener("input", queueSave);
@@ -1334,7 +1331,7 @@ function readConfigFromUI() {
     CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
     CurveP2: { x: curveState.p2.x, y: curveState.p2.y },
     triggerbot: tbCfg,
-        macro: {
+    macro: {
       Enabled: macroToggles.Enabled.get(),
       Keybind: macroKeybindInput.value || "F",
       KeybindMode: macroKeybindMode,
@@ -1355,7 +1352,6 @@ function applyConfigToUI(c) {
   keybindMode = c.KeybindMode || "toggle";
   webviewKeybindInput.value = c.WebviewKeybind || "F8";
   cfgToggles.PredictTarget.set(c.PredictTarget !== false);
-  tbSliders.GunswitchDelay.set(tb.GunswitchDelay !== undefined ? tb.GunswitchDelay : 0.0);
   sliders.PredictionX.set(c.PredictionX !== undefined ? c.PredictionX : (c.Prediction !== undefined ? c.Prediction : 0.10));
   sliders.PredictionY.set(c.PredictionY !== undefined ? c.PredictionY : (c.Prediction !== undefined ? c.Prediction : 0.10));
   const closestPoint = c.ClosestPoint !== undefined ? c.ClosestPoint : (c.ClosestPart !== undefined ? c.ClosestPart : true);
@@ -1408,7 +1404,6 @@ function applyConfigToUI(c) {
   omSel.dataset.value = outMode;
   omSel.querySelector(".value").textContent = outMode === "mouse" ? "Mouse (scroll)" : "Keyboard";
   omSel.querySelectorAll(".custom-option").forEach(o => o.classList.toggle("selected", o.dataset.value === outMode));
-  
   macroDelaySlider.set(mc.Delay !== undefined ? mc.Delay : 0.05);
   macroToggles.SelfDeathCheck.set(mc.SelfDeathCheck !== false);
 
