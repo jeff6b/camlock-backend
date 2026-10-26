@@ -171,7 +171,6 @@ DEFAULT_TRIGGERBOT = {
     "AimPart": "Head",
     "Radius": 12.0,
     "Delay": 0.12,
-    "GunswitchDelay": 0.0,
     "StudCheck": True,
     "MaxStuds": 500,
     "DeathCheck": True,
@@ -240,6 +239,7 @@ async def user_login(request: Request, data: UserLogin):
         if not verify_password(password_hash, data.password):
             db.close()
             return {"valid": False, "error": "Invalid username or password"}
+
         if data.client_id:
             cur.execute("SELECT hwid FROM clients WHERE client_id=%s", (data.client_id,))
             crow = cur.fetchone()
@@ -253,7 +253,22 @@ async def user_login(request: Request, data: UserLogin):
             elif bound_hwid != client_hwid:
                 db.close()
                 return {"valid": False, "error": "HWID mismatch — account bound to another PC"}
-        cur.execute("UPDATE user_accounts SET last_login=%s WHERE username=%s", (datetime.now().isoformat(), username))
+
+            # NEW: mark the client as authenticated directly in user_login.
+            # The webview previously had to make a separate call to
+            # /api/client/authenticate, which could be skipped (client_id null)
+            # or fail silently (HWID mismatch). Doing it here ensures
+            # clients.authenticated flips to 1 in the same transaction as
+            # the session creation.
+            cur.execute("""
+                UPDATE clients
+                SET authenticated=1, username=%s, last_ping=%s
+                WHERE client_id=%s
+            """, (username, datetime.now().isoformat(), data.client_id))
+            print(f"[CLIENT] Authenticated client {data.client_id[:8]}... for {username}", flush=True)
+
+        cur.execute("UPDATE user_accounts SET last_login=%s WHERE username=%s",
+                    (datetime.now().isoformat(), username))
         session_id = secrets.token_hex(16)
         now = datetime.now().isoformat()
         exp = (datetime.now() + timedelta(days=30)).isoformat()
@@ -351,7 +366,11 @@ async def get_config(request: Request):
             return DEFAULT_CONFIG
         db.close()
         try:
-            return json.loads(result[0])
+            stored = json.loads(result[0])
+            merged = dict(DEFAULT_CONFIG)
+            if isinstance(stored, dict):
+                merged.update(stored)
+            return merged
         except:
             return DEFAULT_CONFIG
     except Exception as e:
@@ -481,12 +500,15 @@ async def get_client_config(data: dict):
         cur.execute("SELECT config FROM settings WHERE key=%s", (username,))
         cfg = cur.fetchone()
         db.close()
-        if not cfg:
-            return DEFAULT_CONFIG
-        try:
-            return json.loads(cfg[0])
-        except:
-            return DEFAULT_CONFIG
+        merged = dict(DEFAULT_CONFIG)
+        if cfg:
+            try:
+                stored = json.loads(cfg[0])
+                if isinstance(stored, dict):
+                    merged.update(stored)
+            except:
+                pass
+        return merged
     except HTTPException:
         raise
     except Exception as e:
