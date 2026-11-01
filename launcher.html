@@ -12,8 +12,12 @@ html,body{height:100%;margin:0}
 body{background:#0e1218;color:var(--text);font:400 13px/1.45 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;display:grid;place-items:center;padding:24px;overflow:hidden}
 button{font:inherit;color:inherit;cursor:pointer}
 :focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+/* ---------- BACKGROUND IMAGE ---------- */
 .scene{position:fixed;inset:0;z-index:0;background:#0e1218 url("https://cdn.corenexis.com/f/0yjd54ZW.webp") center/cover no-repeat}
 .scene::before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.22)}
+
+/* ---------- WINDOW ---------- */
 .stage{position:relative;z-index:1;width:min(920px,100%)}
 .win{border-radius:22px;overflow:hidden;display:grid;grid-template-rows:44px 1fr 54px;min-height:540px;
   background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03)),rgba(10,16,13,.58);
@@ -23,6 +27,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .wc{display:flex;gap:2px}
 .wc button{width:36px;height:30px;border:0;border-radius:9px;background:none;color:var(--muted);font-size:13px}
 .wc button:hover{background:rgba(255,255,255,.12);color:#fff}
+
+/* ---------- LAYOUT SWITCHER ---------- */
 .tr{display:flex;align-items:center;gap:8px}
 .lay{position:relative}
 .lay-btn{display:flex;align-items:center;gap:8px;height:30px;padding:0 12px;border:0;border-radius:9px;background:rgba(255,255,255,.08);color:var(--muted);font-size:12px;font-weight:500}
@@ -37,6 +43,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .lay-menu button[aria-checked="true"] svg{color:#fff}
 .lay-menu b{display:block;font-size:12.5px;font-weight:600}
 .lay-menu small{font-size:11px;color:var(--dim)}
+
+/* ---------- LAYOUT: shared pieces ---------- */
 .main{display:grid;column-gap:28px;row-gap:0;padding:6px 26px 14px 30px;min-width:0}
 .head,.facts,.prog{position:relative;z-index:1;min-width:0}
 .head{display:flex;align-items:center;gap:16px}
@@ -51,17 +59,23 @@ button{font:inherit;color:inherit;cursor:pointer}
 .art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .art::after{content:"";position:absolute;inset:auto 0 0 0;height:40%;background:linear-gradient(180deg,transparent,rgba(0,0,0,.55))}
 .art span{position:absolute;left:18px;bottom:15px;z-index:1;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:rgba(255,255,255,.92);text-shadow:0 2px 8px rgba(0,0,0,.7)}
+
+/* 1 · Split: info left, artwork right */
 [data-l="1"] .main{grid-template-columns:minmax(0,1fr) 470px;grid-template-rows:auto auto 1fr}
 [data-l="1"] .head{grid-area:1/1;margin-top:18px}
 [data-l="1"] .facts{grid-area:2/1;margin-top:28px}
 [data-l="1"] .prog{grid-area:3/1;align-self:end}
 [data-l="1"] .art{grid-area:1/2/4/3;align-self:center;aspect-ratio:3/2}
+
+/* 2 · Compact: small thumbnail, wide launch row */
 [data-l="2"] .main{grid-template-columns:240px minmax(0,1fr);grid-template-rows:auto auto 1fr}
 [data-l="2"] .art{grid-area:1/1/3/2;aspect-ratio:4/3;align-self:start;margin-top:14px}
 [data-l="2"] .art span{display:none}
 [data-l="2"] .head{grid-area:1/2;margin-top:14px;align-self:start}
 [data-l="2"] .facts{grid-area:2/2;margin-top:22px;align-self:start}
 [data-l="2"] .prog{grid-area:3/1/4/3;align-self:end}
+
+/* ---------- PROGRESS / LAUNCH ---------- */
 .prog{padding-top:18px}
 .line{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:10px;font-variant-numeric:tabular-nums;min-height:18px}
 .line b{font-weight:500;color:#fff}
@@ -73,10 +87,34 @@ button{font:inherit;color:inherit;cursor:pointer}
 .go:disabled{opacity:.55;cursor:not-allowed}
 .go.alt{box-shadow:none;background:rgba(255,255,255,.18);color:#fff}
 .go.alt:hover{background:rgba(255,255,255,.26)}
+.rep{height:48px;padding:0 20px;border:0;border-radius:12px;background:rgba(255,255,255,.08);color:var(--muted);font-weight:500;transition:background .15s}
+.rep:hover{background:rgba(255,255,255,.16);color:#fff}
+.rep:disabled{opacity:.4;pointer-events:none}
+
+/* ---------- FOOTER ---------- */
 .bar{display:flex;align-items:center;justify-content:space-between;padding:0 30px;font-size:11.5px;color:var(--muted);background:linear-gradient(180deg,transparent,rgba(0,0,0,.26))}
 .who{display:flex;align-items:center;gap:10px}
 .acct-box{width:22px;height:22px;border-radius:6px;border:1px solid #2a2f33;flex:none}
 .bar>span{color:var(--dim)}
+
+/* ---------- LOGIN ---------- */
+.win[hidden],.login[hidden]{display:none}
+.login{width:min(380px,100%);margin:0 auto;border-radius:22px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03)),rgba(10,16,13,.58);
+  backdrop-filter:blur(30px) saturate(150%);-webkit-backdrop-filter:blur(30px) saturate(150%);box-shadow:0 40px 100px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.12)}
+.login-title{padding:36px 26px 0}
+.login-title img{display:block;margin:0 auto;width:auto;height:auto;max-width:200px;max-height:72px}
+.login form{display:flex;flex-direction:column;gap:12px;padding:26px 26px 30px}
+.login input{width:100%;height:44px;padding:0 14px;border:1px solid #3b4248;border-radius:10px;background:transparent;color:#fff;font:inherit;font-size:14px;outline:0;transition:border-color .15s}
+.login input::placeholder{color:#6f7780}
+.login input:hover{border-color:#4b535a}
+.login input:focus{border-color:#6f7881}
+.login-go{height:46px;margin-top:8px;border:0;border-radius:12px;background:#fff;color:#12161c;font-size:14px;font-weight:600;transition:background .15s}
+.login-go:hover{background:#e6e8ec}
+.login-go:disabled{opacity:.55;cursor:not-allowed}
+.login-msg{min-height:16px;margin:-2px 0 -4px;font-size:12px;color:var(--muted)}
+.login-msg.error{color:#ff8a8a}
+
 @media (max-width:780px){
   body{padding:12px;place-items:start center;overflow:auto}
   .win .main{grid-template-columns:minmax(0,1fr);grid-template-rows:none;gap:0;padding:6px 18px 14px;justify-items:stretch}
@@ -84,7 +122,7 @@ button{font:inherit;color:inherit;cursor:pointer}
   .win .head{grid-area:auto;margin:0;align-self:auto}
   .win .facts{grid-area:auto;margin:20px 0 0;gap:28px}
   .win .facts div{align-items:flex-start}
-  .win .prog{grid-area:auto;width:auto;margin:22px 0 0;padding:0;background:none;align-self:auto}
+  .win .prog{grid-area:auto;width:auto;margin:22px 0 0;padding:0;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;align-self:auto}
   .head h1{font-size:28px!important}
   .art span{display:block!important}
 }
@@ -94,15 +132,22 @@ button{font:inherit;color:inherit;cursor:pointer}
 <div class="scene" role="presentation"></div>
 
 <div class="stage">
-  <div class="win" data-l="1">
+  <div class="login" id="login" hidden>
+    <div class="login-title"><img src="https://cdn.corenexis.com/f/kKMgSdwh.png" alt="Light"></div>
+    <form id="loginForm" novalidate>
+      <input id="lu" type="text" placeholder="Username" autocomplete="username" aria-label="Username">
+      <input id="lp" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password">
+      <div class="login-msg" id="lm" role="status"></div>
+      <button class="login-go" type="submit" id="loginBtn">Login</button>
+    </form>
+  </div>
+
+  <div class="win" data-l="1" id="win" hidden>
     <div class="title">
       <span class="brand">Light</span>
       <div class="tr">
         <div class="lay">
-          <button class="lay-btn" id="layBtn" aria-haspopup="true" aria-expanded="false">
-            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-            <span id="layName">Layout 1</span>
-          </button>
+          <button class="lay-btn" id="layBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span id="layName">Layout 1</span></button>
           <div class="lay-menu" id="layMenu" role="menu" hidden></div>
         </div>
         <div class="wc"><button aria-label="Minimize" id="minBtn">–</button><button aria-label="Sign out" id="closeBtn">✕</button></div>
@@ -126,6 +171,7 @@ button{font:inherit;color:inherit;cursor:pointer}
         <div class="track"><i id="fill"></i></div>
         <div class="btns">
           <button class="go" id="go">Launch Roblox Player</button>
+          <button class="rep" id="rep">Repair</button>
         </div>
       </div>
 
@@ -144,79 +190,210 @@ button{font:inherit;color:inherit;cursor:pointer}
 
 <script>
 (function(){
-  // --- layout switcher ---
-  var win=document.querySelector('.win'),btn=document.getElementById('layBtn'),menu=document.getElementById('layMenu'),nm=document.getElementById('layName');
-  var names=['Split','Compact'];
-  var icons=[
+  // ---- state ----
+  var loginEl = document.getElementById('login');
+  var winEl = document.getElementById('win');
+  var loginForm = document.getElementById('loginForm');
+  var lu = document.getElementById('lu');
+  var lp = document.getElementById('lp');
+  var lm = document.getElementById('lm');
+  var loginBtn = document.getElementById('loginBtn');
+  var unameEl = document.getElementById('uname');
+
+  function showLogin() {
+    loginEl.hidden = false;
+    winEl.hidden = true;
+    lu.focus();
+  }
+  function showLauncher(username) {
+    if (username) unameEl.textContent = username;
+    loginEl.hidden = true;
+    winEl.hidden = false;
+  }
+
+  function getClientId() {
+    var params = new URLSearchParams(window.location.search);
+    var fromUrl = params.get('client');
+    if (fromUrl) {
+      try { localStorage.setItem('client_id', fromUrl); } catch(e) {}
+      return fromUrl;
+    }
+    try { return localStorage.getItem('client_id'); } catch(e) { return null; }
+  }
+
+  // ---- boot: are we already logged in? ----
+  (async function() {
+    try {
+      var r = await fetch('/api/me', { credentials: 'include' });
+      var d = await r.json();
+      if (d.authenticated) {
+        showLauncher(d.username || 'user');
+      } else {
+        showLogin();
+      }
+    } catch(e) {
+      showLogin();
+    }
+  })();
+
+  // ---- login submit ----
+  loginForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    lm.textContent = '';
+    lm.classList.remove('error');
+
+    var u = lu.value.trim();
+    var p = lp.value;
+    if (!u || !p) {
+      lm.textContent = 'Enter your username and password.';
+      lm.classList.add('error');
+      (u ? lp : lu).focus();
+      return;
+    }
+
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Signing in…';
+
+    try {
+      var body = { username: u, password: p };
+      var cid = getClientId();
+      if (cid) body.client_id = cid;
+
+      var r = await fetch('/api/user-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
+      });
+      var data = await r.json();
+
+      if (data.valid) {
+        lp.value = '';
+        showLauncher(data.username || u);
+      } else {
+        lm.textContent = data.error || 'Login failed';
+        lm.classList.add('error');
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Login';
+      }
+    } catch (err) {
+      lm.textContent = 'Connection error';
+      lm.classList.add('error');
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Login';
+    }
+  });
+
+  // ---- sign out ----
+  document.getElementById('closeBtn').addEventListener('click', async function() {
+    try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch(e) {}
+    // reset launch UI
+    resetLaunchUI();
+    lu.value = '';
+    lp.value = '';
+    lm.textContent = '';
+    loginBtn.disabled = false;
+    loginBtn.textContent = 'Login';
+    showLogin();
+  });
+
+  document.getElementById('minBtn').addEventListener('click', function() {
+    // no-op (browser)
+  });
+
+  // ---- layout switcher ----
+  var btn = document.getElementById('layBtn');
+  var menu = document.getElementById('layMenu');
+  var nm = document.getElementById('layName');
+  var names = ['Split', 'Compact'];
+  var icons = [
     '<rect x="2" y="4" width="11" height="3" rx="1"/><rect x="2" y="9" width="8" height="2" rx="1"/><rect x="2" y="15" width="11" height="3" rx="1"/><rect x="16" y="3" width="12" height="16" rx="2.5" opacity=".6"/>',
     '<rect x="2" y="3" width="9" height="7" rx="2" opacity=".6"/><rect x="14" y="4" width="13" height="2.5" rx="1"/><rect x="14" y="8.5" width="9" height="2" rx="1"/><rect x="2" y="15" width="26" height="4" rx="2"/>'
   ];
-  names.forEach(function(n,i){
-    var b=document.createElement('button');
-    b.type='button';b.setAttribute('role','menuitemradio');b.dataset.l=i+1;b.setAttribute('aria-checked',i===0?'true':'false');
-    b.innerHTML='<svg viewBox="0 0 30 22" aria-hidden="true">'+icons[i]+'</svg><span><b>Layout '+(i+1)+'</b><small>'+n+'</small></span>';
+  names.forEach(function(n, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitemradio');
+    b.dataset.l = i + 1;
+    b.setAttribute('aria-checked', i === 0 ? 'true' : 'false');
+    b.innerHTML = '<svg viewBox="0 0 30 22" aria-hidden="true">' + icons[i] + '</svg><span><b>Layout ' + (i + 1) + '</b><small>' + n + '</small></span>';
     menu.appendChild(b);
   });
-  function setOpen(o){menu.hidden=!o;btn.setAttribute('aria-expanded',o?'true':'false')}
-  btn.addEventListener('click',function(e){e.stopPropagation();setOpen(menu.hidden)});
-  menu.addEventListener('click',function(e){
-    var b=e.target.closest('button');if(!b)return;
-    var l=b.dataset.l;win.dataset.l=l;nm.textContent='Layout '+l;
-    [].forEach.call(menu.children,function(x){x.setAttribute('aria-checked',x===b?'true':'false')});
+  function setOpen(o) { menu.hidden = !o; btn.setAttribute('aria-expanded', o ? 'true' : 'false'); }
+  btn.addEventListener('click', function(e) { e.stopPropagation(); setOpen(menu.hidden); });
+  menu.addEventListener('click', function(e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    var l = b.dataset.l;
+    winEl.dataset.l = l;
+    nm.textContent = 'Layout ' + l;
+    [].forEach.call(menu.children, function(x) { x.setAttribute('aria-checked', x === b ? 'true' : 'false'); });
     setOpen(false);
   });
-  document.addEventListener('click',function(){setOpen(false)});
-  document.addEventListener('keydown',function(e){if(e.key==='Escape')setOpen(false)});
+  document.addEventListener('click', function() { setOpen(false); });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') setOpen(false); });
 
-  // --- fetch current user ---
-  (async function(){
-    try{
-      var r=await fetch('/api/me',{credentials:'include'});
-      var d=await r.json();
-      if(!d.authenticated){window.location.href='/';return}
-      document.getElementById('uname').textContent=d.username||'user';
-    }catch(e){window.location.href='/'}
-  })();
+  // ---- launch flow ----
+  var dur = [900, 700, 1100];
+  var total = dur.reduce(function(a, b) { return a + b; }, 0);
+  var go = document.getElementById('go');
+  var rep = document.getElementById('rep');
+  var ml = document.getElementById('ml');
+  var pc = document.getElementById('pc');
+  var fill = document.getElementById('fill');
+  var la = document.getElementById('la');
+  var timer = null;
+  var busy = false;
+  var names2 = ['Verifying files', 'Checking for updates', 'Starting Roblox Player'];
 
-  // --- sign out ---
-  document.getElementById('closeBtn').addEventListener('click',async function(){
-    try{await fetch('/api/logout',{method:'POST',credentials:'include'})}catch(e){}
-    window.location.href='/';
-  });
-  document.getElementById('minBtn').addEventListener('click',function(){
-    // no-op in browser; harmless
-  });
-
-  // --- launch flow ---
-  var dur=[900,700,1100],total=dur.reduce(function(a,b){return a+b},0);
-  var $=function(i){return document.getElementById(i)};
-  var go=$('go'),ml=$('ml'),pc=$('pc'),fill=$('fill'),la=$('la');
-  var timer=null,busy=false;
-  var names=['Verifying files','Checking for updates','Starting Roblox Player'];
-
-  function run(){
-    if(busy)return;
-    busy=true;
-    go.disabled=true;go.classList.add('alt');go.textContent='Launching…';
-    var t0=Date.now();
-    timer=setInterval(function(){
-      var e=Date.now()-t0,acc=0,step=dur.length;
-      for(var i=0;i<dur.length;i++){if(e<acc+dur[i]){step=i;break}acc+=dur[i]}
-      var p=Math.min(100,e/total*100);
-      fill.style.width=p+'%';pc.textContent=Math.round(p)+'%';
-      if(step<dur.length){ml.textContent=names[step]}
-      else{
-        clearInterval(timer);timer=null;
-        ml.textContent='Roblox Player is running';pc.textContent='Opening dashboard…';
-        la.textContent='Just now';
-        // notify backend, then go to dashboard
-        fetch('/api/launcher/launch',{method:'POST',credentials:'include'})
-          .then(function(){window.location.href='/dashboard'})
-          .catch(function(){window.location.href='/dashboard'});
-      }
-    },50);
+  function resetLaunchUI() {
+    if (timer) { clearInterval(timer); timer = null; }
+    busy = false;
+    fill.style.width = '0';
+    pc.textContent = '';
+    ml.textContent = 'Ready to play';
+    go.textContent = 'Launch Roblox Player';
+    go.disabled = false;
+    go.classList.remove('alt');
+    rep.disabled = false;
   }
-  go.addEventListener('click',run);
+
+  function run() {
+    if (busy) return;
+    busy = true;
+    go.disabled = true;
+    go.classList.add('alt');
+    go.textContent = 'Launching…';
+    rep.disabled = true;
+    var t0 = Date.now();
+    timer = setInterval(function() {
+      var e = Date.now() - t0, acc = 0, step = dur.length;
+      for (var i = 0; i < dur.length; i++) {
+        if (e < acc + dur[i]) { step = i; break; }
+        acc += dur[i];
+      }
+      var p = Math.min(100, e / total * 100);
+      fill.style.width = p + '%';
+      pc.textContent = Math.round(p) + '%';
+      if (step < dur.length) {
+        ml.textContent = names2[step];
+      } else {
+        clearInterval(timer);
+        timer = null;
+        ml.textContent = 'Roblox Player is running';
+        pc.textContent = 'Opening dashboard…';
+        la.textContent = 'Just now';
+        fetch('/api/launcher/launch', { method: 'POST', credentials: 'include' })
+          .then(function() { window.location.href = '/dashboard'; })
+          .catch(function() { window.location.href = '/dashboard'; });
+      }
+    }, 50);
+  }
+
+  go.addEventListener('click', run);
+  rep.addEventListener('click', function() {
+    ml.textContent = 'Repair finished. No files replaced.';
+  });
 })();
 </script>
 </body>
