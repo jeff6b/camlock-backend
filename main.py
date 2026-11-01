@@ -38,7 +38,6 @@ def load_html(filename: str) -> str:
         return f"<h1 style='color:#fff;background:#000;padding:40px'>Missing: {filename}</h1>"
     return path.read_text(encoding="utf-8")
 
-LOGIN_HTML = load_html("login.html")
 LAUNCHER_HTML = load_html("launcher.html")
 DASHBOARD_HTML = load_html("dashboard.html")
 
@@ -729,36 +728,20 @@ async def launcher_launch(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# HTML routes
+# HTML routes — "/" serves the launcher (which contains its own login form)
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
-async def serve_login():
-    return HTMLResponse(content=LOGIN_HTML)
+async def serve_root():
+    return HTMLResponse(content=LAUNCHER_HTML)
 
 @app.get("/menu", response_class=HTMLResponse)
 async def serve_menu():
-    return HTMLResponse(content=LOGIN_HTML)
+    return HTMLResponse(content=LAUNCHER_HTML)
 
 @app.get("/launcher", response_class=HTMLResponse)
-async def serve_launcher(request: Request):
-    username = request.cookies.get("username")
-    session_id = request.cookies.get("session_id")
-    if not username or not session_id:
-        return RedirectResponse(url="/")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT username FROM login_sessions WHERE session_id=%s AND expires_at > %s",
-                    (session_id, datetime.now().isoformat()))
-        result = cur.fetchone()
-        db.close()
-        if not result:
-            return RedirectResponse(url="/")
-        return HTMLResponse(content=LAUNCHER_HTML)
-    except:
-        db.close()
-        return RedirectResponse(url="/")
+async def serve_launcher():
+    return HTMLResponse(content=LAUNCHER_HTML)
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
@@ -776,7 +759,7 @@ async def serve_dashboard(request: Request):
         if not result:
             return RedirectResponse(url="/")
         if not result[1]:
-            return RedirectResponse(url="/launcher")
+            return RedirectResponse(url="/")
         return HTMLResponse(content=DASHBOARD_HTML)
     except:
         db.close()
