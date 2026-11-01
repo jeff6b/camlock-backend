@@ -14,12 +14,11 @@ body{
   color:var(--text);
   font:400 13px/1.45 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
   -webkit-font-smoothing:antialiased;
-  display:block;
-  padding:0;
   overflow:hidden;
   width:100vw;
   height:100vh;
 }
+
 button{font:inherit;color:inherit;cursor:pointer}
 :focus-visible{outline:2px solid #fff;outline-offset:2px}
 
@@ -27,19 +26,25 @@ button{font:inherit;color:inherit;cursor:pointer}
 .scene{position:fixed;inset:0;z-index:0;background:#0e1218 url("https://cdn.corenexis.com/f/0yjd54ZW.webp") center/cover no-repeat}
 .scene::before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.22)}
 
-/* ---------- WINDOW (fullscreen) ---------- */
-.stage{position:relative;z-index:1;width:100vw;height:100vh}
-.win{
+/* ---------- STAGE fills the screen ---------- */
+.stage{position:relative;z-index:1;width:100vw;height:100vh;overflow:hidden}
+
+/* ---------- SHARED CARD LOOK (login + win) ---------- */
+.card-surface{
   border-radius:0;
   overflow:hidden;
-  display:grid;
-  grid-template-rows:44px 1fr 54px;
   width:100%;
   height:100%;
   background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03)),rgba(10,16,13,.58);
   backdrop-filter:blur(30px) saturate(150%);
   -webkit-backdrop-filter:blur(30px) saturate(150%);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.12);
+}
+
+/* ---------- WINDOW (launcher) ---------- */
+.win{
+  display:grid;
+  grid-template-rows:44px 1fr 54px;
 }
 .title{display:flex;justify-content:space-between;align-items:center;padding:0 10px 0 26px}
 .brand{font-size:12px;font-weight:600;color:var(--muted)}
@@ -116,32 +121,23 @@ button{font:inherit;color:inherit;cursor:pointer}
 .acct-box{width:22px;height:22px;border-radius:6px;border:1px solid #2a2f33;flex:none}
 .bar>span{color:var(--dim)}
 
-/* ---------- LOGIN (fullscreen surface) ---------- */
+/* ---------- LOGIN (full-screen card) ---------- */
 .win[hidden],.login[hidden]{display:none}
 .login{
-  position:relative;
-  z-index:1;
-  width:100vw;
-  height:100vh;
-  border-radius:0;
   display:flex;
   flex-direction:column;
   align-items:center;
   justify-content:center;
-  background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03)),rgba(10,16,13,.58);
-  backdrop-filter:blur(30px) saturate(150%);
-  -webkit-backdrop-filter:blur(30px) saturate(150%);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.12);
   padding:0;
-  overflow:hidden;
+  width:100%;
+  height:100%;
 }
-.login-title{padding:0 0 22px;width:100%;display:flex;justify-content:center}
+.login-title{padding:0 0 22px;display:flex;justify-content:center;width:100%}
 .login-title img{display:block;width:auto;height:auto;max-width:200px;max-height:72px}
 .login form{
   display:flex;
   flex-direction:column;
   gap:12px;
-  padding:0;
   width:100%;
   max-width:380px;
 }
@@ -172,7 +168,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 <div class="scene" role="presentation"></div>
 
 <div class="stage">
-  <div class="login" id="login" hidden>
+  <div class="login card-surface" id="login" hidden>
     <div class="login-title"><img src="https://cdn.corenexis.com/f/kKMgSdwh.png" alt="Light"></div>
     <form id="loginForm" novalidate>
       <input id="lu" type="text" placeholder="Username" autocomplete="username" aria-label="Username">
@@ -182,7 +178,7 @@ button{font:inherit;color:inherit;cursor:pointer}
     </form>
   </div>
 
-  <div class="win" data-l="1" id="win" hidden>
+  <div class="win card-surface" data-l="1" id="win" hidden>
     <div class="title">
       <span class="brand">Light</span>
       <div class="tr">
@@ -230,7 +226,6 @@ button{font:inherit;color:inherit;cursor:pointer}
 
 <script>
 (function(){
-  // ---- state ----
   var loginEl = document.getElementById('login');
   var winEl = document.getElementById('win');
   var loginForm = document.getElementById('loginForm');
@@ -261,22 +256,15 @@ button{font:inherit;color:inherit;cursor:pointer}
     try { return localStorage.getItem('client_id'); } catch(e) { return null; }
   }
 
-  // ---- boot: are we already logged in? ----
   (async function() {
     try {
       var r = await fetch('/api/me', { credentials: 'include' });
       var d = await r.json();
-      if (d.authenticated) {
-        showLauncher(d.username || 'user');
-      } else {
-        showLogin();
-      }
-    } catch(e) {
-      showLogin();
-    }
+      if (d.authenticated) showLauncher(d.username || 'user');
+      else showLogin();
+    } catch(e) { showLogin(); }
   })();
 
-  // ---- login submit ----
   loginForm.addEventListener('submit', async function(e) {
     e.preventDefault();
     lm.textContent = '';
@@ -324,7 +312,6 @@ button{font:inherit;color:inherit;cursor:pointer}
     }
   });
 
-  // ---- sign out ----
   document.getElementById('closeBtn').addEventListener('click', async function() {
     try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch(e) {}
     resetLaunchUI();
@@ -337,11 +324,8 @@ button{font:inherit;color:inherit;cursor:pointer}
     showLogin();
   });
 
-  document.getElementById('minBtn').addEventListener('click', function() {
-    // no-op (browser)
-  });
+  document.getElementById('minBtn').addEventListener('click', function() {});
 
-  // ---- layout switcher ----
   var btn = document.getElementById('layBtn');
   var menu = document.getElementById('layMenu');
   var nm = document.getElementById('layName');
@@ -373,7 +357,6 @@ button{font:inherit;color:inherit;cursor:pointer}
   document.addEventListener('click', function() { setOpen(false); });
   document.addEventListener('keydown', function(e) { if (e.key === 'Escape') setOpen(false); });
 
-  // ---- launch flow ----
   var dur = [900, 700, 1100];
   var total = dur.reduce(function(a, b) { return a + b; }, 0);
   var go = document.getElementById('go');
