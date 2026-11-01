@@ -39,6 +39,7 @@ def load_html(filename: str) -> str:
     return path.read_text(encoding="utf-8")
 
 LOGIN_HTML = load_html("login.html")
+LAUNCHER_HTML = load_html("launcher.html")
 DASHBOARD_HTML = load_html("dashboard.html")
 
 DATABASE_URL = "postgresql://neondb_owner:npg_S7hoDMeaw2cQ@ep-wandering-dream-ah21egpt-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
@@ -79,7 +80,8 @@ def init_db():
         cur.execute("""CREATE TABLE IF NOT EXISTS login_sessions (
             session_id TEXT PRIMARY KEY, username TEXT NOT NULL,
             license_key TEXT, created_at TEXT NOT NULL,
-            expires_at TEXT NOT NULL, ip_address TEXT)""")
+            expires_at TEXT NOT NULL, ip_address TEXT,
+            launched_at TEXT)""")
         cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
             id SERIAL PRIMARY KEY, username TEXT NOT NULL,
             config_name TEXT NOT NULL, config_data TEXT NOT NULL,
@@ -128,6 +130,7 @@ def migrate_db():
             ("user_accounts", "email", "TEXT"),
             ("user_accounts", "last_login", "TEXT"),
             ("saved_configs", "username", "TEXT"),
+            ("login_sessions", "launched_at", "TEXT"),
         ]
         for table, col, definition in migrations:
             try:
@@ -254,12 +257,6 @@ async def user_login(request: Request, data: UserLogin):
                 db.close()
                 return {"valid": False, "error": "HWID mismatch — account bound to another PC"}
 
-            # NEW: mark the client as authenticated directly in user_login.
-            # The webview previously had to make a separate call to
-            # /api/client/authenticate, which could be skipped (client_id null)
-            # or fail silently (HWID mismatch). Doing it here ensures
-            # clients.authenticated flips to 1 in the same transaction as
-            # the session creation.
             cur.execute("""
                 UPDATE clients
                 SET authenticated=1, username=%s, last_ping=%s
@@ -274,8 +271,8 @@ async def user_login(request: Request, data: UserLogin):
         exp = (datetime.now() + timedelta(days=30)).isoformat()
         cur.execute("""
             INSERT INTO login_sessions
-                (session_id, username, license_key, created_at, expires_at, ip_address)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                (session_id, username, license_key, created_at, expires_at, ip_address, launched_at)
+            VALUES (%s, %s, %s, %s, %s, %s, NULL)
         """, (session_id, username, "", now, exp, request.client.host))
         db.commit()
         db.close()
@@ -314,7 +311,17 @@ async def get_current_user(request: Request):
 
 
 @app.post("/api/logout")
-async def logout():
+async def logout(request: Request):
+    session_id = request.cookies.get("session_id")
+    if session_id:
+        try:
+            db = get_db()
+            cur = db.cursor()
+            cur.execute("DELETE FROM login_sessions WHERE session_id=%s", (session_id,))
+            db.commit()
+            db.close()
+        except Exception:
+            pass
     resp = JSONResponse({"success": True})
     resp.delete_cookie("session_id")
     resp.delete_cookie("license_key")
@@ -698,6 +705,33 @@ def keepalive():
     return {"status": "alive", "timestamp": datetime.now().isoformat()}
 
 
+# ---------------------------------------------------------------------------
+# Launcher
+# ---------------------------------------------------------------------------
+
+@app.post("/api/launcher/launch")
+async def launcher_launch(request: Request):
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("UPDATE login_sessions SET launched_at=%s WHERE session_id=%s",
+                    (datetime.now().isoformat(), session_id))
+        db.commit()
+        db.close()
+        return {"ok": True}
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# HTML routes
+# ---------------------------------------------------------------------------
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_login():
     return HTMLResponse(content=LOGIN_HTML)
@@ -706,8 +740,8 @@ async def serve_login():
 async def serve_menu():
     return HTMLResponse(content=LOGIN_HTML)
 
-@app.get("/dashboard", response_class=HTMLResponse)
-async def serve_dashboard(request: Request):
+@app.get("/launcher", response_class=HTMLResponse)
+async def serve_launcher(request: Request):
     username = request.cookies.get("username")
     session_id = request.cookies.get("session_id")
     if not username or not session_id:
@@ -721,6 +755,28 @@ async def serve_dashboard(request: Request):
         db.close()
         if not result:
             return RedirectResponse(url="/")
+        return HTMLResponse(content=LAUNCHER_HTML)
+    except:
+        db.close()
+        return RedirectResponse(url="/")
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def serve_dashboard(request: Request):
+    username = request.cookies.get("username")
+    session_id = request.cookies.get("session_id")
+    if not username or not session_id:
+        return RedirectResponse(url="/")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT username, launched_at FROM login_sessions WHERE session_id=%s AND expires_at > %s",
+                    (session_id, datetime.now().isoformat()))
+        result = cur.fetchone()
+        db.close()
+        if not result:
+            return RedirectResponse(url="/")
+        if not result[1]:
+            return RedirectResponse(url="/launcher")
         return HTMLResponse(content=DASHBOARD_HTML)
     except:
         db.close()
