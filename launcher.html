@@ -9,7 +9,17 @@
 :root{--text:#F6F7F9;--muted:#C3C8D0;--dim:#98A0AB;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *,*::before,*::after{box-sizing:inherit}
 html,body{height:100%;margin:0}
-body{background:#0e1218;color:var(--text);font:400 13px/1.45 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;display:grid;place-items:center;padding:24px;overflow:hidden}
+body{
+  background:#0e1218;
+  color:var(--text);
+  font:400 13px/1.45 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;
+  display:block;
+  padding:0;
+  overflow:hidden;
+  width:100vw;
+  height:100vh;
+}
 button{font:inherit;color:inherit;cursor:pointer}
 :focus-visible{outline:2px solid #fff;outline-offset:2px}
 
@@ -17,12 +27,24 @@ button{font:inherit;color:inherit;cursor:pointer}
 .scene{position:fixed;inset:0;z-index:0;background:#0e1218 url("https://cdn.corenexis.com/f/0yjd54ZW.webp") center/cover no-repeat}
 .scene::before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.22)}
 
-/* ---------- WINDOW ---------- */
-.stage{position:relative;z-index:1;width:min(920px,100%)}
-.win{border-radius:22px;overflow:hidden;display:grid;grid-template-rows:44px 1fr 54px;min-height:540px;
+/* ---------- STAGE (full screen) ---------- */
+.stage{position:relative;z-index:1;width:100vw;height:100vh}
+
+/* ---------- WINDOW (full screen) ---------- */
+.win{
+  width:100vw;
+  height:100vh;
+  min-height:100vh;
+  border-radius:0;
+  overflow:hidden;
+  display:grid;
+  grid-template-rows:44px 1fr 54px;
   background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03)),rgba(10,16,13,.58);
-  backdrop-filter:blur(30px) saturate(150%);-webkit-backdrop-filter:blur(30px) saturate(150%);box-shadow:0 40px 100px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.12)}
-.title{display:flex;justify-content:space-between;align-items:center;padding:0 10px 0 26px}
+  backdrop-filter:blur(30px) saturate(150%);
+  -webkit-backdrop-filter:blur(30px) saturate(150%);
+  box-shadow:none;
+}
+.title{display:flex;justify-content:space-between;align-items:center;padding:0 14px 0 26px}
 .brand{font-size:12px;font-weight:600;color:var(--muted)}
 .wc{display:flex;gap:2px}
 .wc button{width:36px;height:30px;border:0;border-radius:9px;background:none;color:var(--muted);font-size:13px}
@@ -45,7 +67,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .lay-menu small{font-size:11px;color:var(--dim)}
 
 /* ---------- LAYOUT: shared pieces ---------- */
-.main{display:grid;column-gap:28px;row-gap:0;padding:6px 26px 14px 30px;min-width:0}
+.main{display:grid;column-gap:28px;row-gap:0;padding:6px 26px 14px 30px;min-width:0;height:100%}
 .head,.facts,.prog{position:relative;z-index:1;min-width:0}
 .head{display:flex;align-items:center;gap:16px}
 .logo{width:48px;height:48px;border-radius:13px;flex:none;display:grid;place-items:center;background:rgba(255,255,255,.12);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:#fff}
@@ -61,14 +83,14 @@ button{font:inherit;color:inherit;cursor:pointer}
 .art span{position:absolute;left:18px;bottom:15px;z-index:1;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:rgba(255,255,255,.92);text-shadow:0 2px 8px rgba(0,0,0,.7)}
 
 /* 1 · Split: info left, artwork right */
-[data-l="1"] .main{grid-template-columns:minmax(0,1fr) 470px;grid-template-rows:auto auto 1fr}
+[data-l="1"] .main{grid-template-columns:minmax(0,1fr) minmax(0,470px);grid-template-rows:auto auto 1fr}
 [data-l="1"] .head{grid-area:1/1;margin-top:18px}
 [data-l="1"] .facts{grid-area:2/1;margin-top:28px}
 [data-l="1"] .prog{grid-area:3/1;align-self:end}
-[data-l="1"] .art{grid-area:1/2/4/3;align-self:center;aspect-ratio:3/2}
+[data-l="1"] .art{grid-area:1/2/4/3;align-self:center;aspect-ratio:3/2;max-height:70vh}
 
 /* 2 · Compact: small thumbnail, wide launch row */
-[data-l="2"] .main{grid-template-columns:240px minmax(0,1fr);grid-template-rows:auto auto 1fr}
+[data-l="2"] .main{grid-template-columns:minmax(0,240px) minmax(0,1fr);grid-template-rows:auto auto 1fr}
 [data-l="2"] .art{grid-area:1/1/3/2;aspect-ratio:4/3;align-self:start;margin-top:14px}
 [data-l="2"] .art span{display:none}
 [data-l="2"] .head{grid-area:1/2;margin-top:14px;align-self:start}
@@ -97,14 +119,33 @@ button{font:inherit;color:inherit;cursor:pointer}
 .acct-box{width:22px;height:22px;border-radius:6px;border:1px solid #2a2f33;flex:none}
 .bar>span{color:var(--dim)}
 
-/* ---------- LOGIN ---------- */
+/* ---------- LOGIN (full screen backdrop + centered card) ---------- */
 .win[hidden],.login[hidden]{display:none}
-.login{width:min(380px,100%);margin:0 auto;border-radius:22px;overflow:hidden;
+.login{
+  width:100vw;
+  height:100vh;
+  border-radius:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:24px;
+  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.01)),rgba(10,16,13,.42);
+  backdrop-filter:blur(30px) saturate(150%);
+  -webkit-backdrop-filter:blur(30px) saturate(150%);
+}
+.login-title{padding:0}
+.login-title img{display:block;margin:0 auto;width:auto;height:auto;max-width:240px;max-height:84px}
+.login form{
+  width:min(400px,92vw);
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  padding:28px 28px 30px;
+  border-radius:22px;
   background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03)),rgba(10,16,13,.58);
-  backdrop-filter:blur(30px) saturate(150%);-webkit-backdrop-filter:blur(30px) saturate(150%);box-shadow:0 40px 100px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.12)}
-.login-title{padding:36px 26px 0}
-.login-title img{display:block;margin:0 auto;width:auto;height:auto;max-width:200px;max-height:72px}
-.login form{display:flex;flex-direction:column;gap:12px;padding:26px 26px 30px}
+  box-shadow:0 40px 100px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.12);
+}
 .login input{width:100%;height:44px;padding:0 14px;border:1px solid #3b4248;border-radius:10px;background:transparent;color:#fff;font:inherit;font-size:14px;outline:0;transition:border-color .15s}
 .login input::placeholder{color:#6f7780}
 .login input:hover{border-color:#4b535a}
@@ -112,13 +153,13 @@ button{font:inherit;color:inherit;cursor:pointer}
 .login-go{height:46px;margin-top:8px;border:0;border-radius:12px;background:#fff;color:#12161c;font-size:14px;font-weight:600;transition:background .15s}
 .login-go:hover{background:#e6e8ec}
 .login-go:disabled{opacity:.55;cursor:not-allowed}
-.login-msg{min-height:16px;margin:-2px 0 -4px;font-size:12px;color:var(--muted)}
+.login-msg{min-height:16px;margin:-2px 0 -4px;font-size:12px;color:var(--muted);text-align:center}
 .login-msg.error{color:#ff8a8a}
 
 @media (max-width:780px){
-  body{padding:12px;place-items:start center;overflow:auto}
-  .win .main{grid-template-columns:minmax(0,1fr);grid-template-rows:none;gap:0;padding:6px 18px 14px;justify-items:stretch}
-  .win .art{grid-area:auto;order:-1;width:100%;aspect-ratio:16/9;margin:0 0 18px;align-self:auto}
+  body{overflow:auto}
+  .win .main{grid-template-columns:minmax(0,1fr);grid-template-rows:none;gap:0;padding:6px 18px 14px;justify-items:stretch;height:auto}
+  .win .art{grid-area:auto;order:-1;width:100%;aspect-ratio:16/9;margin:0 0 18px;align-self:auto;max-height:none}
   .win .head{grid-area:auto;margin:0;align-self:auto}
   .win .facts{grid-area:auto;margin:20px 0 0;gap:28px}
   .win .facts div{align-items:flex-start}
@@ -287,7 +328,6 @@ button{font:inherit;color:inherit;cursor:pointer}
   // ---- sign out ----
   document.getElementById('closeBtn').addEventListener('click', async function() {
     try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch(e) {}
-    // reset launch UI
     resetLaunchUI();
     lu.value = '';
     lp.value = '';
