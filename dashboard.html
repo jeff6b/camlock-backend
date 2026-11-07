@@ -1,1602 +1,1093 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>light</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Light Settings</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>
-:root {
-  --bg: #0c0c0e;
-  --text: #b8b8bc;
-  --muted: #5e5e64;
-  --accent: #8e8e94;
-  --border: #1a1a1d;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html, body {
-  width: 100%; height: 100%; overflow: hidden;
-  background: var(--bg); color: var(--text);
-  font-family: Inter, sans-serif; font-size: 11px;
-  -webkit-font-smoothing: antialiased;
-}
-button { font: inherit; color: inherit; }
-body.ui-bg {
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
-}
-body.ui-bg::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background: rgba(12, 12, 14, 0.75);
-  pointer-events: none;
-  z-index: 0;
-}
-body.ui-bg .header,
-body.ui-bg main {
-  position: relative;
-  z-index: 1;
-}
-button:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+:root{--text:#F2F3F5;--muted:#A9AFB8;--dim:#7B828C;--hair:rgba(255,255,255,.06);--panel:rgba(255,255,255,.045);--mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{background:#0e1218;color:var(--text);font:400 13px/1.45 Geist,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;display:grid;place-items:stretch;padding:0;overflow:hidden}
+body.ui-bg{background-size:cover;background-position:center;background-repeat:no-repeat;background-attachment:fixed}
+body.ui-bg::before{content:"";position:fixed;inset:0;background:rgba(12,12,14,.65);pointer-events:none;z-index:0}
+body.ui-bg .win{position:relative;z-index:1}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid #fff;outline-offset:2px}
 
-.header {
-  display: flex; justify-content: center; align-items: center;
-  position: relative; padding: 8px 10px 0; height: 36px;
-  -webkit-app-region: drag; app-region: drag;
-}
-.user-tag {
-  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-  font-size: 11px; color: var(--text);
-  -webkit-app-region: no-drag; app-region: no-drag;
-}
-.tabs {
-  display: flex; align-items: center; gap: 1px; padding: 2px;
-  border: 1px solid var(--border); border-radius: 7px;
-  -webkit-app-region: no-drag; app-region: no-drag;
-}
-.tab {
-  display: flex; align-items: center; justify-content: center;
-  width: 26px; height: 24px; border: 1px solid transparent;
-  border-radius: 5px; background: transparent; color: var(--muted);
-  cursor: pointer; transition: color .16s ease;
-}
-.tab svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.tab:hover { color: var(--text); }
-.tab.active { color: var(--accent); }
+.scene{position:fixed;inset:0;z-index:0;background:#0e1218 url("https://cdn.corenexis.com/f/0yjd54ZW.webp") center/cover no-repeat}
+.scene::before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.3)}
 
-.status-badge {
-  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-  font-size: 9px; color: var(--muted);
-  -webkit-app-region: no-drag; app-region: no-drag;
-}
-.status-badge.saving { color: #9a7540; }
-.status-badge.saved { color: #5a9e6e; }
-.status-badge.error { color: #a85555; }
+.win{position:relative;z-index:1;width:100%;height:100vh;height:100dvh;border-radius:0;overflow:hidden;display:grid;grid-template-rows:44px 1fr;
+  background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.025)),rgba(9,14,12,.7);
+  backdrop-filter:blur(30px) saturate(140%);-webkit-backdrop-filter:blur(30px) saturate(140%);box-shadow:none}
+.title{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 8px 0 20px;-webkit-app-region:drag;app-region:drag}
+.brand{font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--muted);-webkit-app-region:no-drag;app-region:no-drag;display:flex;align-items:center;gap:10px}
+.brand .session{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.state{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dim);transition:color .2s;-webkit-app-region:no-drag;app-region:no-drag}
+.state svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.state.busy{color:var(--text)}
+.wc{display:flex;gap:2px;justify-self:end;-webkit-app-region:no-drag;app-region:no-drag}
+.wc button{width:36px;height:30px;border:0;border-radius:8px;background:none;color:var(--muted);font-size:13px}
+.wc button:hover{background:rgba(255,255,255,.1);color:#fff}
 
-main {
-  width: 100%; height: calc(100% - 36px - 24px);
-  margin: 0; padding: 10px 14px 12px;
-  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
-}
-.page { display: none; }
-.page.active { display: block; }
+.body{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:0}
 
-.tab-popup, .keybind-mode-popup {
-  position: fixed; z-index: 300; min-width: 100px; padding: 3px;
-  border: 1px solid var(--border); border-radius: 6px;
-  background: #131316; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-  opacity: 0; pointer-events: none; transform: translateY(-3px);
-  transition: opacity .15s ease, transform .15s ease;
-}
-.tab-popup.show, .keybind-mode-popup.show {
-  opacity: 1; pointer-events: auto; transform: translateY(0);
-}
-.tab-popup .popup-item, .keybind-mode-popup .popup-item {
-  padding: 5px 10px; border-radius: 4px; font-size: 9px;
-  color: var(--muted); cursor: pointer;
-  display: flex; align-items: center; justify-content: space-between;
-}
-.tab-popup .popup-item:hover, .keybind-mode-popup .popup-item:hover {
-  background: #16161a; color: var(--text);
-}
-.tab-popup .popup-item.selected, .keybind-mode-popup .popup-item.selected { color: var(--accent); }
+.side{display:flex;flex-direction:column;padding:6px 12px 14px 14px;min-height:0}
+.search{position:relative;margin-bottom:16px}
+.search svg{position:absolute;left:11px;top:50%;width:14px;height:14px;margin-top:-7px;fill:none;stroke:var(--dim);stroke-width:2;stroke-linecap:round;pointer-events:none}
+.search input{width:100%;height:36px;padding:0 34px 0 33px;border:0;border-radius:10px;background:rgba(255,255,255,.07);outline:0;transition:background .15s}
+.search input::placeholder{color:var(--dim)}
+.search input:focus{background:rgba(255,255,255,.12)}
+.search kbd{position:absolute;right:9px;top:50%;margin-top:-9px;height:18px;min-width:18px;padding:0 5px;border-radius:5px;background:rgba(255,255,255,.08);color:var(--dim);font:500 10.5px/18px var(--mono);text-align:center}
+.nav{display:flex;flex-direction:column;gap:1px;overflow-y:auto}
+.nav small{padding:12px 10px 6px;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.nav small:first-child{padding-top:0}
+.nav button{display:flex;align-items:center;justify-content:space-between;height:34px;padding:0 10px;border:0;border-radius:8px;background:none;color:var(--muted);font-weight:500;text-align:left;transition:background .12s,color .12s}
+.nav button:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav button[aria-selected="true"]{background:rgba(255,255,255,.12);color:#fff}
+.nav button i{font:500 10.5px var(--mono);font-style:normal;color:var(--dim)}
+.ver{margin-top:auto;padding:0 10px;font:400 11px var(--mono);color:var(--dim)}
 
-.stats {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px; margin-bottom: 10px;
-}
-.stat { padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; }
-.stat-top { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 9px; }
-.stat-value { margin-top: 6px; font-size: 13px; font-weight: 600; letter-spacing: -.3px; color: var(--text); }
-.stat-value.accent { color: var(--accent); }
+.content>*{max-width:920px}
+.content{overflow-y:auto;padding:6px 48px 110px 24px;min-height:0;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}
+.ph{display:flex;align-items:baseline;gap:12px;height:36px;margin-bottom:2px}
+.ph b{font-size:17px;font-weight:600;letter-spacing:-.01em}
+.ph span{color:var(--dim);font-size:12.5px}
+.grp{margin-top:18px}
+.grp h3{margin:0 0 8px 2px;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.panel{padding:0 16px;border-radius:12px;background:var(--panel)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:24px;min-height:52px;padding:9px 0}
+.row+.row{border-top:1px solid var(--hair)}
+.txt{min-width:0}
+.txt b{display:block;font-size:13.5px;font-weight:500}
+.txt span{display:block;margin-top:1px;font-size:12px;color:var(--dim)}
+.mono{font:500 12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.gone{position:fixed;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;background:rgba(12,12,14,.85)}
+.gone b{font-size:16px;font-weight:600}
+.gone span{color:var(--muted);margin-bottom:12px}
+.empty{padding:40px 0;text-align:center;color:var(--dim)}
 
-.overview-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.overview-tool {
-  display: flex; align-items: center; gap: 8px; text-align: left; min-width: 0;
-  padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px;
-  background: transparent; cursor: pointer; transition: border-color .15s ease;
-}
-.overview-tool:hover { border-color: #2a2a2e; }
-.overview-tool strong { font-size: 10px; font-weight: 500; flex: 1; color: var(--text); }
-.tool-arrow { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); flex-shrink: 0; }
+.sw{position:relative;flex:none;width:36px;height:21px;padding:0;border:0;border-radius:11px;background:rgba(255,255,255,.16);transition:background .18s}
+.sw::after{content:"";position:absolute;left:2.5px;top:2.5px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .18s,background .18s}
+.sw[aria-checked="true"]{background:#fff}
+.sw[aria-checked="true"]::after{transform:translateX(15px);background:#10151a}
 
-.content-panel {
-  padding: 10px 12px; border: 1px solid var(--border);
-  border-radius: 8px; margin-bottom: 8px;
-}
-.content-panel h2 { margin-bottom: 2px; font-size: 11px; font-weight: 600; color: var(--text); }
-.info-row, .setting-row {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border);
-}
-.info-row:first-of-type, .setting-row:first-of-type { margin-top: 2px; }
-.info-row:last-child, .setting-row:last-child { border-bottom: 0; padding-bottom: 0; }
-.info-label { color: var(--muted); font-size: 10px; }
-.info-value { max-width: 60%; color: var(--text); font-size: 10px; text-align: right; overflow-wrap: anywhere; }
-.setting-title { font-size: 10px; font-weight: 500; color: var(--text); }
+.dd{position:relative;flex:none}
+.dd-btn{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:150px;height:32px;padding:0 10px 0 12px;border:0;border-radius:8px;background:rgba(255,255,255,.08);font-weight:500;transition:background .12s}
+.dd-btn:hover,.dd-btn[aria-expanded="true"]{background:rgba(255,255,255,.14)}
+.dd-btn svg{width:12px;height:12px;fill:none;stroke:var(--muted);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.dd-menu{position:absolute;right:0;top:38px;z-index:10;min-width:100%;padding:4px;border-radius:10px;background:rgba(11,16,14,.98);box-shadow:0 16px 40px rgba(0,0,0,.55),inset 0 0 0 1px rgba(255,255,255,.07)}
+.dd-menu[hidden]{display:none}
+.dd-menu button{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;height:30px;padding:0 9px;border:0;border-radius:6px;background:none;text-align:left;white-space:nowrap}
+.dd-menu button:hover{background:rgba(255,255,255,.09)}
+.dd-menu button[aria-selected="true"]{color:#fff;background:rgba(255,255,255,.12)}
 
-.toggle {
-  width: 13px; height: 13px; border: 1.5px solid #262629; border-radius: 3px;
-  background: transparent; cursor: pointer; flex-shrink: 0;
-  transition: background .12s ease, border-color .12s ease;
-}
-.toggle.on { background: var(--accent); border-color: var(--accent); }
-.toggle:hover { border-color: #35353a; }
+.sl{display:flex;align-items:center;gap:14px;width:290px;flex:none}
+.sl .mono{width:78px;text-align:right}
+input[type=range]{flex:1;min-width:0;height:20px;margin:0;background:none;-webkit-appearance:none;appearance:none;cursor:pointer;--p:50%}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,#fff var(--p),rgba(255,255,255,.18) var(--p))}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:rgba(255,255,255,.18)}
+input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:#fff}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border-radius:50%;background:#fff;border:0;box-shadow:0 0 0 4px rgba(255,255,255,0);transition:box-shadow .15s}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:0}
+input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 5px rgba(255,255,255,.16)}
 
-.text-button {
-  padding: 5px 9px; border: 1px solid #262629; border-radius: 5px;
-  background: transparent; color: var(--text); font-size: 9px; cursor: pointer;
-}
-.text-button:hover { border-color: #35353a; color: var(--accent); }
-.text-button.danger { border-color: #262629; color: var(--text); }
-.text-button.danger:hover { border-color: #35353a; color: #a85555; }
+.seg{display:flex;flex:none;padding:2px;border-radius:9px;background:rgba(255,255,255,.08)}
+.seg button{height:28px;min-width:44px;padding:0 12px;border:0;border-radius:7px;background:none;color:var(--muted);font-weight:500;transition:background .12s,color .12s}
+.seg button:hover{color:#fff}
+.seg button[aria-checked="true"]{background:#fff;color:#10151a}
 
-.config-layout { display: flex; flex-direction: column; gap: 8px; }
-.config-layout > .curve-panel { margin-bottom: 0; }
-.config-options {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px; align-items: start;
-}
-.config-options .content-panel { margin-bottom: 0; height: 100%; padding: 9px 10px; }
+.btn{height:32px;padding:0 14px;border:0;border-radius:8px;background:rgba(255,255,255,.09);font-weight:500;transition:background .12s}
+.btn:hover{background:rgba(255,255,255,.16)}
+.keybtn{min-width:64px;font:500 12px var(--mono)}
+.keybtn.cap{background:#fff;color:#10151a}
+.btn:disabled{opacity:.5;pointer-events:none}
+.danger{background:rgba(220,60,60,.18);color:#ffb0b0}
+.danger:hover{background:rgba(220,60,60,.28)}
 
-.curve-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
-.curve-heading h2 { margin-bottom: 0; font-size: 11px; }
-.curve-wrap { width: 100%; overflow: hidden; }
-#bezierSvg { display: block; width: 100%; height: auto; max-height: 118px; overflow: visible; touch-action: none; user-select: none; }
-.axis-label { fill: var(--muted); font-size: 8px; }
-.handle-line { stroke: #202024; stroke-width: 1.2; stroke-dasharray: 3 4; }
-.curve-path { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
-.curve-end { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; }
-.control-point { fill: var(--accent); stroke: var(--bg); stroke-width: 2; cursor: grab; }
-.control-point:hover, .control-point:focus { r: 8; outline: none; }
-.control-point:active { cursor: grabbing; }
-.curve-values {
-  display: flex; justify-content: space-between; gap: 8px;
-  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border);
-  color: var(--muted); font-size: 8px;
-}
-.curve-values span { display: flex; flex-direction: column; gap: 2px; }
-.curve-values b { color: var(--text); font-weight: 500; }
+/* modal */
+.overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .18s}
+.overlay.show{opacity:1;pointer-events:auto}
+.modal{width:min(520px,92vw);max-height:80vh;overflow-y:auto;border-radius:14px;background:#10151a;box-shadow:0 30px 80px rgba(0,0,0,.7),inset 0 0 0 1px rgba(255,255,255,.08);padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+.modal h3{font-size:14px;font-weight:600;margin:0 0 4px}
+.modal label{display:block;font-size:11px;color:var(--dim);margin-bottom:3px}
+.modal input,.modal textarea{width:100%;padding:8px 10px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.04);outline:0;font-size:12px;resize:vertical}
+.modal input:focus,.modal textarea:focus{border-color:rgba(255,255,255,.2)}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
 
-.field-label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 8px; }
-.field-label:first-child { margin-top: 4px; }
+/* community cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.card{padding:12px;border-radius:10px;background:var(--panel);display:flex;flex-direction:column;gap:8px}
+.card h4{margin:0;font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.card .meta{font-size:11px;color:var(--dim)}
+.card .desc{font-size:12px;color:var(--muted);line-height:1.5;min-height:34px}
+.card .foot{display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid var(--hair);padding-top:8px}
+.like{display:flex;align-items:center;gap:5px;border:0;background:none;color:var(--muted);font-size:11px;padding:3px 6px;border-radius:5px}
+.like:hover{color:#fff;background:rgba(255,255,255,.06)}
+.like.on{color:#ff8fa3}
+.like svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.like.on svg{fill:currentColor}
+.mini{padding:4px 9px;border:0;border-radius:6px;background:rgba(255,255,255,.08);font-size:11px;font-weight:500}
+.mini:hover{background:rgba(255,255,255,.16)}
+.mini.primary{background:rgba(255,255,255,.16)}
+.mini.primary:hover{background:rgba(255,255,255,.22)}
 
-.dark-input {
-  width: 100%; padding: 5px 7px; border: 1px solid var(--border);
-  border-radius: 5px; outline: none; background: transparent;
-  color: var(--text); font: inherit; font-size: 10px;
-}
-.dark-input:focus { border-color: #35353a; }
-.keybind-input { width: 52px; text-align: center; letter-spacing: .4px; font-weight: 500; cursor: pointer; }
+/* bezier editor modal */
+.bezier-stage{width:100%;aspect-ratio:1.85;display:block;border-radius:10px;background:#0a0f14}
+.bezier-stage text{fill:var(--dim);font-size:9px}
+.bezier-stage .grid{stroke:#141a20;stroke-width:1}
+.bezier-stage .axis{stroke:#242a30;stroke-width:1.1}
+.bezier-stage .line{stroke:#202830;stroke-width:1.1;stroke-dasharray:3 4}
+.bezier-stage .path{fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round}
+.bezier-stage .end{fill:#0a0f14;stroke:#fff;stroke-width:1.4}
+.bezier-stage .pt{fill:#fff;stroke:#0a0f14;stroke-width:2;cursor:grab}
+.bezier-stage .pt:active{cursor:grabbing}
 
-.fill-slider {
-  position: relative; width: 100%; height: 22px;
-  border: 1px solid var(--border); border-radius: 5px;
-  background: transparent; cursor: pointer; overflow: hidden;
-  user-select: none; touch-action: none; overscroll-behavior: contain;
+@media (max-width:760px){
+  body{padding:0;overflow:auto}
+  .win{height:auto;min-height:100dvh}
+  .body{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .side{padding:0 14px 6px}
+  .nav{flex-direction:row;overflow-x:auto;gap:4px}
+  .nav small,.nav button i,.ver{display:none}
+  .nav button{flex:none;padding:0 12px}
+  .content{padding:4px 16px 70px}
+  .row{flex-wrap:wrap;gap:10px}
+  .sl{width:100%}
+  .title{grid-template-columns:auto 1fr auto}
+  .state{justify-content:center}
 }
-.fill-slider-fill { position: absolute; top: 0; left: 0; bottom: 0; width: 0%; background: var(--accent); pointer-events: none; }
-.fill-slider-value {
-  position: absolute; inset: 0; display: grid; place-items: center;
-  font-size: 9px; font-weight: 600; font-variant-numeric: tabular-nums;
-  pointer-events: none; letter-spacing: -.2px; white-space: nowrap; color: var(--text);
-}
-.fill-slider-value-inverse {
-  position: absolute; inset: 0; display: grid; place-items: center;
-  font-size: 9px; font-weight: 600; font-variant-numeric: tabular-nums;
-  pointer-events: none; letter-spacing: -.2px; white-space: nowrap; color: var(--bg);
-  clip-path: inset(0 calc(100% - var(--fill-pct, 0%)) 0 0);
-}
-.fill-slider:hover { border-color: #2a2a2e; }
-
-.custom-select { position: relative; width: 100%; user-select: none; }
-.custom-select-trigger {
-  display: flex; align-items: center; justify-content: space-between;
-  width: 100%; padding: 5px 7px; border: 1px solid var(--border);
-  border-radius: 5px; background: transparent; color: var(--text);
-  font-size: 10px; cursor: pointer;
-}
-.custom-select-trigger:hover { border-color: #2a2a2e; }
-.custom-select.open .custom-select-trigger { border-color: #35353a; }
-.custom-select-trigger .value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.custom-select-trigger .chevron {
-  width: 11px; height: 11px; flex-shrink: 0; margin-left: 6px;
-  color: var(--muted); transition: transform .18s ease, color .15s ease;
-}
-.custom-select.open .custom-select-trigger .chevron { transform: rotate(180deg); color: var(--accent); }
-.custom-select-options {
-  position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 50;
-  max-height: 0; overflow: hidden; border: 1px solid transparent;
-  border-radius: 6px; background: var(--bg); opacity: 0; transform: translateY(-3px);
-  pointer-events: none;
-  transition: max-height .2s ease, opacity .16s ease, transform .16s ease, border-color .16s ease;
-}
-.custom-select.open .custom-select-options {
-  max-height: 140px; opacity: 1; transform: translateY(0);
-  pointer-events: auto; border-color: var(--border); overflow-y: auto;
-}
-.custom-option {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 5px 8px; color: var(--muted); font-size: 9px; cursor: pointer;
-}
-.custom-option:hover { background: #16161a; color: var(--text); }
-.custom-option.selected { color: var(--accent); background: transparent; }
-.custom-option .check { width: 10px; height: 10px; opacity: 0; color: var(--accent); }
-.custom-option.selected .check { opacity: 1; }
-
-.config-actions { display: flex; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-
-.weapon-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-.weapon-cards::-webkit-scrollbar { width: 3px; }
-.weapon-cards::-webkit-scrollbar-thumb { background: #222226; border-radius: 2px; }
-.weapon-card {
-  padding: 8px 10px; border: 1px solid var(--border);
-  border-radius: 6px; background: rgba(20,20,23,0.5);
-  position: relative;
-}
-.weapon-card-head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-bottom: 6px;
-}
-.weapon-card-name {
-  font-size: 10px; font-weight: 600; color: var(--text);
-  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.weapon-card-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
-.weapon-card-label {
-  width: 56px; font-size: 8px; color: var(--muted);
-  text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0;
-}
-.weapon-card-row .custom-select, .weapon-card-row .fill-slider { flex: 1; }
-.weapon-card-row .custom-select-trigger { padding: 3px 6px; font-size: 9px; }
-.weapon-card-row .fill-slider { height: 18px; }
-.weapon-card-row .fill-slider-value, .weapon-card-row .fill-slider-value-inverse { font-size: 8px; }
-
-.session-bar {
-  position: fixed; bottom: 8px; right: 12px;
-  font-size: 9px; color: var(--muted); pointer-events: none;
-}
-
-#toast {
-  position: fixed; right: 10px; bottom: 26px; max-width: 220px;
-  padding: 8px 10px; border: 1px solid var(--border);
-  border-radius: 6px; background: #131316; color: var(--text);
-  font-size: 9px; opacity: 0; transform: translateY(4px);
-  pointer-events: none; transition: .2s ease; z-index: 100;
-}
-#toast.show { opacity: 1; transform: translateY(0); }
-
-.community-toolbar { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
-.community-search {
-  flex: 1; padding: 6px 10px; border: 1px solid var(--border);
-  border-radius: 6px; background: transparent; color: var(--text);
-  font: inherit; font-size: 10px; outline: none;
-}
-.community-search:focus { border-color: #35353a; }
-.community-search::placeholder { color: var(--muted); }
-
-.community-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
-
-.cfg-card {
-  padding: 11px 12px; border: 1px solid var(--border);
-  border-radius: 8px; display: flex; flex-direction: column;
-  gap: 8px; transition: border-color .15s ease;
-}
-.cfg-card:hover { border-color: #262629; }
-
-.cfg-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-.cfg-card-title { font-size: 11px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; line-height: 1.3; }
-.cfg-card-author { font-size: 9px; color: var(--muted); margin-top: 2px; }
-
-.cfg-card-desc { font-size: 10px; color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; min-height: 15px; }
-
-.cfg-card-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.cfg-tag {
-  padding: 2px 6px; border: 1px solid var(--border);
-  border-radius: 3px; font-size: 8px; color: var(--muted);
-  text-transform: uppercase; letter-spacing: 0.3px;
-}
-
-.cfg-card-footer {
-  display: flex; justify-content: space-between; align-items: center;
-  gap: 6px; padding-top: 8px; border-top: 1px solid var(--border);
-  margin-top: auto;
-}
-.cfg-like-btn {
-  display: flex; align-items: center; gap: 4px;
-  padding: 3px 7px; border: 1px solid var(--border);
-  border-radius: 4px; background: transparent; color: var(--muted);
-  font-size: 9px; cursor: pointer;
-  transition: color .14s ease, border-color .14s ease;
-}
-.cfg-like-btn:hover { color: var(--accent); border-color: #2a2a2e; }
-.cfg-like-btn.liked { color: var(--accent); border-color: #2a2a2e; }
-.cfg-like-btn svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.cfg-like-btn.liked svg { fill: var(--accent); }
-
-.cfg-card-actions { display: flex; gap: 4px; }
-.cfg-mini-btn {
-  padding: 3px 8px; border: 1px solid var(--border);
-  border-radius: 4px; background: transparent; color: var(--muted);
-  font-size: 9px; cursor: pointer;
-  transition: color .14s ease, border-color .14s ease;
-}
-.cfg-mini-btn:hover { color: var(--text); border-color: #2a2a2e; }
-.cfg-mini-btn.primary:hover { color: var(--accent); }
-
-.community-empty {
-  padding: 30px 16px; text-align: center; color: var(--muted);
-  font-size: 10px; border: 1px dashed var(--border); border-radius: 8px;
-}
-
-.cfg-modal-overlay {
-  position: fixed; inset: 0; background: transparent;
-  display: flex; align-items: center; justify-content: center;
-  z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s ease;
-}
-.cfg-modal-overlay.show { opacity: 1; pointer-events: auto; }
-.cfg-modal {
-  width: 90%; max-width: 420px; background: var(--bg);
-  border: 1px solid #2a2a2e; border-radius: 8px;
-  padding: 14px 16px; display: flex; flex-direction: column;
-  gap: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-}
-.cfg-modal h3 { font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
-.cfg-modal label { display: block; font-size: 9px; color: var(--muted); margin-bottom: 3px; }
-.cfg-modal input, .cfg-modal textarea {
-  width: 100%; padding: 6px 9px; border: 1px solid #2a2a2e;
-  border-radius: 5px; background: #0a0a0c; color: var(--text);
-  font: inherit; font-size: 10px; outline: none; resize: vertical;
-  transition: border-color .14s ease;
-}
-.cfg-modal input:focus, .cfg-modal textarea:focus { border-color: #4a4a52; }
-.cfg-modal textarea { min-height: 60px; }
-.cfg-modal-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
-.cfg-modal-actions .text-button { padding: 6px 14px; }
-
-main::-webkit-scrollbar { width: 4px; }
-main::-webkit-scrollbar-track { background: transparent; }
-main::-webkit-scrollbar-thumb { background: #222226; border-radius: 4px; }
 </style>
 </head>
 <body>
-<header class="header">
-  <div class="user-tag" id="userTag">light beta</div>
-  <nav class="tabs" aria-label="Main navigation">
-    <button class="tab active" data-page="overview" title="Overview" aria-label="Overview">
-      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-    </button>
-    <button class="tab" data-page="account" title="Account" aria-label="Account">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
-    </button>
-    <button class="tab" data-page="configuration" title="Configuration" aria-label="Configuration">
-      <svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
-    </button>
-    <button class="tab" data-page="community" title="Community" aria-label="Community">
-      <svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>
-    </button>
-  </nav>
-  <div class="status-badge" id="saveStatus"><span id="saveLabel">Ready</span></div>
-</header>
-<main>
-  <section class="page active" id="page-overview">
-    <div class="stats">
-      <div class="stat"><div class="stat-top">Account status</div><div class="stat-value accent" id="accountStatus">Checking</div></div>
-      <div class="stat"><div class="stat-top">Client</div><div class="stat-value" id="clientStatus">—</div></div>
-      <div class="stat"><div class="stat-top">Signed in as</div><div class="stat-value" id="statUsername">—</div></div>
-    </div>
-    <div class="overview-tools">
-      <button class="overview-tool" data-go="account"><strong>Account details</strong><svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
-      <button class="overview-tool" data-go="configuration"><strong>Configuration</strong><svg class="tool-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
-    </div>
-  </section>
+<div class="scene" role="presentation"></div>
 
-  <section class="page" id="page-account">
-    <div class="content-panel">
-      <h2>Account</h2>
-      <div class="info-row"><span class="info-label">Username</span><span class="info-value" id="accountUsername">—</span></div>
-      <div class="info-row"><span class="info-label">Session status</span><span class="info-value" id="accountSession">—</span></div>
-      <div class="info-row"><span class="info-label">HWID</span><span class="info-value" id="accountHwid">—</span></div>
+<div class="win" id="win">
+  <div class="title">
+    <span class="brand">
+      <span>Light</span>
+      <span class="session" id="sessionBar">00:00:00</span>
+    </span>
+    <span class="state" id="state"><svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg><span id="stt">Saved</span></span>
+    <div class="wc">
+      <button aria-label="Sign out" id="signOutBtn">⎋</button>
+      <button aria-label="Close" id="closeBtn">✕</button>
     </div>
-    <div class="content-panel">
-      <h2>Hotkeys</h2>
-      <div class="setting-row">
-        <div class="setting-title">uiii toggle</div>
-        <input class="dark-input keybind-input" id="cfgWebviewKeybind" type="text" value="F8" maxlength="8" readonly spellcheck="false">
+  </div>
+
+  <div class="body">
+    <aside class="side">
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <input id="q" type="text" placeholder="Search settings" aria-label="Search settings" autocomplete="off">
+        <kbd>/</kbd>
       </div>
+      <nav class="nav" id="nav" role="tablist" aria-label="Settings sections"></nav>
+      <div class="ver">v2.8.1 · stable</div>
+    </aside>
+    <main class="content" id="content" role="tabpanel"></main>
+  </div>
+</div>
+
+<!-- Bezier curve editor modal -->
+<div class="overlay" id="bezierModal">
+  <div class="modal">
+    <h3>Bezier curve</h3>
+    <div class="meta" style="font-size:11px;color:var(--dim);margin-bottom:4px">Drag the two control points. X/Y are normalized 0–1.</div>
+    <svg class="bezier-stage" id="bezierSvg" viewBox="0 0 600 320" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <pattern id="gpat" width="30" height="30" patternUnits="userSpaceOnUse">
+          <path d="M30 0 L0 0 0 30" fill="none" stroke="#141a20" stroke-width="1"/>
+        </pattern>
+      </defs>
+      <rect x="34" y="18" width="548" height="260" fill="url(#gpat)" rx="8"/>
+      <path class="axis" d="M34 278H582 M34 18V278"/>
+      <text x="34" y="299">0</text><text x="572" y="299">1</text>
+      <text x="15" y="28">1</text><text x="15" y="281">0</text>
+      <path id="hline1" class="line" d="M34 278 L180 200"/>
+      <path id="hline2" class="line" d="M420 80 L582 18"/>
+      <path id="cpath" class="path" d="M34 278 C180 200 420 80 582 18"/>
+      <circle class="end" cx="34" cy="278" r="5"/>
+      <circle class="end" cx="582" cy="18" r="5"/>
+      <circle class="pt" id="cp1" data-pt="1" cx="180" cy="200" r="7"/>
+      <circle class="pt" id="cp2" data-pt="2" cx="420" cy="80" r="7"/>
+    </svg>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-top:6px">
+      <span>P1 <b id="pv1">27%, 30%</b></span>
+      <span>P2 <b id="pv2">71%, 76%</b></span>
     </div>
-    <div class="content-panel">
-      <h2>Security</h2>
-      <div class="setting-row">
-        <div class="setting-title">Streamproof</div>
-        <button class="toggle" id="cfgStreamproof" role="switch" aria-checked="false" aria-label="Streamproof"></button>
-      </div>
-      <div style="margin-top:10px; display:flex; gap:6px;">
-        <button class="text-button" id="logoutBtn">Sign out</button>
-        <button class="text-button danger" id="closeAppBtn">Close App</button>
-      </div>
-    </div>
-    <div class="content-panel">
-      <h2>UI background</h2>
-      <div class="setting-row">
-        <div class="setting-title">Background changer</div>
-        <button class="toggle" id="cfgUIBackgroundEnabled" role="switch" aria-checked="false" aria-label="UI background enabled"></button>
-      </div>
-      <label class="field-label">Image URL</label>
-      <input class="dark-input" id="cfgUIBackgroundURL" type="text" placeholder="https://example.com/image.png" spellcheck="false">
-      <div style="margin-top:8px; color:var(--muted); font-size:9px; line-height:1.5;">
-        The image is set as the background of the UI. Leave empty for default.
-      </div>
-    </div>
-  </section>
-
-  <section class="page" id="page-configuration">
-    <div id="panel-aim">
-      <div class="config-layout">
-        <div class="content-panel curve-panel">
-          <div class="curve-heading">
-            <h2>Bezier curve</h2>
-            <button class="text-button" id="resetCurveBtn">Reset</button>
-          </div>
-          <div class="curve-wrap">
-            <svg id="bezierSvg" viewBox="0 0 600 310" role="img" aria-label="Bezier curve editor">
-              <defs>
-                <pattern id="curveGrid" width="30" height="30" patternUnits="userSpaceOnUse">
-                  <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#18181b" stroke-width="1"/>
-                </pattern>
-              </defs>
-              <rect x="34" y="18" width="548" height="260" fill="url(#curveGrid)" rx="8"/>
-              <path d="M34 278H582 M34 18V278" stroke="#2a2a2e" stroke-width="1.2"/>
-              <text x="34" y="299" class="axis-label">0</text>
-              <text x="572" y="299" class="axis-label">1</text>
-              <text x="15" y="28" class="axis-label">1</text>
-              <text x="15" y="281" class="axis-label">0</text>
-              <path id="handleLine1" class="handle-line" d="M34 278 L180 200"/>
-              <path id="handleLine2" class="handle-line" d="M420 80 L582 18"/>
-              <path id="curvePath" class="curve-path" d="M34 278 C180 200 420 80 582 18"/>
-              <circle class="curve-end" cx="34" cy="278" r="5"/>
-              <circle class="curve-end" cx="582" cy="18" r="5"/>
-              <circle class="control-point" id="control1" data-point="1" cx="180" cy="200" r="7" tabindex="0" role="slider" aria-label="Control point 1"/>
-              <circle class="control-point" id="control2" data-point="2" cx="420" cy="80" r="7" tabindex="0" role="slider" aria-label="Control point 2"/>
-            </svg>
-          </div>
-          <div class="curve-values">
-            <span>Point 1 <b id="point1Value">27%, 30%</b></span>
-            <span>Point 2 <b id="point2Value">71%, 76%</b></span>
-          </div>
-        </div>
-
-        <div class="config-options">
-          <div class="content-panel">
-            <h2>General</h2>
-            <div class="setting-row"><div class="setting-title">Enabled</div><button class="toggle on" id="cfgEnabled" role="switch" aria-checked="true" aria-label="Enabled"></button></div>
-            <div class="setting-row"><div class="setting-title">Sticky mode</div><button class="toggle on" id="cfgStickyMode" role="switch" aria-checked="true" aria-label="Sticky mode"></button></div>
-            <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="cfgKeybind" type="text" value="Q" maxlength="8" readonly spellcheck="false" title="Right-click for hold/toggle"></div>
-            <div class="setting-row"><div class="setting-title">Unlock on death</div><button class="toggle on" id="cfgUnlockOnDeath" role="switch" aria-checked="true" aria-label="Unlock on death"></button></div>
-            <div class="setting-row"><div class="setting-title">Self death check</div><button class="toggle on" id="cfgSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button></div>
-          </div>
-
-          <div class="content-panel">
-            <h2>Targeting</h2>
-            <div class="setting-row"><div class="setting-title">Predict target</div><button class="toggle on" id="cfgPredictTarget" role="switch" aria-checked="true" aria-label="Predict target"></button></div>
-            <label class="field-label">Prediction X</label>
-            <div class="fill-slider" id="slPredictionX" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.10">
-              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.10</div><div class="fill-slider-value-inverse">0.10</div>
-            </div>
-            <label class="field-label">Prediction Y</label>
-            <div class="fill-slider" id="slPredictionY" data-min="0" data-max="1" data-step="0.01" data-decimals="2" data-value="0.10">
-              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.10</div><div class="fill-slider-value-inverse">0.10</div>
-            </div>
-            <div class="setting-row"><div class="setting-title">Closest point</div><button class="toggle on" id="cfgClosestPoint" role="switch" aria-checked="true" aria-label="Closest point"></button></div>
-            <label class="field-label">Fixed part</label>
-            <div class="custom-select" id="cfgFixedPartSelect" data-value="Head">
-              <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
-                <span class="value">Head</span>
-                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
-              <div class="custom-select-options" role="listbox">
-                <div class="custom-option selected" data-value="Head" role="option"><span>Head</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-                <div class="custom-option" data-value="Torso" role="option"><span>Torso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-                <div class="custom-option" data-value="HumanoidRootPart" role="option"><span>HumanoidRootPart</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-                <div class="custom-option" data-value="UpperTorso" role="option"><span>UpperTorso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-                <div class="custom-option" data-value="LowerTorso" role="option"><span>LowerTorso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="content-panel">
-            <h2>Smoothing & range</h2>
-            <label class="field-label">Smoothness</label>
-            <div class="fill-slider" id="slSmoothness" data-min="0" data-max="2" data-step="0.01" data-decimals="2" data-value="0.35">
-              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.35</div><div class="fill-slider-value-inverse">0.35</div>
-            </div>
-            <div class="setting-row"><div class="setting-title">Max studs check</div><button class="toggle on" id="cfgMaxStudsCheck" role="switch" aria-checked="true" aria-label="Max studs check"></button></div>
-            <label class="field-label">Max studs</label>
-            <div class="fill-slider" id="slMaxStuds" data-min="0" data-max="2000" data-step="10" data-decimals="0" data-value="500">
-              <div class="fill-slider-fill"></div><div class="fill-slider-value">500</div><div class="fill-slider-value-inverse">500</div>
-            </div>
-            <label class="field-label">Stabilizer deadzone</label>
-            <div class="fill-slider" id="slDeadzone" data-min="0" data-max="20" data-step="0.5" data-decimals="1" data-value="3.0">
-              <div class="fill-slider-fill"></div><div class="fill-slider-value">3.0</div><div class="fill-slider-value-inverse">3.0</div>
-            </div>
-            <label class="field-label">Reaction delay</label>
-            <div class="fill-slider" id="slReactionDelay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.12">
-              <div class="fill-slider-fill"></div><div class="fill-slider-value">0.12</div><div class="fill-slider-value-inverse">0.12</div>
-            </div>
-            <div class="config-actions"><button class="text-button" id="cfgResetBtn">Reset</button></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="panel-triggerbot" style="display: none;">
-      <div class="config-options">
-        <div class="content-panel">
-          <h2>General</h2>
-          <div class="setting-row"><div class="setting-title">Enabled</div><button class="toggle" id="tbEnabled" role="switch" aria-checked="false" aria-label="Triggerbot enabled"></button></div>
-          <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="tbKeybind" type="text" value="E" maxlength="8" readonly spellcheck="false" title="Right-click for hold/toggle"></div>
-          <div class="setting-row"><div class="setting-title">Require camlock</div><button class="toggle on" id="tbRequireCamlock" role="switch" aria-checked="true" aria-label="Require camlock"></button></div>
-          <div class="setting-row"><div class="setting-title">Death check</div><button class="toggle on" id="tbDeathCheck" role="switch" aria-checked="true" aria-label="Death check"></button></div>
-          <div class="setting-row"><div class="setting-title">Self death check</div><button class="toggle on" id="tbSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button></div>
-        </div>
-
-        <div class="content-panel">
-          <h2>Targeting</h2>
-          <label class="field-label">Aim part</label>
-          <div class="custom-select" id="tbAimPart" data-value="Head">
-            <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
-              <span class="value">Head</span>
-              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            <div class="custom-select-options" role="listbox">
-              <div class="custom-option selected" data-value="Head" role="option"><span>Head</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-              <div class="custom-option" data-value="Torso" role="option"><span>Torso</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-              <div class="custom-option" data-value="Any" role="option"><span>Any</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-            </div>
-          </div>
-          <label class="field-label">Radius</label>
-          <div class="fill-slider" id="tbRadius" data-min="0" data-max="40" data-step="0.5" data-decimals="1" data-value="12.0">
-            <div class="fill-slider-fill"></div><div class="fill-slider-value">12.0</div><div class="fill-slider-value-inverse">12.0</div>
-          </div>
-          <label class="field-label">Delay</label>
-          <div class="fill-slider" id="tbDelay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.12">
-            <div class="fill-slider-fill"></div><div class="fill-slider-value">0.12</div><div class="fill-slider-value-inverse">0.12</div>
-          </div>
-          <label class="field-label">Gunswitch delay</label>
-          <div class="fill-slider" id="tbGunswitchDelay" data-min="0" data-max="2" data-step="0.01" data-decimals="2" data-value="0.00">
-            <div class="fill-slider-fill"></div><div class="fill-slider-value">0.00</div><div class="fill-slider-value-inverse">0.00</div>
-          </div>
-        </div>
-
-        <div class="content-panel">
-          <h2>Range & Weapons</h2>
-          <div class="setting-row"><div class="setting-title">Stud check</div><button class="toggle on" id="tbStudCheck" role="switch" aria-checked="true" aria-label="Stud check"></button></div>
-          <label class="field-label">Max studs</label>
-          <div class="fill-slider" id="tbMaxStuds" data-min="0" data-max="2000" data-step="10" data-decimals="0" data-value="500">
-            <div class="fill-slider-fill"></div><div class="fill-slider-value">500</div><div class="fill-slider-value-inverse">500</div>
-          </div>
-          <div class="setting-row"><div class="setting-title">Weapon specific</div><button class="toggle" id="tbWeaponSpecific" role="switch" aria-checked="false" aria-label="Weapon specific"></button></div>
-          <div id="weaponListWrap" style="display: none;">
-            <div class="weapon-cards" id="weaponCards"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="panel-movement" style="display: none;">
-      <div class="config-options">
-        <div class="content-panel">
-          <h2>Macro</h2>
-          <div class="setting-row"><div class="setting-title">Enabled</div><button class="toggle" id="macroEnabled" role="switch" aria-checked="false" aria-label="Macro enabled"></button></div>
-          <div class="setting-row"><div class="setting-title">Keybind</div><input class="dark-input keybind-input" id="macroKeybind" type="text" value="F" maxlength="8" readonly spellcheck="false" title="Right-click for hold/toggle"></div>
-          <div class="setting-row"><div class="setting-title">Self death check</div><button class="toggle on" id="macroSelfDeathCheck" role="switch" aria-checked="true" aria-label="Self death check"></button></div>
-        </div>
-
-        <div class="content-panel">
-          <h2>Output</h2>
-          <label class="field-label">Mode</label>
-          <div class="custom-select" id="macroOutputMode" data-value="keyboard">
-            <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
-              <span class="value">Keyboard</span>
-              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            <div class="custom-select-options" role="listbox">
-              <div class="custom-option selected" data-value="keyboard" role="option"><span>Keyboard</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-              <div class="custom-option" data-value="mouse" role="option"><span>Mouse (scroll)</span><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
-            </div>
-          </div>
-          <label class="field-label">Delay</label>
-          <div class="fill-slider" id="macroDelay" data-min="0.01" data-max="0.5" data-step="0.01" data-decimals="2" data-value="0.05">
-            <div class="fill-slider-fill"></div><div class="fill-slider-value">0.05</div><div class="fill-slider-value-inverse">0.05</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="page" id="page-community">
-    <div class="community-toolbar">
-      <input class="community-search" id="communitySearch" type="text" placeholder="Search by name or author...">
-      <button class="text-button" id="publishConfigBtn">Publish config</button>
-    </div>
-    <div class="community-grid" id="communityGrid"></div>
-  </section>
-</main>
-
-<div class="cfg-modal-overlay" id="publishModal">
-  <div class="cfg-modal">
-    <h3>Publish config</h3>
-    <div><label>Config name</label><input type="text" id="publishName" maxlength="40" placeholder="e.g. Legit smooth"></div>
-    <div><label>Description</label><textarea id="publishDesc" maxlength="220" placeholder="What makes this config good?"></textarea></div>
-    <div class="cfg-modal-actions">
-      <button class="text-button" onclick="closePublishModal()">Cancel</button>
-      <button class="text-button" id="publishConfirm">Publish</button>
+    <div class="modal-actions">
+      <button class="btn" id="bezierReset">Reset</button>
+      <button class="btn" id="bezierClose">Done</button>
     </div>
   </div>
 </div>
 
-<div class="keybind-mode-popup" id="keybindModePopup">
-  <div class="popup-item" data-mode="toggle"><span>Toggle</span></div>
-  <div class="popup-item" data-mode="hold"><span>Hold</span></div>
+<!-- Publish modal -->
+<div class="overlay" id="publishModal">
+  <div class="modal">
+    <h3>Publish config</h3>
+    <div><label>Config name</label><input type="text" id="pubName" maxlength="40" placeholder="e.g. Legit smooth"></div>
+    <div><label>Description</label><textarea id="pubDesc" maxlength="220" rows="3" placeholder="What makes this config good?"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn" id="pubCancel">Cancel</button>
+      <button class="btn" id="pubConfirm">Publish</button>
+    </div>
+  </div>
 </div>
 
-<div class="tab-popup" id="configTabPopup">
-  <div class="popup-item" data-mode="aim"><span>Aim assist</span></div>
-  <div class="popup-item" data-mode="triggerbot"><span>Triggerbot</span></div>
-  <div class="popup-item" data-mode="movement"><span>Movement</span></div>
-</div>
+<div id="toast" style="position:fixed;right:14px;bottom:14px;padding:9px 12px;border-radius:8px;background:#131316;color:var(--text);border:1px solid rgba(255,255,255,.08);font-size:12px;opacity:0;transform:translateY(4px);transition:.2s;pointer-events:none;z-index:100"></div>
 
-<div class="session-bar" id="sessionBar">00:00:00</div>
-<div id="toast" role="status"></div>
 <script>
-const pages = ["overview", "account", "configuration", "community"];
-const WEAPON_NAMES = ["Double-Barrel SG", "Revolver", "TacticalShotgun"];
+(function(){
+  // ============================================================
+  // State
+  // ============================================================
+  var PARTS = ['Head','UpperTorso','LowerTorso','HumanoidRootPart'];
+  var WEAPONS = [
+    ['Double-Barrel SG', {AimPart:'Head', Radius:12.0, Delay:0.08}],
+    ['Revolver',         {AimPart:'Head', Radius:10.0, Delay:0.15}],
+    ['TacticalShotgun',  {AimPart:'Head', Radius:14.0, Delay:0.10}]
+  ];
+  var sec = function(x){ return (+x).toFixed(2) + ' s'; };
+  var two = function(x){ return (+x).toFixed(2); };
+  var one = function(x){ return (+x).toFixed(1); };
+  var int = function(x){ return String(Math.round(+x)); };
 
-let toastTimer;
-let currentUser = null;
-let saveTimer = null;
-let isDirty = false;
-let sessionStart = Date.now();
-let communityConfigs = [];
-let myLikes = new Set();
-let searchQuery = "";
-let keybindMode = "toggle";
-let tbKeybindMode = "hold";
-let configMode = "aim";
-let weaponConfigs = {};
-let macroKeybindMode = "toggle";
+  // The settings schema — mirrors old config keys so /api/config round-trips.
+  var CFG = [
+    { id:'aimassist', name:'Aimassist', sub:'Targeting, prediction and smoothing', g:'Main', groups:[
+      { n:'Activation', rows:[
+        { t:'toggle', k:'aim',       ck:'Enabled',         l:'Enabled',       v:true },
+        { t:'key',    k:'aimkey',    ck:'Keybind',         l:'Keybind',       v:'Q'  },
+        { t:'seg',    k:'aimmode',   ck:'KeybindMode',     l:'Keybind mode',  o:['Toggle','Hold'], v:'Toggle' },
+        { t:'key',    k:'webkey',    ck:'WebviewKeybind',  l:'Webview keybind', v:'F8' }
+      ]},
+      { n:'Targeting', rows:[
+        { t:'select', k:'part',      ck:'FixedPart',       l:'Fixed part',    o:PARTS, v:'Head' },
+        { t:'toggle', k:'closest',   ck:'ClosestPoint',    l:'Closest point', v:true },
+        { t:'toggle', k:'studchk',   ck:'MaxStudsCheck',   l:'Max studs check', v:true },
+        { t:'slider', k:'studs',     ck:'MaxStuds',        l:'Max studs',     min:50, max:2000, step:10, v:500, f:int },
+        { t:'toggle', k:'sticky',    ck:'StickyMode',      l:'Sticky mode',   v:true }
+      ]},
+      { n:'Prediction', rows:[
+        { t:'toggle', k:'predict',   ck:'PredictTarget',   l:'Predict target', v:true },
+        { t:'slider', k:'px',        ck:'PredictionX',     l:'Prediction X',  min:0, max:0.5, step:0.01, v:0.10, f:two },
+        { t:'slider', k:'py',        ck:'PredictionY',     l:'Prediction Y',  min:0, max:0.5, step:0.01, v:0.10, f:two }
+      ]},
+      { n:'Smoothing', rows:[
+        { t:'slider', k:'smooth',    ck:'Smoothness',      l:'Smoothness',    min:0, max:1, step:0.01, v:0.35, f:two },
+        { t:'slider', k:'dead',      ck:'StabilizerDeadzone', l:'Stabilizer deadzone', min:0, max:10, step:0.1, v:3.0, f:one },
+        { t:'slider', k:'react',     ck:'ReactionDelay',   l:'Reaction delay', min:0, max:1, step:0.01, v:0.12, f:sec },
+        { t:'button', k:'bezier',    l:'Bezier curve',     d:'Adjust the smoothing curve.', b:'Edit curve' }
+      ]},
+      { n:'Safety', rows:[
+        { t:'toggle', k:'unlock',    ck:'UnlockOnDeath',   l:'Unlock on death', v:true },
+        { t:'toggle', k:'selfdeath', ck:'SelfDeathCheck',  l:'Self death check', v:true }
+      ]}
+    ]},
+    { id:'triggerbot', name:'Triggerbot', sub:'Activation, radius and delay', g:'Main', groups:[
+      { n:'Activation', rows:[
+        { t:'toggle', k:'trig',      tb:'Enabled',         l:'Enabled',        v:false },
+        { t:'key',    k:'trigkey',   tb:'Keybind',         l:'Keybind',        v:'E'   },
+        { t:'seg',    k:'trigmode',  tb:'KeybindMode',     l:'Keybind mode',   o:['Toggle','Hold'], v:'Hold' },
+        { t:'toggle', k:'camlock',   tb:'RequireCamlock',  l:'Require camlock', v:true }
+      ]},
+      { n:'Targeting', rows:[
+        { t:'select', k:'tpart',     tb:'AimPart',         l:'Aim part',       o:PARTS, v:'Head' },
+        { t:'slider', k:'rad',       tb:'Radius',          l:'Radius',         min:1, max:30, step:0.5, v:12.0, f:one },
+        { t:'slider', k:'tdelay',    tb:'Delay',           l:'Delay',          min:0, max:1, step:0.01, v:0.12, f:sec },
+        { t:'slider', k:'tgun',      tb:'GunswitchDelay',  l:'Gunswitch delay', min:0, max:2, step:0.01, v:0.0, f:sec },
+        { t:'toggle', k:'tstud',     tb:'StudCheck',       l:'Stud check',     v:true },
+        { t:'slider', k:'tstuds',    tb:'MaxStuds',        l:'Max studs',      min:50, max:2000, step:10, v:500, f:int }
+      ]},
+      { n:'Safety', rows:[
+        { t:'toggle', k:'tdeath',    tb:'DeathCheck',      l:'Death check',    v:true },
+        { t:'toggle', k:'tself',     tb:'SelfDeathCheck',  l:'Self death check', v:true }
+      ]},
+      { n:'Weapons', rows:[
+        { t:'toggle', k:'wspec',     tb:'WeaponSpecific',  l:'Weapon specific', d:'Use separate values per weapon.', v:false, re:true }
+      ].concat(WEAPONS.map(function(w, i){
+        return { t:'weapon', k:'w'+i, wname:w[0] };
+      }))}
+    ]},
+    { id:'movement', name:'Movement', sub:'Macro sequence', g:'Player', groups:[
+      { n:'Macro', rows:[
+        { t:'toggle', k:'macro',     m:'Enabled',          l:'Enabled',        v:false },
+        { t:'key',    k:'mkey',      m:'Keybind',          l:'Keybind',        v:'F'   },
+        { t:'seg',    k:'mmode',     m:'KeybindMode',      l:'Keybind mode',   o:['Toggle','Hold'], v:'Toggle' },
+        { t:'seg',    k:'mout',      m:'OutputMode',       l:'Output mode',    o:['Keyboard','Mouse'], v:'Keyboard' }
+      ]},
+      { n:'Sequence', rows:[
+        { t:'slider', k:'mdelay',    m:'Delay',            l:'Delay',          min:0, max:1, step:0.01, v:0.05, f:sec },
+        { t:'toggle', k:'mself',     m:'SelfDeathCheck',   l:'Self death check', v:true }
+      ]}
+    ]},
+    { id:'account', name:'Account', sub:'Your account and client', g:'System', groups:[
+      { n:'Account', rows:[
+        { t:'info', l:'Username', key:'username' },
+        { t:'info', l:'Session',  key:'session'  },
+        { t:'info', l:'HWID',     key:'hwid'     },
+        { t:'info', l:'Client',   key:'client'   }
+      ]},
+      { n:'UI', rows:[
+        { t:'toggle', k:'uibg',      l:'Background image', d:'Set a custom UI background image.', v:false, re:true },
+        { t:'url',    k:'uibgurl',   l:'Image URL',        v:'' }
+      ]}
+    ]},
+    { id:'privacy', name:'Privacy', sub:'Streamproof and exit', g:'System', groups:[
+      { n:'Privacy', rows:[
+        { t:'toggle', k:'stream',    ck:'Streamproof',     l:'Stream proof', d:'Hide this window from screen share and recordings.', v:false }
+      ]},
+      { n:'Exit', rows:[
+        { t:'button', k:'destruct', l:'Self destruct', d:'Closes the menu and signs you out.', b:'Self destruct', danger:true }
+      ]}
+    ]},
+    { id:'community', name:'Community', sub:'Browse and publish configs', g:'System', groups:[
+      { n:'Publish', rows:[
+        { t:'button', k:'publish', l:'Publish current config', d:'Share your settings with the community.', b:'Publish config' }
+      ]},
+      { n:'Browse', rows:[
+        { t:'community', k:'community' }
+      ]}
+    ]}
+  ];
 
-const saveStatus = document.getElementById("saveStatus");
-const saveLabel = document.getElementById("saveLabel");
+  // Build state and defaults
+  var S = {}, D = {};
+  function walk(fn){ CFG.forEach(function(p){ p.groups.forEach(function(g){ g.rows.forEach(fn); }); }); }
+  walk(function(r){ if (r.k && r.v !== undefined) D[r.k] = r.v; });
+  function resetState(){ S = {}; for (var k in D) S[k] = D[k]; weaponConfigs = {}; WEAPONS.forEach(function(w){ weaponConfigs[w[0]] = Object.assign({}, w[1]); }); }
+  var weaponConfigs = {};
+  resetState();
 
-function setSaveStatus(state, label) {
-  saveStatus.classList.remove("saving", "saved", "error");
-  if (state) saveStatus.classList.add(state);
-  saveLabel.textContent = label;
-}
+  // Curve state
+  var curveState = { p1:{x:180,y:200}, p2:{x:420,y:80} };
 
-function showToast(message) {
-  const toast = document.getElementById("toast");
-  toast.textContent = message;
-  toast.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove("show"), 2500);
-}
+  // ============================================================
+  // DOM refs
+  // ============================================================
+  var $ = function(id){ return document.getElementById(id); };
+  var nav = $('nav'), content = $('content'), stateEl = $('state'), stt = $('stt'), q = $('q');
+  var cur = 'aimassist';
+  var saveTimer = null, isDirty = false;
+  var sessionStart = Date.now();
 
-function navigate(page) {
-  if (!pages.includes(page)) return;
-  document.querySelectorAll(".page").forEach(s => s.classList.toggle("active", s.id === "page-" + page));
-  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.page === page));
-  if (page === "community") loadCommunity();
-  if (page === "configuration") applyConfigMode();
-}
+  // ============================================================
+  // Small helpers
+  // ============================================================
+  function el(tag, cls, html){
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html !== undefined) e.innerHTML = html;
+    return e;
+  }
+  function toast(msg){
+    var t = $('toast');
+    t.textContent = msg; t.style.opacity = '1'; t.style.transform = 'translateY(0)';
+    clearTimeout(t._t);
+    t._t = setTimeout(function(){ t.style.opacity = '0'; t.style.transform = 'translateY(4px)'; }, 2200);
+  }
+  function saved(){
+    stateEl.classList.add('busy'); stt.textContent = 'Saving…';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveConfig, 500);
+  }
+  function closeMenus(except){
+    [].forEach.call(document.querySelectorAll('.dd-menu'), function(m){
+      if (m !== except){ m.hidden = true; var b = m.previousSibling; if (b && b.setAttribute) b.setAttribute('aria-expanded','false'); }
+    });
+  }
 
-function applyConfigMode() {
-  const aimPanel = document.getElementById("panel-aim");
-  const tbPanel = document.getElementById("panel-triggerbot");
-  const mvPanel = document.getElementById("panel-movement");
-  aimPanel.style.display = configMode === "aim" ? "block" : "none";
-  tbPanel.style.display = configMode === "triggerbot" ? "block" : "none";
-  mvPanel.style.display = configMode === "movement" ? "block" : "none";
-}
+  // ============================================================
+  // Config IO — mirrors old behavior exactly
+  // ============================================================
+  function toBackend(){
+    // Flat camlock fields + nested triggerbot/macro + UI bg
+    var out = {
+      Enabled: S.aim,
+      Keybind: S.aimkey,
+      KeybindMode: S.aimmode.toLowerCase(),
+      WebviewKeybind: S.webkey,
+      PredictTarget: S.predict,
+      PredictionX: S.px,
+      PredictionY: S.py,
+      ClosestPoint: S.closest,
+      FixedPart: S.part,
+      Smoothness: S.smooth,
+      MaxStudsCheck: S.studchk,
+      MaxStuds: S.studs,
+      UnlockOnDeath: S.unlock,
+      SelfDeathCheck: S.selfdeath,
+      StickyMode: S.sticky,
+      StabilizerDeadzone: S.dead,
+      ReactionDelay: S.react,
+      Streamproof: S.stream,
+      CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
+      CurveP2: { x: curveState.p2.x, y: curveState.p2.y },
+      triggerbot: {
+        Enabled: S.trig,
+        Keybind: S.trigkey,
+        KeybindMode: S.trigmode.toLowerCase(),
+        RequireCamlock: S.camlock,
+        AimPart: S.tpart,
+        Radius: S.rad,
+        Delay: S.tdelay,
+        GunswitchDelay: S.tgun,
+        StudCheck: S.tstud,
+        MaxStuds: S.tstuds,
+        DeathCheck: S.tdeath,
+        SelfDeathCheck: S.tself,
+        WeaponSpecific: S.wspec,
+        WeaponConfigs: weaponConfigs
+      },
+      macro: {
+        Enabled: S.macro,
+        Keybind: S.mkey,
+        KeybindMode: S.mmode.toLowerCase(),
+        OutputMode: S.mout.toLowerCase(),
+        Keys: ['I','O'],
+        Delay: S.mdelay,
+        SelfDeathCheck: S.mself
+      },
+      UIBackground: { Enabled: S.uibg, URL: S.uibgurl || '' }
+    };
+    return out;
+  }
 
-document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => navigate(t.dataset.page)));
-document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => navigate(b.dataset.go)));
+  function fromBackend(c){
+    if (!c || typeof c !== 'object') return;
+    function set(k, v){ S[k] = v; }
+    set('aim',       c.Enabled !== false);
+    set('aimkey',    c.Keybind || 'Q');
+    set('aimmode',   (c.KeybindMode || 'toggle').toLowerCase() === 'hold' ? 'Hold' : 'Toggle');
+    set('webkey',    c.WebviewKeybind || 'F8');
+    set('predict',   c.PredictTarget !== false);
+    set('px',        c.PredictionX !== undefined ? c.PredictionX : (c.Prediction !== undefined ? c.Prediction : 0.10));
+    set('py',        c.PredictionY !== undefined ? c.PredictionY : (c.Prediction !== undefined ? c.Prediction : 0.10));
+    set('closest',   c.ClosestPoint !== undefined ? c.ClosestPoint : (c.ClosestPart !== undefined ? c.ClosestPart : true));
+    set('part',      c.FixedPart || 'Head');
+    set('smooth',    c.Smoothness !== undefined ? c.Smoothness : 0.35);
+    set('studchk',   c.MaxStudsCheck !== false);
+    set('studs',     c.MaxStuds !== undefined ? c.MaxStuds : 500);
+    set('unlock',    c.UnlockOnDeath !== false);
+    set('selfdeath', c.SelfDeathCheck !== false);
+    set('sticky',    c.StickyMode !== false);
+    set('dead',      c.StabilizerDeadzone !== undefined ? c.StabilizerDeadzone : 3.0);
+    set('react',     c.ReactionDelay !== undefined ? c.ReactionDelay : 0.12);
+    set('stream',    c.Streamproof === true);
+    if (c.CurveP1) curveState.p1 = { x: c.CurveP1.x, y: c.CurveP1.y };
+    if (c.CurveP2) curveState.p2 = { x: c.CurveP2.x, y: c.CurveP2.y };
 
-const configTabPopup = document.getElementById("configTabPopup");
-const configTabBtn = document.querySelector('.tab[data-page="configuration"]');
+    var tb = c.triggerbot || {};
+    set('trig',    tb.Enabled === true);
+    set('trigkey', tb.Keybind || 'E');
+    set('trigmode',(tb.KeybindMode || 'hold').toLowerCase() === 'toggle' ? 'Toggle' : 'Hold');
+    set('camlock', tb.RequireCamlock !== false);
+    set('tpart',   tb.AimPart || 'Head');
+    set('rad',     tb.Radius !== undefined ? tb.Radius : 12.0);
+    set('tdelay',  tb.Delay !== undefined ? tb.Delay : 0.12);
+    set('tgun',    tb.GunswitchDelay !== undefined ? tb.GunswitchDelay : 0.0);
+    set('tstud',   tb.StudCheck !== false);
+    set('tstuds',  tb.MaxStuds !== undefined ? tb.MaxStuds : 500);
+    set('tdeath',  tb.DeathCheck !== false);
+    set('tself',   tb.SelfDeathCheck !== false);
+    set('wspec',   tb.WeaponSpecific === true);
+    if (tb.WeaponConfigs && typeof tb.WeaponConfigs === 'object') {
+      weaponConfigs = {};
+      for (var w in tb.WeaponConfigs) weaponConfigs[w] = tb.WeaponConfigs[w];
+      WEAPONS.forEach(function(w){ if (!weaponConfigs[w[0]]) weaponConfigs[w[0]] = Object.assign({}, w[1]); });
+    }
 
-configTabBtn.addEventListener("contextmenu", e => {
-  e.preventDefault();
-  const rect = configTabBtn.getBoundingClientRect();
-  configTabPopup.style.top = (rect.bottom + 4) + "px";
-  configTabPopup.style.left = Math.max(8, rect.left - 30) + "px";
-  configTabPopup.querySelectorAll(".popup-item").forEach(item => {
-    item.classList.toggle("selected", item.dataset.mode === configMode);
-  });
-  configTabPopup.classList.add("show");
-});
+    var mc = c.macro || {};
+    set('macro',  mc.Enabled === true);
+    set('mkey',   mc.Keybind || 'F');
+    set('mmode',  (mc.KeybindMode || 'toggle').toLowerCase() === 'hold' ? 'Hold' : 'Toggle');
+    set('mout',   (mc.OutputMode || 'keyboard').toLowerCase() === 'mouse' ? 'Mouse' : 'Keyboard');
+    set('mdelay', mc.Delay !== undefined ? mc.Delay : 0.05);
+    set('mself',  mc.SelfDeathCheck !== false);
 
-configTabPopup.querySelectorAll(".popup-item").forEach(item => {
-  item.addEventListener("click", () => {
-    configMode = item.dataset.mode;
-    configTabPopup.classList.remove("show");
-    navigate("configuration");
-    const label = configMode === "aim" ? "Aim assist" : configMode === "triggerbot" ? "Triggerbot" : "Movement";
-    showToast(label);
-  });
-});
+    var bg = c.UIBackground || { Enabled: false, URL: '' };
+    set('uibg',    bg.Enabled === true);
+    set('uibgurl', bg.URL || '');
+    applyUIBackground();
+  }
 
-document.addEventListener("click", e => {
-  if (!configTabPopup.contains(e.target) && e.target !== configTabBtn) configTabPopup.classList.remove("show");
-});
-
-function tickTimer() {
-  const s = Math.floor((Date.now() - sessionStart) / 1000);
-  const hh = String(Math.floor(s / 3600)).padStart(2, "0");
-  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
-  const ss = String(s % 60).padStart(2, "0");
-  document.getElementById("sessionBar").textContent = `${hh}:${mm}:${ss}`;
-}
-setInterval(tickTimer, 1000);
-tickTimer();
-
-async function refreshSession() {
-  try {
-    const response = await fetch("/api/me", { credentials: "include" });
-    if (!response.ok) throw new Error("fail");
-    const data = await response.json();
-    if (!data.authenticated) { window.location.href = "/"; return; }
-    const username = data.username || "user";
-    currentUser = username;
-    document.getElementById("userTag").textContent = "light";
-    document.getElementById("statUsername").textContent = username;
-    document.getElementById("accountUsername").textContent = username;
-    document.getElementById("accountStatus").textContent = "Active";
-    document.getElementById("accountSession").textContent = "Authenticated";
+  async function saveConfig(){
     try {
-      const dRes = await fetch("/api/dashboard", { credentials: "include" });
-      if (dRes.ok) {
-        const d = await dRes.json();
-        document.getElementById("accountHwid").textContent = d.hwid || "not bound";
+      var r = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(toBackend())
+      });
+      if (r.ok) {
+        isDirty = false;
+        stateEl.classList.remove('busy'); stt.textContent = 'Saved';
+        setTimeout(function(){ if (!isDirty) stt.textContent = 'Saved'; }, 800);
+      } else {
+        stateEl.classList.remove('busy'); stt.textContent = 'Save failed';
+      }
+    } catch (e) {
+      stateEl.classList.remove('busy'); stt.textContent = 'Save error';
+    }
+  }
+
+  async function loadConfig(){
+    try {
+      var r = await fetch('/api/config', { credentials: 'include' });
+      if (!r.ok) return;
+      var cfg = await r.json();
+      if (cfg && Object.keys(cfg).length) fromBackend(cfg);
+      render();
+    } catch (e) { /* ignore */ }
+  }
+
+  function applyUIBackground(){
+    if (!S.uibg || !S.uibgurl) {
+      document.body.classList.remove('ui-bg');
+      document.body.style.backgroundImage = '';
+      return;
+    }
+    document.body.style.backgroundImage = 'url("' + String(S.uibgurl).replace(/"/g, '\\"') + '")';
+    document.body.classList.add('ui-bg');
+  }
+
+  // ============================================================
+  // Row rendering
+  // ============================================================
+  function control(r){
+    if (r.t === 'key') {
+      var kb = el('button', 'btn keybtn', S[r.k] || '');
+      kb.setAttribute('aria-label', r.l + ' (click to change)');
+      kb.onclick = function(e){
+        e.stopPropagation();
+        kb.textContent = 'Press a key…'; kb.classList.add('cap');
+        function done(ev){
+          ev.preventDefault(); ev.stopPropagation();
+          if (ev.key !== 'Escape') {
+            var map = {' ':'Space', Control:'Ctrl', Escape:'Esc'};
+            var k = ev.key;
+            S[r.k] = map[k] || (k.length === 1 ? k.toUpperCase() : k);
+            if (r.k === 'aimkey') kb.textContent = S[r.k];
+            else if (r.k === 'trigkey') kb.textContent = S[r.k];
+            else kb.textContent = S[r.k];
+            saved();
+          }
+          kb.classList.remove('cap');
+          if (!S[r.k]) kb.textContent = r.v;
+          document.removeEventListener('keydown', done, true);
+        }
+        document.addEventListener('keydown', done, true);
+      };
+      return kb;
+    }
+    if (r.t === 'toggle') {
+      var b = el('button', 'sw');
+      b.setAttribute('role','switch');
+      b.setAttribute('aria-label', r.l);
+      b.setAttribute('aria-checked', S[r.k] ? 'true' : 'false');
+      b.onclick = function(){
+        S[r.k] = !S[r.k];
+        b.setAttribute('aria-checked', S[r.k] ? 'true' : 'false');
+        if (r.k === 'uibg') applyUIBackground();
+        if (r.k === 'wspec') { renderKeep(); }
+        saved();
+      };
+      return b;
+    }
+    if (r.t === 'select') {
+      var w = el('div','dd'), lab = el('span','', S[r.k]), btn = el('button','dd-btn'), m = el('div','dd-menu');
+      btn.appendChild(lab);
+      btn.insertAdjacentHTML('beforeend','<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>');
+      btn.setAttribute('aria-haspopup','listbox');
+      btn.setAttribute('aria-expanded','false');
+      btn.setAttribute('aria-label', r.l);
+      m.hidden = true; m.setAttribute('role','listbox');
+      r.o.forEach(function(o){
+        var i = el('button','', o);
+        i.setAttribute('role','option');
+        i.setAttribute('aria-selected', o === S[r.k] ? 'true' : 'false');
+        i.onclick = function(e){
+          e.stopPropagation();
+          S[r.k] = o; lab.textContent = o; m.hidden = true; btn.setAttribute('aria-expanded','false');
+          [].forEach.call(m.children, function(x){ x.setAttribute('aria-selected', x === i ? 'true' : 'false'); });
+          saved();
+        };
+        m.appendChild(i);
+      });
+      btn.onclick = function(e){
+        e.stopPropagation();
+        var open = m.hidden;
+        closeMenus(m);
+        m.hidden = !open;
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      w.appendChild(btn); w.appendChild(m);
+      return w;
+    }
+    if (r.t === 'slider') {
+      var s = el('div','sl'), inp = el('input'), v = el('span','mono');
+      inp.type = 'range'; inp.min = r.min; inp.max = r.max; inp.step = r.step;
+      inp.value = S[r.k]; inp.setAttribute('aria-label', r.l);
+      var paint = function(){
+        inp.style.setProperty('--p', ((inp.value - r.min) / (r.max - r.min) * 100) + '%');
+        v.textContent = r.f(+inp.value);
+      };
+      inp.oninput = function(){ S[r.k] = +inp.value; paint(); };
+      inp.onchange = function(){ saved(); };
+      paint();
+      s.appendChild(inp); s.appendChild(v);
+      return s;
+    }
+    if (r.t === 'seg') {
+      var g = el('div','seg');
+      g.setAttribute('role','radiogroup');
+      g.setAttribute('aria-label', r.l);
+      r.o.forEach(function(o){
+        var bb = el('button','', o);
+        bb.setAttribute('role','radio');
+        bb.setAttribute('aria-checked', o === S[r.k] ? 'true' : 'false');
+        bb.onclick = function(){
+          S[r.k] = o;
+          [].forEach.call(g.children, function(x){ x.setAttribute('aria-checked', x === bb ? 'true' : 'false'); });
+          saved();
+        };
+        g.appendChild(bb);
+      });
+      return g;
+    }
+    if (r.t === 'url') {
+      var u = el('input');
+      u.type = 'text';
+      u.value = S[r.k] || '';
+      u.placeholder = 'https://example.com/image.png';
+      u.style.minWidth = '280px';
+      u.style.padding = '7px 10px';
+      u.style.border = '0';
+      u.style.borderRadius = '8px';
+      u.style.background = 'rgba(255,255,255,.08)';
+      u.style.outline = '0';
+      u.oninput = function(){ S[r.k] = u.value; };
+      u.onchange = function(){ applyUIBackground(); saved(); };
+      return u;
+    }
+    if (r.t === 'button') {
+      var bt = el('button', 'btn' + (r.danger ? ' danger' : ''), r.b);
+      bt.onclick = function(){
+        if (r.k === 'destruct') {
+          if (!bt.dataset.arm) {
+            bt.dataset.arm = '1';
+            bt.textContent = 'Click again to confirm';
+            setTimeout(function(){ if (bt.dataset.arm){ delete bt.dataset.arm; bt.textContent = r.b; } }, 3000);
+            return;
+          }
+          signOut();
+          return;
+        }
+        if (r.k === 'bezier') { openBezier(); return; }
+        if (r.k === 'publish') { openPublish(); return; }
+        saved();
+      };
+      return bt;
+    }
+    if (r.t === 'info') {
+      return el('span','mono', S['__'+r.key] || '—');
+    }
+    if (r.t === 'weapon') {
+      return el('span','mono', r.wname);
+    }
+    if (r.t === 'community') {
+      var c = el('div','cards'); c.id = 'communityGrid';
+      c.style.flex = '1';
+      c.style.minWidth = '260px';
+      return c;
+    }
+    return el('span','mono', r.val || '');
+  }
+
+  function rowEl(r){
+    var row = el('div','row');
+    if (r.t === 'weapon') {
+      // Render an inline weapon card: name + part/radius/delay
+      var wname = r.wname;
+      var wcfg = weaponConfigs[wname] || {};
+      var card = el('div','card');
+      card.style.flex = '1';
+      var h = el('h4','', wname);
+      card.appendChild(h);
+      var pRow = el('div','row'); pRow.style.minHeight = '36px';
+      var pT = el('div','txt'); var pb = el('b','', 'Aim part'); pT.appendChild(pb);
+      pRow.appendChild(pT);
+      var pSel = el('div','dd');
+      var pBtn = el('button','dd-btn'); var pLab = el('span','', wcfg.AimPart || 'Head');
+      pBtn.appendChild(pLab);
+      pBtn.insertAdjacentHTML('beforeend','<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>');
+      var pMenu = el('div','dd-menu'); pMenu.hidden = true;
+      PARTS.forEach(function(o){
+        var it = el('button','', o);
+        it.onclick = function(e){
+          e.stopPropagation(); wcfg.AimPart = o; pLab.textContent = o; pMenu.hidden = true;
+          weaponConfigs[wname] = wcfg; saved();
+        };
+        pMenu.appendChild(it);
+      });
+      pBtn.onclick = function(e){ e.stopPropagation(); pMenu.hidden = !pMenu.hidden; };
+      pSel.appendChild(pBtn); pSel.appendChild(pMenu);
+      pRow.appendChild(pSel);
+      card.appendChild(pRow);
+      // Radius
+      var rr = el('div','row'); rr.style.minHeight = '36px';
+      var rrT = el('div','txt'); var rrb = el('b','','Radius'); rrT.appendChild(rrb); rr.appendChild(rrT);
+      var rrSl = el('div','sl'); var rrIn = el('input'); rrIn.type='range'; rrIn.min=1; rrIn.max=30; rrIn.step=0.5; rrIn.value = wcfg.Radius || 12.0;
+      var rrV = el('span','mono', one(wcfg.Radius || 12.0));
+      rrIn.oninput = function(){ var val = +rrIn.value; rrV.textContent = one(val); wcfg.Radius = val; };
+      rrIn.onchange = function(){ weaponConfigs[wname] = wcfg; saved(); };
+      rrSl.appendChild(rrIn); rrSl.appendChild(rrV);
+      rr.appendChild(rrSl);
+      card.appendChild(rr);
+      // Delay
+      var dd = el('div','row'); dd.style.minHeight = '36px';
+      var ddT = el('div','txt'); var ddb = el('b','','Delay'); ddT.appendChild(ddb); dd.appendChild(ddT);
+      var ddSl = el('div','sl'); var ddIn = el('input'); ddIn.type='range'; ddIn.min=0; ddIn.max=1; ddIn.step=0.01; ddIn.value = wcfg.Delay || 0.08;
+      var ddV = el('span','mono', sec(wcfg.Delay || 0.08));
+      ddIn.oninput = function(){ var val = +ddIn.value; ddV.textContent = sec(val); wcfg.Delay = val; };
+      ddIn.onchange = function(){ weaponConfigs[wname] = wcfg; saved(); };
+      ddSl.appendChild(ddIn); ddSl.appendChild(ddV);
+      dd.appendChild(ddSl);
+      card.appendChild(dd);
+      row.appendChild(card);
+      return row;
+    }
+
+    var t = el('div','txt');
+    var b = el('b'); b.textContent = r.l; t.appendChild(b);
+    if (r.d) { var sp = el('span'); sp.textContent = r.d; t.appendChild(sp); }
+    row.appendChild(t);
+    row.appendChild(control(r));
+    return row;
+  }
+
+  // ============================================================
+  // Search and render
+  // ============================================================
+  function renderKeep(){
+    var y = content.scrollTop;
+    render();
+    content.scrollTop = y;
+  }
+
+  function render(){
+    content.innerHTML = '';
+    var query = (q.value || '').trim().toLowerCase();
+    if (query) {
+      var n = 0;
+      CFG.forEach(function(p){
+        p.groups.forEach(function(g){
+          if (g.when && !S[g.when]) return;
+          var hits = g.rows.filter(function(r){ return ((r.l || '') + ' ' + (r.d || '')).toLowerCase().indexOf(query) > -1; });
+          if (!hits.length) return;
+          if (!n) {
+            var ph = el('div','ph','<b>Results</b><span></span>');
+            content.appendChild(ph);
+          }
+          n += hits.length;
+          var grp = el('div','grp'); var h = el('h3'); h.textContent = p.name + ' · ' + g.n; grp.appendChild(h);
+          var pan = el('div','panel');
+          hits.forEach(function(r){ pan.appendChild(rowEl(r)); });
+          grp.appendChild(pan); content.appendChild(grp);
+        });
+      });
+      if (!n) content.appendChild(el('div','empty','Nothing matches "' + (q.value||'').replace(/</g,'&lt;') + '"'));
+      else content.querySelector('.ph span').textContent = n + (n === 1 ? ' setting' : ' settings');
+      [].forEach.call(nav.querySelectorAll('button'), function(b){ b.setAttribute('aria-selected','false'); });
+      return;
+    }
+    var p = CFG.filter(function(x){ return x.id === cur; })[0];
+    content.appendChild(el('div','ph','<b>' + p.name + '</b><span>' + p.sub + '</span>'));
+    p.groups.forEach(function(g){
+      if (g.when && !S[g.when]) return;
+      var grp = el('div','grp'); var h = el('h3'); h.textContent = g.n; grp.appendChild(h);
+      var pan = el('div','panel');
+      g.rows.forEach(function(r){ pan.appendChild(rowEl(r)); });
+      grp.appendChild(pan); content.appendChild(grp);
+    });
+    // Fill in info rows for the Account page
+    if (cur === 'account') {
+      S['__username'] = S['__username'] || '—';
+      S['__session']  = S['__session']  || '—';
+      S['__hwid']     = S['__hwid']     || '—';
+      S['__client']   = S['__client']   || '—';
+      [].forEach.call(content.querySelectorAll('.mono'), function(m, i){ /* noop */ });
+    }
+    // Render community grid if on that page
+    if (cur === 'community') loadCommunity();
+    [].forEach.call(nav.querySelectorAll('button'), function(b){ b.setAttribute('aria-selected', b.dataset.id === cur ? 'true' : 'false'); });
+    content.scrollTop = 0;
+  }
+
+  // Nav
+  var lastG = '';
+  CFG.forEach(function(p, i){
+    if (p.g !== lastG) {
+      nav.appendChild(el('small','', p.g));
+      lastG = p.g;
+    }
+    var b = el('button','','<span>' + p.name + '</span><i>' + (i + 1) + '</i>');
+    b.dataset.id = p.id;
+    b.setAttribute('role','tab');
+    b.onclick = function(){ cur = p.id; q.value = ''; render(); };
+    nav.appendChild(b);
+  });
+
+  q.addEventListener('input', render);
+  document.addEventListener('click', function(){ closeMenus(); });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') {
+      closeMenus();
+      if (document.activeElement === q) { q.value = ''; q.blur(); render(); }
+      return;
+    }
+    var typing = /INPUT|TEXTAREA/.test(document.activeElement.tagName) && document.activeElement.type !== 'range';
+    if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === '/') { e.preventDefault(); q.focus(); return; }
+    var n = parseInt(e.key, 10);
+    if (n >= 1 && n <= CFG.length) { cur = CFG[n-1].id; q.value = ''; render(); }
+  });
+
+  // ============================================================
+  // Session / account / client status
+  // ============================================================
+  var currentUser = null;
+  async function refreshSession(){
+    try {
+      var r = await fetch('/api/me', { credentials: 'include' });
+      var d = await r.json();
+      if (!d.authenticated) { window.location.href = '/'; return; }
+      currentUser = d.username || 'user';
+      S['__username'] = currentUser;
+      S['__session']  = 'Authenticated';
+      try {
+        var dr = await fetch('/api/dashboard', { credentials: 'include' });
+        if (dr.ok) {
+          var dd = await dr.json();
+          S['__hwid'] = dd.hwid || 'not bound';
+        }
+      } catch (e) {}
+      refreshClientStatus();
+      setInterval(refreshClientStatus, 3000);
+    } catch (e) {
+      S['__username'] = '—';
+      S['__session']  = 'unable to verify';
+    }
+  }
+
+  async function refreshClientStatus(){
+    if (!currentUser) return;
+    try {
+      var r = await fetch('/api/client/status-by-user/' + encodeURIComponent(currentUser), { credentials: 'include' });
+      if (!r.ok) return;
+      var d = await r.json();
+      S['__client'] = d.connected ? 'Connected' : 'Offline';
+      if (cur === 'account') {
+        var els = content.querySelectorAll('.mono');
+        // update only the client row (last one)
+        els.forEach(function(m){});
       }
     } catch (e) {}
-    refreshClientStatus();
-    setInterval(refreshClientStatus, 3000);
-  } catch {
-    document.getElementById("accountStatus").textContent = "Unknown";
-    document.getElementById("accountSession").textContent = "Unable to verify";
   }
-}
 
-async function refreshClientStatus() {
-  if (!currentUser) return;
-  try {
-    const r = await fetch(`/api/client/status-by-user/${currentUser}`, { credentials: "include" });
-    if (!r.ok) return;
-    const d = await r.json();
-    const el = document.getElementById("clientStatus");
-    if (d.connected) { el.textContent = "Connected"; el.style.color = "#5a9e6e"; }
-    else { el.textContent = "Offline"; el.style.color = ""; }
-  } catch (e) {}
-}
-
-document.getElementById("logoutBtn").addEventListener("click", async () => {
-  try {
-    const r = await fetch("/api/logout", { method: "POST", credentials: "include" });
-    if (r.ok) window.location.href = "/";
-  } catch { showToast("couldn't sign out"); }
-});
-
-document.getElementById("closeAppBtn").addEventListener("click", async () => {
-  try {
-    await fetch("/api/client/shutdown", { method: "POST", credentials: "include" });
-    showToast("closing...");
-    setTimeout(() => { try { window.close(); } catch (e) {} }, 500);
-  } catch (e) { showToast("close failed"); }
-});
-
-function setupToggle(id) {
-  const button = document.getElementById(id);
-  const initial = button.classList.contains("on");
-  function setState(enabled) {
-    button.classList.toggle("on", enabled);
-    button.setAttribute("aria-checked", String(enabled));
+  function tickTimer(){
+    var s = Math.floor((Date.now() - sessionStart) / 1000);
+    var hh = String(Math.floor(s / 3600)).padStart(2,'0');
+    var mm = String(Math.floor((s % 3600) / 60)).padStart(2,'0');
+    var ss = String(s % 60).padStart(2,'0');
+    $('sessionBar').textContent = hh + ':' + mm + ':' + ss;
   }
-  setState(initial);
-  button.addEventListener("click", () => {
-    setState(!button.classList.contains("on"));
-    queueSave();
+  setInterval(tickTimer, 1000); tickTimer();
+
+  // ============================================================
+  // Sign out / destruct
+  // ============================================================
+  function signOut(){
+    var overlay = el('div','gone','<b>Session closed</b><span>Signing you out…</span>');
+    document.body.appendChild(overlay);
+    fetch('/api/logout', { method: 'POST', credentials: 'include' }).catch(function(){});
+    fetch('/api/client/shutdown', { method: 'POST', credentials: 'include' }).catch(function(){});
+    setTimeout(function(){ window.location.href = '/'; }, 600);
+  }
+  $('signOutBtn').onclick = signOut;
+  $('closeBtn').onclick = signOut;
+
+  // ============================================================
+  // Bezier curve editor
+  // ============================================================
+  var bezBounds = { left:34, right:582, top:18, bottom:278 };
+  var bezSvg = $('bezierSvg');
+  var bezPath = $('cpath'), bezH1 = $('hline1'), bezH2 = $('hline2');
+  var bezC1 = $('cp1'), bezC2 = $('cp2');
+  var bezDrag = null;
+  function bezClamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+  function bezDraw(){
+    var p1 = curveState.p1, p2 = curveState.p2;
+    bezPath.setAttribute('d','M ' + bezBounds.left + ' ' + bezBounds.bottom +
+      ' C ' + p1.x + ' ' + p1.y + ' ' + p2.x + ' ' + p2.y + ' ' + bezBounds.right + ' ' + bezBounds.top);
+    bezH1.setAttribute('d','M ' + bezBounds.left + ' ' + bezBounds.bottom + ' L ' + p1.x + ' ' + p1.y);
+    bezH2.setAttribute('d','M ' + p2.x + ' ' + p2.y + ' L ' + bezBounds.right + ' ' + bezBounds.top);
+    bezC1.setAttribute('cx', p1.x); bezC1.setAttribute('cy', p1.y);
+    bezC2.setAttribute('cx', p2.x); bezC2.setAttribute('cy', p2.y);
+    $('pv1').textContent = Math.round((p1.x - 34) / 548 * 100) + '%, ' + Math.round((278 - p1.y) / 260 * 100) + '%';
+    $('pv2').textContent = Math.round((p2.x - 34) / 548 * 100) + '%, ' + Math.round((278 - p2.y) / 260 * 100) + '%';
+  }
+  function bezFromEvent(ev){
+    var pt = bezSvg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+    var m = bezSvg.getScreenCTM(); if (!m) return null;
+    var l = pt.matrixTransform(m.inverse());
+    return { x: bezClamp(l.x, bezBounds.left, bezBounds.right), y: bezClamp(l.y, bezBounds.top, bezBounds.bottom) };
+  }
+  bezSvg.addEventListener('pointermove', function(ev){
+    if (!bezDrag) return;
+    var p = bezFromEvent(ev); if (!p) return;
+    curveState[bezDrag] = p; bezDraw();
   });
-  return { get: () => button.classList.contains("on"), set: setState };
-}
+  bezSvg.addEventListener('pointerup', function(){ if (bezDrag){ bezDrag = null; saved(); } });
+  bezSvg.addEventListener('pointercancel', function(){ bezDrag = null; });
+  [bezC1, bezC2].forEach(function(c){
+    c.addEventListener('pointerdown', function(ev){
+      bezDrag = c.dataset.pt === '1' ? 'p1' : 'p2';
+      c.setPointerCapture && c.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    });
+  });
+  function openBezier(){ bezDraw(); $('bezierModal').classList.add('show'); }
+  $('bezierClose').onclick = function(){ $('bezierModal').classList.remove('show'); };
+  $('bezierReset').onclick = function(){ curveState.p1 = {x:180,y:200}; curveState.p2 = {x:420,y:80}; bezDraw(); saved(); };
 
-function initCustomSelect(root, onchange) {
-  const trigger = root.querySelector(".custom-select-trigger");
-  const options = root.querySelectorAll(".custom-option");
-  const valueEl = trigger.querySelector(".value");
-  function close() { root.classList.remove("open"); trigger.setAttribute("aria-expanded", "false"); }
-  function open() { root.classList.add("open"); trigger.setAttribute("aria-expanded", "true"); }
-  function select(option) {
-    options.forEach(o => o.classList.remove("selected"));
-    option.classList.add("selected");
-    root.dataset.value = option.dataset.value;
-    valueEl.textContent = option.querySelector("span").textContent;
-    close();
-    if (onchange) onchange(option.dataset.value);
-    queueSave();
+  // ============================================================
+  // Community — list, publish, like, load, save-mine
+  // ============================================================
+  var communityConfigs = [], myLikes = new Set();
+  async function loadCommunity(){
+    var grid = document.getElementById('communityGrid');
+    if (!grid) return;
+    grid.innerHTML = '<div class="empty" style="grid-column:1/-1">Loading…</div>';
+    try {
+      var r = await fetch('/api/community/configs', { credentials: 'include' });
+      if (!r.ok) { grid.innerHTML = '<div class="empty" style="grid-column:1/-1">Failed to load.</div>'; return; }
+      var d = await r.json();
+      communityConfigs = d.configs || [];
+      myLikes = new Set(d.liked_ids || []);
+      renderCommunity();
+    } catch (e) {
+      grid.innerHTML = '<div class="empty" style="grid-column:1/-1">Connection error.</div>';
+    }
   }
-  trigger.addEventListener("click", e => {
-    e.stopPropagation();
-    if (root.classList.contains("open")) close();
-    else {
-      document.querySelectorAll(".custom-select.open").forEach(s => {
-        if (s !== root) { s.classList.remove("open"); s.querySelector(".custom-select-trigger").setAttribute("aria-expanded", "false"); }
+  function renderCommunity(){
+    var grid = document.getElementById('communityGrid');
+    if (!grid) return;
+    if (!communityConfigs.length) {
+      grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No configs yet. Click "Publish config" above.</div>';
+      return;
+    }
+    grid.innerHTML = '';
+    communityConfigs.forEach(function(c){
+      var card = el('div','card');
+      var liked = myLikes.has(c.id);
+      card.innerHTML =
+        '<h4>' + esc(c.name) + '</h4>' +
+        '<div class="meta">by ' + esc(c.author || 'unknown') + ' · ' + when(c.created_at) + '</div>' +
+        '<div class="desc">' + esc(c.description || 'No description.') + '</div>' +
+        '<div class="foot">' +
+          '<button class="like ' + (liked ? 'on' : '') + '"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>' + (c.likes || 0) + '</button>' +
+          '<div style="display:flex;gap:6px">' +
+            '<button class="mini" data-save>Save mine</button>' +
+            '<button class="mini primary" data-load>Load</button>' +
+          '</div>' +
+        '</div>';
+      card.querySelector('.like').onclick = function(){ toggleLike(c.id); };
+      card.querySelector('[data-save]').onclick = function(){ saveCommunityMine(c.id); };
+      card.querySelector('[data-load]').onclick = function(){ loadCommunityIntoUI(c); };
+      grid.appendChild(card);
+    });
+  }
+  async function toggleLike(id){
+    try {
+      var r = await fetch('/api/community/configs/' + id + '/like', { method: 'POST', credentials: 'include' });
+      if (!r.ok) { toast("Couldn't like"); return; }
+      var d = await r.json();
+      var cfg = communityConfigs.find(function(c){ return c.id === id; });
+      if (cfg) cfg.likes = d.likes;
+      if (d.liked) myLikes.add(id); else myLikes.delete(id);
+      renderCommunity();
+    } catch (e) { toast('Connection error'); }
+  }
+  function loadCommunityIntoUI(c){
+    fromBackend(c.config_data || {});
+    renderKeep();
+    saved();
+    toast('Config loaded');
+  }
+  async function saveCommunityMine(id){
+    try {
+      var r = await fetch('/api/community/configs/save-mine', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        credentials:'include',
+        body: JSON.stringify({ community_config_id: id })
       });
-      open();
-    }
-  });
-  options.forEach(o => o.addEventListener("click", e => { e.stopPropagation(); select(o); }));
-  document.addEventListener("click", e => { if (!root.contains(e.target)) close(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
-}
-document.querySelectorAll(".custom-select").forEach(root => initCustomSelect(root));
-
-function initFillSlider(el, onchange) {
-  const min = Number(el.dataset.min);
-  const max = Number(el.dataset.max);
-  const step = Number(el.dataset.step) || 1;
-  const decimals = Number(el.dataset.decimals) || 0;
-  const fill = el.querySelector(".fill-slider-fill");
-  const label = el.querySelector(".fill-slider-value");
-  const labelInv = el.querySelector(".fill-slider-value-inverse");
-  let value = Number(el.dataset.value);
-  let dragging = false;
-
-  function fmt(v) {
-    return decimals === 0 ? String(Math.round(v)) : v.toFixed(decimals);
+      if (r.ok) toast('Added to your configs');
+      else toast('Save failed');
+    } catch (e) { toast('Connection error'); }
   }
-  function set(v, silent) {
-    v = Math.min(max, Math.max(min, v));
-    const steps = Math.round((v - min) / step);
-    v = min + steps * step;
-    if (decimals === 0) v = Math.round(v);
-    else v = Math.round(v * Math.pow(10, decimals)) / Math.pow(10, decimals);
-    value = v;
-    el.dataset.value = String(v);
-    const pct = ((v - min) / (max - min)) * 100;
-    fill.style.width = pct + "%";
-    el.style.setProperty("--fill-pct", pct + "%");
-    const text = fmt(v);
-    label.textContent = text;
-    labelInv.textContent = text;
-    if (!silent) {
-      if (onchange) onchange(v);
-      queueSave();
-    }
-  }
-  function fromEvent(e) {
-    const rect = el.getBoundingClientRect();
-    const x = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
-    set(min + Math.min(1, Math.max(0, x / rect.width)) * (max - min));
-  }
-
-  el.addEventListener("pointerdown", e => { e.preventDefault(); dragging = true; el.setPointerCapture?.(e.pointerId); fromEvent(e); });
-  el.addEventListener("pointermove", e => { if (dragging) { e.preventDefault(); fromEvent(e); } });
-  el.addEventListener("pointerup", e => { e.preventDefault(); dragging = false; try { el.releasePointerCapture?.(e.pointerId); } catch (err) {} });
-  el.addEventListener("pointercancel", () => { dragging = false; });
-  el.addEventListener("touchstart", e => e.preventDefault(), { passive: false });
-
-  set(value, true);
-  return { get: () => value, set: v => set(v, true) };
-}
-
-const keybindInput = document.getElementById("cfgKeybind");
-const webviewKeybindInput = document.getElementById("cfgWebviewKeybind");
-const tbKeybindInput = document.getElementById("tbKeybind");
-const macroKeybindInput = document.getElementById("macroKeybind");
-let capturingKeybind = null;
-
-function startCapture(input) {
-  capturingKeybind = input;
-  input.value = "…";
-  input.style.borderColor = "#35353a";
-}
-
-function stopCapture() {
-  if (capturingKeybind) capturingKeybind.style.borderColor = "";
-  capturingKeybind = null;
-}
-
-function setKeybindLabel(input, label) {
-  input.value = label;
-  stopCapture();
-  queueSave();
-}
-
-keybindInput.addEventListener("click", () => startCapture(keybindInput));
-webviewKeybindInput.addEventListener("click", () => startCapture(webviewKeybindInput));
-tbKeybindInput.addEventListener("click", () => startCapture(tbKeybindInput));
-macroKeybindInput.addEventListener("click", () => startCapture(macroKeybindInput));
-
-const keybindModePopup = document.getElementById("keybindModePopup");
-
-function openKeybindModePopup(inputEl, currentMode, targetTag) {
-  const rect = inputEl.getBoundingClientRect();
-  keybindModePopup.style.top = (rect.bottom + 4) + "px";
-  keybindModePopup.style.left = rect.left + "px";
-  keybindModePopup.dataset.target = targetTag;
-  keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
-    item.classList.toggle("selected", item.dataset.mode === currentMode);
-  });
-  keybindModePopup.classList.add("show");
-}
-
-keybindInput.addEventListener("contextmenu", e => {
-  e.preventDefault();
-  openKeybindModePopup(keybindInput, keybindMode, "aim");
-});
-
-tbKeybindInput.addEventListener("contextmenu", e => {
-  e.preventDefault();
-  openKeybindModePopup(tbKeybindInput, tbKeybindMode, "tb");
-});
-
-macroKeybindInput.addEventListener("contextmenu", e => {
-  e.preventDefault();
-  openKeybindModePopup(macroKeybindInput, macroKeybindMode, "macro");
-});
-
-keybindModePopup.querySelectorAll(".popup-item").forEach(item => {
-  item.addEventListener("click", () => {
-    const target = keybindModePopup.dataset.target;
-    if (target === "tb") {
-      tbKeybindMode = item.dataset.mode;
-    } else if (target === "macro") {
-      macroKeybindMode = item.dataset.mode;
-    } else {
-      keybindMode = item.dataset.mode;
-    }
-    keybindModePopup.classList.remove("show");
-    queueSave();
-    showToast(`Keybind mode: ${item.dataset.mode === "hold" ? "Hold" : "Toggle"}`);
-  });
-});
-
-document.addEventListener("click", e => {
-  if (!keybindModePopup.contains(e.target) &&
-      e.target !== keybindInput &&
-      e.target !== tbKeybindInput &&
-      e.target !== macroKeybindInput) {
-    keybindModePopup.classList.remove("show");
-  }
-});
-
-document.addEventListener("keydown", e => {
-  if (!capturingKeybind) return;
-  e.preventDefault();
-  const k = e.key;
-  if (k === "Escape") {
-    if (capturingKeybind === keybindInput) capturingKeybind.value = "Q";
-    else if (capturingKeybind === tbKeybindInput) capturingKeybind.value = "E";
-    else if (capturingKeybind === macroKeybindInput) capturingKeybind.value = "F";
-    else capturingKeybind.value = "F8";
-    stopCapture();
-    return;
-  }
-  let label;
-  if (k.length === 1) label = k.toUpperCase();
-  else if (k.startsWith("F") && k.length <= 3) label = k;
-  else label = k;
-  setKeybindLabel(capturingKeybind, label);
-});
-
-document.addEventListener("pointerdown", e => {
-  if (!capturingKeybind) return;
-  if (e.button === 3) { e.preventDefault(); setKeybindLabel(capturingKeybind, "MB4"); }
-  else if (e.button === 4) { e.preventDefault(); setKeybindLabel(capturingKeybind, "MB5"); }
-}, true);
-
-document.addEventListener("contextmenu", e => { if (capturingKeybind) e.preventDefault(); });
-
-document.addEventListener("mousedown", e => {
-  if (!capturingKeybind) return;
-  if (e.button === 3 || e.button === 4) {
-    e.preventDefault();
-    setKeybindLabel(capturingKeybind, e.button === 3 ? "MB4" : "MB5");
-  }
-});
-
-const curveSvg = document.getElementById("bezierSvg");
-const curvePath = document.getElementById("curvePath");
-const control1 = document.getElementById("control1");
-const control2 = document.getElementById("control2");
-const curveBounds = { left: 34, right: 582, top: 18, bottom: 278 };
-const curveState = { p1: { x: 180, y: 200 }, p2: { x: 420, y: 80 }, dragging: null };
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-
-function curvePointFromEvent(event) {
-  const point = curveSvg.createSVGPoint();
-  point.x = event.clientX; point.y = event.clientY;
-  const matrix = curveSvg.getScreenCTM();
-  if (!matrix) return null;
-  const local = point.matrixTransform(matrix.inverse());
-  return { x: clamp(local.x, curveBounds.left, curveBounds.right), y: clamp(local.y, curveBounds.top, curveBounds.bottom) };
-}
-
-function drawCurve() {
-  const p1 = curveState.p1, p2 = curveState.p2;
-  curvePath.setAttribute("d",
-    "M " + curveBounds.left + " " + curveBounds.bottom +
-    " C " + p1.x + " " + p1.y + " " + p2.x + " " + p2.y + " " +
-    curveBounds.right + " " + curveBounds.top);
-  document.getElementById("handleLine1").setAttribute("d", "M " + curveBounds.left + " " + curveBounds.bottom + " L " + p1.x + " " + p1.y);
-  document.getElementById("handleLine2").setAttribute("d", "M " + p2.x + " " + p2.y + " L " + curveBounds.right + " " + curveBounds.top);
-  control1.setAttribute("cx", p1.x); control1.setAttribute("cy", p1.y);
-  control2.setAttribute("cx", p2.x); control2.setAttribute("cy", p2.y);
-  document.getElementById("point1Value").textContent = Math.round((p1.x - 34) / 548 * 100) + "%, " + Math.round((278 - p1.y) / 260 * 100) + "%";
-  document.getElementById("point2Value").textContent = Math.round((p2.x - 34) / 548 * 100) + "%, " + Math.round((278 - p2.y) / 260 * 100) + "%";
-}
-
-curveSvg.addEventListener("pointermove", event => {
-  if (!curveState.dragging) return;
-  const p = curvePointFromEvent(event);
-  if (!p) return;
-  curveState[curveState.dragging] = p;
-  drawCurve();
-});
-curveSvg.addEventListener("pointerup", () => { if (curveState.dragging) { curveState.dragging = null; queueSave(); } });
-curveSvg.addEventListener("pointercancel", () => { curveState.dragging = null; });
-
-[control1, control2].forEach(point => {
-  point.addEventListener("pointerdown", event => {
-    curveState.dragging = point.dataset.point === "1" ? "p1" : "p2";
-    point.setPointerCapture?.(event.pointerId);
-    event.preventDefault();
-  });
-  point.addEventListener("keydown", event => {
-    const key = event.key;
-    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return;
-    event.preventDefault();
-    const p = curveState[point.dataset.point === "1" ? "p1" : "p2"];
-    const step = event.shiftKey ? 10 : 3;
-    if (key === "ArrowUp") p.y -= step;
-    if (key === "ArrowDown") p.y += step;
-    if (key === "ArrowLeft") p.x -= step;
-    if (key === "ArrowRight") p.x += step;
-    p.x = clamp(p.x, curveBounds.left, curveBounds.right);
-    p.y = clamp(p.y, curveBounds.top, curveBounds.bottom);
-    drawCurve();
-    queueSave();
-  });
-});
-
-document.getElementById("resetCurveBtn").addEventListener("click", () => {
-  curveState.p1 = { x: 180, y: 200 };
-  curveState.p2 = { x: 420, y: 80 };
-  drawCurve();
-  queueSave();
-});
-
-const defaults = {
-  Enabled: true, Keybind: "Q", KeybindMode: "toggle", WebviewKeybind: "F8",
-  PredictTarget: true, PredictionX: 0.10, PredictionY: 0.10,
-  ClosestPoint: true, FixedPart: "Head", Smoothness: 0.35,
-  MaxStudsCheck: true, MaxStuds: 500, UnlockOnDeath: true, SelfDeathCheck: true,
-  StickyMode: true,
-  StabilizerDeadzone: 3.0, ReactionDelay: 0.12,
-  Streamproof: false,
-  CurveP1: { x: 180, y: 200 }, CurveP2: { x: 420, y: 80 },
-  macro: {
-    Enabled: false, Keybind: "F", KeybindMode: "toggle",
-    OutputMode: "keyboard", Keys: ["I", "O"], Delay: 0.05, SelfDeathCheck: true
-  },
-  UIBackground: { Enabled: false, URL: "" }
-};
-
-function queueSave() {
-  isDirty = true;
-  setSaveStatus("saving", "Saving...");
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveConfig, 500);
-}
-
-async function saveConfig() {
-  try {
-    const payload = readConfigFromUI();
-    const r = await fetch("/api/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(payload)
-    });
-    if (r.ok) {
-      isDirty = false;
-      setSaveStatus("saved", "Saved");
-      setTimeout(() => { if (!isDirty) setSaveStatus("", "Ready"); }, 1500);
-    } else {
-      setSaveStatus("error", "Save failed");
-    }
-  } catch (e) {
-    setSaveStatus("error", "Error");
-  }
-}
-
-const cfgToggles = {
-  Enabled: setupToggle("cfgEnabled"),
-  StickyMode: setupToggle("cfgStickyMode"),
-  PredictTarget: setupToggle("cfgPredictTarget"),
-  ClosestPoint: setupToggle("cfgClosestPoint"),
-  MaxStudsCheck: setupToggle("cfgMaxStudsCheck"),
-  UnlockOnDeath: setupToggle("cfgUnlockOnDeath"),
-  SelfDeathCheck: setupToggle("cfgSelfDeathCheck"),
-  Streamproof: setupToggle("cfgStreamproof")
-};
-
-const tbToggles = {
-  Enabled: setupToggle("tbEnabled"),
-  RequireCamlock: setupToggle("tbRequireCamlock"),
-  DeathCheck: setupToggle("tbDeathCheck"),
-  SelfDeathCheck: setupToggle("tbSelfDeathCheck"),
-  StudCheck: setupToggle("tbStudCheck"),
-  WeaponSpecific: setupToggle("tbWeaponSpecific")
-};
-
-document.getElementById("tbWeaponSpecific").addEventListener("click", () => {
-  const isOn = document.getElementById("tbWeaponSpecific").classList.contains("on");
-  document.getElementById("weaponListWrap").style.display = isOn ? "block" : "none";
-});
-
-const sliders = {
-  PredictionX: initFillSlider(document.getElementById("slPredictionX")),
-  PredictionY: initFillSlider(document.getElementById("slPredictionY")),
-  Smoothness: initFillSlider(document.getElementById("slSmoothness")),
-  MaxStuds: initFillSlider(document.getElementById("slMaxStuds")),
-  Deadzone: initFillSlider(document.getElementById("slDeadzone")),
-  ReactionDelay: initFillSlider(document.getElementById("slReactionDelay"))
-};
-
-const tbSliders = {
-  Radius: initFillSlider(document.getElementById("tbRadius")),
-  Delay: initFillSlider(document.getElementById("tbDelay")),
-  MaxStuds: initFillSlider(document.getElementById("tbMaxStuds")),
-  GunswitchDelay: initFillSlider(document.getElementById("tbGunswitchDelay"))
-};
-
-const macroToggles = {
-  Enabled: setupToggle("macroEnabled"),
-  SelfDeathCheck: setupToggle("macroSelfDeathCheck")
-};
-const macroDelaySlider = initFillSlider(document.getElementById("macroDelay"));
-
-const uiBgEnabledToggle = setupToggle("cfgUIBackgroundEnabled");
-const uiBgURLInput = document.getElementById("cfgUIBackgroundURL");
-uiBgURLInput.addEventListener("input", queueSave);
-uiBgURLInput.addEventListener("change", () => applyUIBackground(readUIBackgroundFromUI()));
-uiBgEnabledToggle.set = (v) => {
-  document.getElementById("cfgUIBackgroundEnabled").classList.toggle("on", v);
-  document.getElementById("cfgUIBackgroundEnabled").setAttribute("aria-checked", String(v));
-  applyUIBackground(readUIBackgroundFromUI());
-};
-
-function readUIBackgroundFromUI() {
-  return {
-    Enabled: document.getElementById("cfgUIBackgroundEnabled").classList.contains("on"),
-    URL: uiBgURLInput.value.trim()
+  function openPublish(){ $('pubName').value = ''; $('pubDesc').value = ''; $('publishModal').classList.add('show'); }
+  $('pubCancel').onclick = function(){ $('publishModal').classList.remove('show'); };
+  $('publishModal').addEventListener('click', function(e){ if (e.target === $('publishModal')) $('publishModal').classList.remove('show'); });
+  $('pubConfirm').onclick = async function(){
+    var name = $('pubName').value.trim();
+    var desc = $('pubDesc').value.trim();
+    if (!name) { toast('Name required'); return; }
+    try {
+      var r = await fetch('/api/community/configs', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        credentials:'include',
+        body: JSON.stringify({ name: name, description: desc, config_data: toBackend() })
+      });
+      if (r.ok) {
+        toast('Published!');
+        $('publishModal').classList.remove('show');
+        await loadCommunity();
+      } else {
+        var err = await r.json().catch(function(){ return {}; });
+        toast(err.detail || 'Publish failed');
+      }
+    } catch (e) { toast('Connection error'); }
   };
-}
 
-function applyUIBackground(bg) {
-  if (!bg || !bg.Enabled || !bg.URL) {
-    document.body.classList.remove("ui-bg");
-    document.body.style.backgroundImage = "";
-    return;
-  }
-  document.body.style.backgroundImage = `url("${bg.URL.replace(/"/g, '\\"')}")`;
-  document.body.classList.add("ui-bg");
-}
-
-function renderWeapons() {
-  const container = document.getElementById("weaponCards");
-  container.innerHTML = "";
-  WEAPON_NAMES.forEach(name => {
-    const cfg = weaponConfigs[name] || { AimPart: "Head", Radius: 12.0, Delay: 0.12 };
-    const card = document.createElement("div");
-    card.className = "weapon-card";
-    card.innerHTML = `
-      <div class="weapon-card-head">
-        <div class="weapon-card-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
-      </div>
-      <div class="weapon-card-row">
-        <span class="weapon-card-label">Aim part</span>
-        <div class="custom-select weapon-aimpart" data-value="${cfg.AimPart || 'Head'}">
-          <button type="button" class="custom-select-trigger"><span class="value">${cfg.AimPart || 'Head'}</span><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
-          <div class="custom-select-options">
-            <div class="custom-option ${cfg.AimPart === 'Head' ? 'selected' : ''}" data-value="Head"><span>Head</span></div>
-            <div class="custom-option ${cfg.AimPart === 'Torso' ? 'selected' : ''}" data-value="Torso"><span>Torso</span></div>
-            <div class="custom-option ${cfg.AimPart === 'Any' ? 'selected' : ''}" data-value="Any"><span>Any</span></div>
-          </div>
-        </div>
-      </div>
-      <div class="weapon-card-row">
-        <span class="weapon-card-label">Radius</span>
-        <div class="fill-slider weapon-radius" data-min="0" data-max="40" data-step="0.5" data-decimals="1" data-value="${cfg.Radius ?? 12.0}">
-          <div class="fill-slider-fill"></div><div class="fill-slider-value">${(cfg.Radius ?? 12.0).toFixed(1)}</div><div class="fill-slider-value-inverse">${(cfg.Radius ?? 12.0).toFixed(1)}</div>
-        </div>
-      </div>
-      <div class="weapon-card-row">
-        <span class="weapon-card-label">Delay</span>
-        <div class="fill-slider weapon-delay" data-min="0" data-max="0.5" data-step="0.01" data-decimals="2" data-value="${cfg.Delay ?? 0.12}">
-          <div class="fill-slider-fill"></div><div class="fill-slider-value">${(cfg.Delay ?? 0.12).toFixed(2)}</div><div class="fill-slider-value-inverse">${(cfg.Delay ?? 0.12).toFixed(2)}</div>
-        </div>
-      </div>
-    `;
-    container.appendChild(card);
-
-    const aimPartSel = card.querySelector(".weapon-aimpart");
-    initCustomSelect(aimPartSel, val => {
-      if (!weaponConfigs[name]) weaponConfigs[name] = { AimPart: "Head", Radius: 12.0, Delay: 0.12 };
-      weaponConfigs[name].AimPart = val;
-    });
-
-    const radiusSlider = card.querySelector(".weapon-radius");
-    const radiusInst = initFillSlider(radiusSlider, val => {
-      if (!weaponConfigs[name]) weaponConfigs[name] = { AimPart: "Head", Radius: 12.0, Delay: 0.12 };
-      weaponConfigs[name].Radius = val;
-    });
-    radiusInst.set(cfg.Radius ?? 12.0, true);
-
-    const delaySlider = card.querySelector(".weapon-delay");
-    const delayInst = initFillSlider(delaySlider, val => {
-      if (!weaponConfigs[name]) weaponConfigs[name] = { AimPart: "Head", Radius: 12.0, Delay: 0.12 };
-      weaponConfigs[name].Delay = val;
-    });
-    delayInst.set(cfg.Delay ?? 0.12, true);
-  });
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
-}
-
-function readConfigFromUI() {
-  const tbCfg = {
-    Enabled: tbToggles.Enabled.get(),
-    Keybind: tbKeybindInput.value || "E",
-    KeybindMode: tbKeybindMode,
-    RequireCamlock: tbToggles.RequireCamlock.get(),
-    AimPart: document.getElementById("tbAimPart").dataset.value || "Head",
-    GunswitchDelay: tbSliders.GunswitchDelay.get(),
-    Radius: tbSliders.Radius.get(),
-    Delay: tbSliders.Delay.get(),
-    StudCheck: tbToggles.StudCheck.get(),
-    MaxStuds: tbSliders.MaxStuds.get(),
-    DeathCheck: tbToggles.DeathCheck.get(),
-    SelfDeathCheck: tbToggles.SelfDeathCheck.get(),
-    WeaponSpecific: tbToggles.WeaponSpecific.get(),
-    WeaponConfigs: weaponConfigs
-  };
-  return {
-    Enabled: cfgToggles.Enabled.get(),
-    Keybind: keybindInput.value || "Q",
-    KeybindMode: keybindMode,
-    WebviewKeybind: webviewKeybindInput.value || "F8",
-    PredictTarget: cfgToggles.PredictTarget.get(),
-    PredictionX: sliders.PredictionX.get(),
-    PredictionY: sliders.PredictionY.get(),
-    ClosestPoint: cfgToggles.ClosestPoint.get(),
-    FixedPart: document.getElementById("cfgFixedPartSelect").dataset.value || "Head",
-    Smoothness: sliders.Smoothness.get(),
-    MaxStudsCheck: cfgToggles.MaxStudsCheck.get(),
-    MaxStuds: sliders.MaxStuds.get(),
-    UnlockOnDeath: cfgToggles.UnlockOnDeath.get(),
-    SelfDeathCheck: cfgToggles.SelfDeathCheck.get(),
-    StickyMode: cfgToggles.StickyMode.get(),
-    StabilizerDeadzone: sliders.Deadzone.get(),
-    ReactionDelay: sliders.ReactionDelay.get(),
-    Streamproof: cfgToggles.Streamproof.get(),
-    CurveP1: { x: curveState.p1.x, y: curveState.p1.y },
-    CurveP2: { x: curveState.p2.x, y: curveState.p2.y },
-    triggerbot: tbCfg,
-    macro: {
-      Enabled: macroToggles.Enabled.get(),
-      Keybind: macroKeybindInput.value || "F",
-      KeybindMode: macroKeybindMode,
-      OutputMode: document.getElementById("macroOutputMode").dataset.value || "keyboard",
-      Keys: ["I", "O"],
-      Delay: macroDelaySlider.get(),
-      SelfDeathCheck: macroToggles.SelfDeathCheck.get()
-    },
-    UIBackground: readUIBackgroundFromUI()
-  };
-}
-
-function applyConfigToUI(c) {
-  if (!c || typeof c !== "object") return;
-  cfgToggles.Enabled.set(c.Enabled !== false);
-  cfgToggles.StickyMode.set(c.StickyMode !== false);
-  keybindInput.value = c.Keybind || "Q";
-  keybindMode = c.KeybindMode || "toggle";
-  webviewKeybindInput.value = c.WebviewKeybind || "F8";
-  cfgToggles.PredictTarget.set(c.PredictTarget !== false);
-  sliders.PredictionX.set(c.PredictionX !== undefined ? c.PredictionX : (c.Prediction !== undefined ? c.Prediction : 0.10));
-  sliders.PredictionY.set(c.PredictionY !== undefined ? c.PredictionY : (c.Prediction !== undefined ? c.Prediction : 0.10));
-  const closestPoint = c.ClosestPoint !== undefined ? c.ClosestPoint : (c.ClosestPart !== undefined ? c.ClosestPart : true);
-  cfgToggles.ClosestPoint.set(closestPoint !== false);
-  const fixedPart = c.FixedPart || "Head";
-  const select = document.getElementById("cfgFixedPartSelect");
-  select.dataset.value = fixedPart;
-  select.querySelector(".value").textContent = fixedPart;
-  select.querySelectorAll(".custom-option").forEach(o => o.classList.toggle("selected", o.dataset.value === fixedPart));
-  sliders.Smoothness.set(c.Smoothness !== undefined ? c.Smoothness : 0.35);
-  cfgToggles.MaxStudsCheck.set(c.MaxStudsCheck !== false);
-  sliders.MaxStuds.set(c.MaxStuds !== undefined ? c.MaxStuds : 500);
-  cfgToggles.UnlockOnDeath.set(c.UnlockOnDeath !== false);
-  cfgToggles.SelfDeathCheck.set(c.SelfDeathCheck !== false);
-  sliders.Deadzone.set(c.StabilizerDeadzone !== undefined ? c.StabilizerDeadzone : 3.0);
-  sliders.ReactionDelay.set(c.ReactionDelay !== undefined ? c.ReactionDelay : 0.12);
-  cfgToggles.Streamproof.set(c.Streamproof === true);
-  if (c.CurveP1) curveState.p1 = { x: c.CurveP1.x, y: c.CurveP1.y };
-  if (c.CurveP2) curveState.p2 = { x: c.CurveP2.x, y: c.CurveP2.y };
-  drawCurve();
-
-  const tb = c.triggerbot || {};
-  tbToggles.Enabled.set(tb.Enabled === true);
-  tbKeybindInput.value = tb.Keybind || "E";
-  tbKeybindMode = tb.KeybindMode || "hold";
-  tbToggles.RequireCamlock.set(tb.RequireCamlock !== false);
-  const tbAimPart = tb.AimPart || "Head";
-  const tbSel = document.getElementById("tbAimPart");
-  tbSel.dataset.value = tbAimPart;
-  tbSel.querySelector(".value").textContent = tbAimPart;
-  tbSel.querySelectorAll(".custom-option").forEach(o => o.classList.toggle("selected", o.dataset.value === tbAimPart));
-  tbSliders.Radius.set(tb.Radius !== undefined ? tb.Radius : 12.0);
-  tbSliders.Delay.set(tb.Delay !== undefined ? tb.Delay : 0.12);
-  tbSliders.GunswitchDelay.set(tb.GunswitchDelay !== undefined ? tb.GunswitchDelay : 0.0);
-  tbToggles.StudCheck.set(tb.StudCheck !== false);
-  tbSliders.MaxStuds.set(tb.MaxStuds !== undefined ? tb.MaxStuds : 500);
-  tbToggles.DeathCheck.set(tb.DeathCheck !== false);
-  tbToggles.SelfDeathCheck.set(tb.SelfDeathCheck !== false);
-  tbToggles.WeaponSpecific.set(tb.WeaponSpecific === true);
-  weaponConfigs = tb.WeaponConfigs || {};
-  document.getElementById("weaponListWrap").style.display = tb.WeaponSpecific ? "block" : "none";
-  renderWeapons();
-
-  const mc = c.macro || {};
-  macroToggles.Enabled.set(mc.Enabled === true);
-  macroKeybindInput.value = mc.Keybind || "F";
-  macroKeybindMode = mc.KeybindMode || "toggle";
-  const outMode = mc.OutputMode || "keyboard";
-  const omSel = document.getElementById("macroOutputMode");
-  omSel.dataset.value = outMode;
-  omSel.querySelector(".value").textContent = outMode === "mouse" ? "Mouse (scroll)" : "Keyboard";
-  omSel.querySelectorAll(".custom-option").forEach(o => o.classList.toggle("selected", o.dataset.value === outMode));
-  macroDelaySlider.set(mc.Delay !== undefined ? mc.Delay : 0.05);
-  macroToggles.SelfDeathCheck.set(mc.SelfDeathCheck !== false);
-
-  const bg = c.UIBackground || { Enabled: false, URL: "" };
-  document.getElementById("cfgUIBackgroundEnabled").classList.toggle("on", bg.Enabled === true);
-  document.getElementById("cfgUIBackgroundEnabled").setAttribute("aria-checked", String(bg.Enabled === true));
-  uiBgURLInput.value = bg.URL || "";
-  applyUIBackground(bg);
-}
-
-async function loadConfig() {
-  try {
-    const r = await fetch("/api/config", { credentials: "include" });
-    if (!r.ok) return;
-    const cfg = await r.json();
-    if (cfg && Object.keys(cfg).length > 0) {
-      applyConfigToUI(cfg);
-    }
-    setSaveStatus("", "Ready");
-  } catch (e) {
-    setSaveStatus("error", "Load failed");
-  }
-}
-
-document.getElementById("cfgResetBtn").addEventListener("click", () => {
-  applyConfigToUI(defaults);
-  queueSave();
-  showToast("Config reset to defaults.");
-});
-
-const communityGrid = document.getElementById("communityGrid");
-const communitySearch = document.getElementById("communitySearch");
-const publishModal = document.getElementById("publishModal");
-
-communitySearch.addEventListener("input", () => {
-  searchQuery = communitySearch.value.trim().toLowerCase();
-  renderCommunity();
-});
-
-document.getElementById("publishConfigBtn").addEventListener("click", () => {
-  document.getElementById("publishName").value = "";
-  document.getElementById("publishDesc").value = "";
-  publishModal.classList.add("show");
-});
-
-function closePublishModal() { publishModal.classList.remove("show"); }
-publishModal.addEventListener("click", e => { if (e.target === publishModal) closePublishModal(); });
-
-document.getElementById("publishConfirm").addEventListener("click", async () => {
-  const name = document.getElementById("publishName").value.trim();
-  const desc = document.getElementById("publishDesc").value.trim();
-  if (!name) { showToast("Name required"); return; }
-  const config = readConfigFromUI();
-  try {
-    const r = await fetch("/api/community/configs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ name, description: desc, config_data: config })
-    });
-    if (r.ok) {
-      showToast("Published!");
-      closePublishModal();
-      await loadCommunity();
-    } else {
-      const err = await r.json().catch(() => ({}));
-      showToast(err.detail || "Publish failed");
-    }
-  } catch (e) { showToast("Connection error"); }
-});
-
-async function loadCommunity() {
-  try {
-    const r = await fetch("/api/community/configs", { credentials: "include" });
-    if (!r.ok) { showToast("Failed to load configs"); return; }
-    const data = await r.json();
-    communityConfigs = data.configs || [];
-    myLikes = new Set(data.liked_ids || []);
-    renderCommunity();
-  } catch (e) { showToast("Connection error"); }
-}
-
-function renderCommunity() {
-  const q = searchQuery;
-  const filtered = communityConfigs.filter(c => {
-    if (!q) return true;
-    const hay = (c.name + " " + (c.author || "") + " " + (c.description || "")).toLowerCase();
-    return hay.includes(q);
-  });
-
-  if (filtered.length === 0) {
-    communityGrid.innerHTML = '<div class="community-empty" style="grid-column: 1/-1;">No configs yet. Click "Publish config" to share yours.</div>';
-    return;
+  function esc(s){ return String(s).replace(/[&<>"']/g, function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; }); }
+  function when(iso){
+    if (!iso) return 'recently';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return 'recently';
+    var diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+    return d.toLocaleDateString();
   }
 
-  communityGrid.innerHTML = filtered.map(c => {
-    const liked = myLikes.has(c.id);
-    const likeCount = c.likes || 0;
-    const desc = c.description || "No description.";
-    const when = formatWhen(c.created_at);
-    const smoothVal = c.config_data?.Smoothness;
-    const smoothTag = "smooth " + (typeof smoothVal === "number" ? smoothVal.toFixed(2) : "?");
-    const predTag = c.config_data?.PredictTarget ? "predict on" : "predict off";
-    const partTag = c.config_data?.ClosestPoint || c.config_data?.ClosestPart ? "closest point" : (c.config_data?.FixedPart || "head");
-    return `
-      <div class="cfg-card">
-        <div class="cfg-card-header">
-          <div>
-            <div class="cfg-card-title">${escapeHtml(c.name)}</div>
-            <div class="cfg-card-author">by ${escapeHtml(c.author || "unknown")} · ${when}</div>
-          </div>
-        </div>
-        <div class="cfg-card-desc">${escapeHtml(desc)}</div>
-        <div class="cfg-card-tags">
-          <span class="cfg-tag">${escapeHtml(smoothTag)}</span>
-          <span class="cfg-tag">${escapeHtml(predTag)}</span>
-          <span class="cfg-tag">${escapeHtml(partTag)}</span>
-        </div>
-        <div class="cfg-card-footer">
-          <button class="cfg-like-btn ${liked ? "liked" : ""}" data-like="${c.id}">
-            <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-            ${likeCount}
-          </button>
-          <div class="cfg-card-actions">
-            <button class="cfg-mini-btn" data-save="${c.id}">Save mine</button>
-            <button class="cfg-mini-btn primary" data-load="${c.id}">Load</button>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join("");
-
-  communityGrid.querySelectorAll("[data-like]").forEach(b => b.addEventListener("click", () => toggleLike(Number(b.dataset.like))));
-  communityGrid.querySelectorAll("[data-load]").forEach(b => b.addEventListener("click", () => loadCommunityConfig(Number(b.dataset.load))));
-  communityGrid.querySelectorAll("[data-save]").forEach(b => b.addEventListener("click", () => saveCommunityConfig(Number(b.dataset.save))));
-}
-
-function formatWhen(iso) {
-  if (!iso) return "recently";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "recently";
-  const diff = (Date.now() - d.getTime()) / 1000;
-  if (diff < 60) return "just now";
-  if (diff < 3600) return Math.floor(diff / 60) + "m ago";
-  if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
-  if (diff < 604800) return Math.floor(diff / 86400) + "d ago";
-  return d.toLocaleDateString();
-}
-
-async function toggleLike(id) {
-  try {
-    const r = await fetch(`/api/community/configs/${id}/like`, { method: "POST", credentials: "include" });
-    if (!r.ok) { showToast("Couldn't like"); return; }
-    const data = await r.json();
-    const cfg = communityConfigs.find(c => c.id === id);
-    if (cfg) cfg.likes = data.likes;
-    if (data.liked) myLikes.add(id); else myLikes.delete(id);
-    renderCommunity();
-  } catch (e) { showToast("Connection error"); }
-}
-
-async function loadCommunityConfig(id) {
-  const cfg = communityConfigs.find(c => c.id === id);
-  if (!cfg) return;
-  applyConfigToUI(cfg.config_data || {});
-  queueSave();
-  navigate("configuration");
-  showToast("Config loaded");
-}
-
-async function saveCommunityConfig(id) {
-  const cfg = communityConfigs.find(c => c.id === id);
-  if (!cfg) return;
-  try {
-    const r = await fetch("/api/community/configs/save-mine", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ community_config_id: id })
-    });
-    if (r.ok) showToast("Added to your configs");
-    else showToast("Save failed");
-  } catch (e) { showToast("Connection error"); }
-}
-
-async function boot() {
-  await refreshSession();
-  await loadConfig();
-  applyUIBackground(readUIBackgroundFromUI());
-}
-
-drawCurve();
-boot();
+  // ============================================================
+  // Boot
+  // ============================================================
+  (async function boot(){
+    await refreshSession();
+    await loadConfig();
+    applyUIBackground();
+    render();
+  })();
+})();
 </script>
 </body>
 </html>
