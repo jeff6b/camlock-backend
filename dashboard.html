@@ -10,9 +10,6 @@
 *,*::before,*::after{box-sizing:inherit}
 html,body{height:100%;margin:0}
 body{background:#0e1218;color:var(--text);font:400 13px/1.45 Geist,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;display:grid;place-items:stretch;padding:0;overflow:hidden}
-body.ui-bg{background-size:cover;background-position:center;background-repeat:no-repeat;background-attachment:fixed}
-body.ui-bg::before{content:"";position:fixed;inset:0;background:rgba(12,12,14,.65);pointer-events:none;z-index:0}
-body.ui-bg .win{position:relative;z-index:1}
 button,input,textarea{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid #fff;outline-offset:2px}
@@ -24,8 +21,7 @@ button{cursor:pointer}
   background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.025)),rgba(9,14,12,.7);
   backdrop-filter:blur(30px) saturate(140%);-webkit-backdrop-filter:blur(30px) saturate(140%);box-shadow:none}
 .title{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 8px 0 20px;-webkit-app-region:drag;app-region:drag}
-.brand{font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--muted);-webkit-app-region:no-drag;app-region:no-drag;display:flex;align-items:center;gap:10px}
-.brand .session{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.brand{font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--muted);-webkit-app-region:no-drag;app-region:no-drag}
 .state{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dim);transition:color .2s;-webkit-app-region:no-drag;app-region:no-drag}
 .state svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .state.busy{color:var(--text)}
@@ -70,6 +66,9 @@ button{cursor:pointer}
 .gone span{color:var(--muted);margin-bottom:12px}
 .empty{padding:40px 0;text-align:center;color:var(--dim)}
 
+/* bottom-right session pill */
+.session{position:fixed;right:16px;bottom:14px;z-index:5;padding:6px 12px;border-radius:999px;background:rgba(10,16,14,.7);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);font:500 11px var(--mono);color:var(--muted);pointer-events:none}
+
 .sw{position:relative;flex:none;width:36px;height:21px;padding:0;border:0;border-radius:11px;background:rgba(255,255,255,.16);transition:background .18s}
 .sw::after{content:"";position:absolute;left:2.5px;top:2.5px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .18s,background .18s}
 .sw[aria-checked="true"]{background:#fff}
@@ -105,20 +104,43 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 .keybtn{min-width:64px;font:500 12px var(--mono)}
 .keybtn.cap{background:#fff;color:#10151a}
 .btn:disabled{opacity:.5;pointer-events:none}
-.danger{background:rgba(220,60,60,.18);color:#ffb0b0}
-.danger:hover{background:rgba(220,60,60,.28)}
 
-/* modal */
-.overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .18s}
+/* ==== modern bezier modal ==== */
+.overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(6,10,12,.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);opacity:0;pointer-events:none;transition:opacity .2s}
 .overlay.show{opacity:1;pointer-events:auto}
-.modal{width:min(520px,92vw);max-height:80vh;overflow-y:auto;border-radius:14px;background:#10151a;box-shadow:0 30px 80px rgba(0,0,0,.7),inset 0 0 0 1px rgba(255,255,255,.08);padding:18px 20px;display:flex;flex-direction:column;gap:10px}
-.modal h3{font-size:14px;font-weight:600;margin:0 0 4px}
-.modal label{display:block;font-size:11px;color:var(--dim);margin-bottom:3px}
-.modal input,.modal textarea{width:100%;padding:8px 10px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.04);outline:0;font-size:12px;resize:vertical}
-.modal input:focus,.modal textarea:focus{border-color:rgba(255,255,255,.2)}
-.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+.modal{
+  width:min(560px,92vw);max-height:86vh;overflow:hidden;border-radius:20px;
+  background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02)),rgba(14,19,16,.92);
+  box-shadow:0 30px 80px rgba(0,0,0,.65),inset 0 0 0 1px rgba(255,255,255,.08);
+  padding:20px 22px 18px;display:flex;flex-direction:column;gap:14px;
+  transform:translateY(6px) scale(.98);transition:transform .22s cubic-bezier(.2,.8,.2,1);
+}
+.overlay.show .modal{transform:translateY(0) scale(1)}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.modal-head h3{margin:0;font-size:15px;font-weight:600;letter-spacing:-.01em}
+.modal-head p{margin:4px 0 0;font-size:12px;color:var(--dim)}
+.modal-close{width:28px;height:28px;border:0;border-radius:8px;background:rgba(255,255,255,.06);color:var(--muted);font-size:14px;display:grid;place-items:center}
+.modal-close:hover{background:rgba(255,255,255,.12);color:#fff}
+.modal label{display:block;font-size:11px;color:var(--dim);margin-bottom:4px}
+.modal input,.modal textarea{width:100%;padding:9px 11px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.04);outline:0;font-size:12px;resize:vertical;transition:border-color .15s,background .15s}
+.modal input:focus,.modal textarea:focus{border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.06)}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
 
-/* community cards */
+/* bezier canvas */
+.bezier-stage{width:100%;aspect-ratio:1.9;display:block;border-radius:14px;background:radial-gradient(120% 120% at 20% 0%,rgba(255,255,255,.04),transparent 60%),#0a0f14;box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+.bezier-stage text{fill:var(--dim);font:500 10px var(--mono);letter-spacing:.03em}
+.bezier-stage .grid{stroke:rgba(255,255,255,.045);stroke-width:1}
+.bezier-stage .axis{stroke:rgba(255,255,255,.12);stroke-width:1.1}
+.bezier-stage .line{stroke:rgba(255,255,255,.10);stroke-width:1.1;stroke-dasharray:3 5}
+.bezier-stage .path{fill:none;stroke:#fff;stroke-width:2.2;stroke-linecap:round}
+.bezier-stage .end{fill:#0a0f14;stroke:#fff;stroke-width:1.6}
+.bezier-stage .pt{fill:#fff;stroke:#0a0f14;stroke-width:2.2;cursor:grab;filter:drop-shadow(0 4px 10px rgba(0,0,0,.5));transition:r .12s}
+.bezier-stage .pt:hover{r:9}
+.bezier-stage .pt:active{cursor:grabbing;r:9}
+.bezier-pills{display:flex;gap:8px;justify-content:space-between;font-size:11px;color:var(--dim);font-family:var(--mono)}
+.bezier-pills span{padding:5px 10px;border-radius:8px;background:rgba(255,255,255,.05)}
+.bezier-pills b{color:var(--text);font-weight:500}
+
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
 .card{padding:12px;border-radius:10px;background:var(--panel);display:flex;flex-direction:column;gap:8px}
 .card h4{margin:0;font-size:13px;font-weight:600;overflow-wrap:anywhere}
@@ -135,17 +157,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 .mini.primary{background:rgba(255,255,255,.16)}
 .mini.primary:hover{background:rgba(255,255,255,.22)}
 
-/* bezier editor modal */
-.bezier-stage{width:100%;aspect-ratio:1.85;display:block;border-radius:10px;background:#0a0f14}
-.bezier-stage text{fill:var(--dim);font-size:9px}
-.bezier-stage .grid{stroke:#141a20;stroke-width:1}
-.bezier-stage .axis{stroke:#242a30;stroke-width:1.1}
-.bezier-stage .line{stroke:#202830;stroke-width:1.1;stroke-dasharray:3 4}
-.bezier-stage .path{fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round}
-.bezier-stage .end{fill:#0a0f14;stroke:#fff;stroke-width:1.4}
-.bezier-stage .pt{fill:#fff;stroke:#0a0f14;stroke-width:2;cursor:grab}
-.bezier-stage .pt:active{cursor:grabbing}
-
 @media (max-width:760px){
   body{padding:0;overflow:auto}
   .win{height:auto;min-height:100dvh}
@@ -154,7 +165,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   .nav{flex-direction:row;overflow-x:auto;gap:4px}
   .nav small,.nav button i,.ver{display:none}
   .nav button{flex:none;padding:0 12px}
-  .content{padding:4px 16px 70px}
+  .content{padding:4px 16px 90px}
   .row{flex-wrap:wrap;gap:10px}
   .sl{width:100%}
   .title{grid-template-columns:auto 1fr auto}
@@ -167,10 +178,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 
 <div class="win" id="win">
   <div class="title">
-    <span class="brand">
-      <span>Light</span>
-      <span class="session" id="sessionBar">00:00:00</span>
-    </span>
+    <span class="brand">Light</span>
     <span class="state" id="state"><svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg><span id="stt">Saved</span></span>
     <div class="wc">
       <button aria-label="Sign out" id="signOutBtn">⎋</button>
@@ -192,18 +200,25 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   </div>
 </div>
 
-<!-- Bezier curve editor modal -->
+<div class="session" id="sessionBar">00:00:00</div>
+
+<!-- Modern bezier modal -->
 <div class="overlay" id="bezierModal">
   <div class="modal">
-    <h3>Bezier curve</h3>
-    <div class="meta" style="font-size:11px;color:var(--dim);margin-bottom:4px">Drag the two control points. X/Y are normalized 0–1.</div>
+    <div class="modal-head">
+      <div>
+        <h3>Bezier curve</h3>
+        <p>Drag the two control points to shape the smoothing curve.</p>
+      </div>
+      <button class="modal-close" id="bezierX" aria-label="Close">✕</button>
+    </div>
     <svg class="bezier-stage" id="bezierSvg" viewBox="0 0 600 320" preserveAspectRatio="xMidYMid meet">
       <defs>
         <pattern id="gpat" width="30" height="30" patternUnits="userSpaceOnUse">
-          <path d="M30 0 L0 0 0 30" fill="none" stroke="#141a20" stroke-width="1"/>
+          <path class="grid" d="M30 0 L0 0 0 30"/>
         </pattern>
       </defs>
-      <rect x="34" y="18" width="548" height="260" fill="url(#gpat)" rx="8"/>
+      <rect x="34" y="18" width="548" height="260" fill="url(#gpat)" rx="10"/>
       <path class="axis" d="M34 278H582 M34 18V278"/>
       <text x="34" y="299">0</text><text x="572" y="299">1</text>
       <text x="15" y="28">1</text><text x="15" y="281">0</text>
@@ -215,7 +230,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       <circle class="pt" id="cp1" data-pt="1" cx="180" cy="200" r="7"/>
       <circle class="pt" id="cp2" data-pt="2" cx="420" cy="80" r="7"/>
     </svg>
-    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-top:6px">
+    <div class="bezier-pills">
       <span>P1 <b id="pv1">27%, 30%</b></span>
       <span>P2 <b id="pv2">71%, 76%</b></span>
     </div>
@@ -229,7 +244,13 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 <!-- Publish modal -->
 <div class="overlay" id="publishModal">
   <div class="modal">
-    <h3>Publish config</h3>
+    <div class="modal-head">
+      <div>
+        <h3>Publish config</h3>
+        <p>Share your current settings with the community.</p>
+      </div>
+      <button class="modal-close" id="pubX" aria-label="Close">✕</button>
+    </div>
     <div><label>Config name</label><input type="text" id="pubName" maxlength="40" placeholder="e.g. Legit smooth"></div>
     <div><label>Description</label><textarea id="pubDesc" maxlength="220" rows="3" placeholder="What makes this config good?"></textarea></div>
     <div class="modal-actions">
@@ -239,7 +260,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   </div>
 </div>
 
-<div id="toast" style="position:fixed;right:14px;bottom:14px;padding:9px 12px;border-radius:8px;background:#131316;color:var(--text);border:1px solid rgba(255,255,255,.08);font-size:12px;opacity:0;transform:translateY(4px);transition:.2s;pointer-events:none;z-index:100"></div>
+<div id="toast" style="position:fixed;right:16px;bottom:60px;padding:9px 12px;border-radius:8px;background:#131316;color:var(--text);border:1px solid rgba(255,255,255,.08);font-size:12px;opacity:0;transform:translateY(4px);transition:.2s;pointer-events:none;z-index:100"></div>
 
 <script>
 (function(){
@@ -257,73 +278,70 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   var one = function(x){ return (+x).toFixed(1); };
   var int = function(x){ return String(Math.round(+x)); };
 
-  // The settings schema — mirrors old config keys so /api/config round-trips.
   var CFG = [
     { id:'aimassist', name:'Aimassist', sub:'Targeting, prediction and smoothing', g:'Main', groups:[
       { n:'Activation', rows:[
-        { t:'toggle', k:'aim',       ck:'Enabled',         l:'Enabled',       v:true },
-        { t:'key',    k:'aimkey',    ck:'Keybind',         l:'Keybind',       v:'Q'  },
-        { t:'seg',    k:'aimmode',   ck:'KeybindMode',     l:'Keybind mode',  o:['Toggle','Hold'], v:'Toggle' },
-        { t:'key',    k:'webkey',    ck:'WebviewKeybind',  l:'Webview keybind', v:'F8' }
+        { t:'toggle', k:'aim',     l:'Enabled',          v:true },
+        { t:'key',    k:'aimkey',  l:'Keybind',          v:'Q'  },
+        { t:'seg',    k:'aimmode', l:'Keybind mode',     o:['Toggle','Hold'], v:'Toggle' },
+        { t:'key',    k:'webkey',  l:'Webview keybind',  v:'F8' }
       ]},
       { n:'Targeting', rows:[
-        { t:'select', k:'part',      ck:'FixedPart',       l:'Fixed part',    o:PARTS, v:'Head' },
-        { t:'toggle', k:'closest',   ck:'ClosestPoint',    l:'Closest point', v:true },
-        { t:'toggle', k:'studchk',   ck:'MaxStudsCheck',   l:'Max studs check', v:true },
-        { t:'slider', k:'studs',     ck:'MaxStuds',        l:'Max studs',     min:50, max:2000, step:10, v:500, f:int },
-        { t:'toggle', k:'sticky',    ck:'StickyMode',      l:'Sticky mode',   v:true }
+        { t:'select', k:'part',    l:'Fixed part',    o:PARTS, v:'Head' },
+        { t:'toggle', k:'closest', l:'Closest point', v:true },
+        { t:'toggle', k:'studchk', l:'Max studs check', v:true },
+        { t:'slider', k:'studs',   l:'Max studs',     min:50, max:2000, step:10, v:500, f:int },
+        { t:'toggle', k:'sticky',  l:'Sticky mode',   v:true }
       ]},
       { n:'Prediction', rows:[
-        { t:'toggle', k:'predict',   ck:'PredictTarget',   l:'Predict target', v:true },
-        { t:'slider', k:'px',        ck:'PredictionX',     l:'Prediction X',  min:0, max:0.5, step:0.01, v:0.10, f:two },
-        { t:'slider', k:'py',        ck:'PredictionY',     l:'Prediction Y',  min:0, max:0.5, step:0.01, v:0.10, f:two }
+        { t:'toggle', k:'predict', l:'Predict target', v:true },
+        { t:'slider', k:'px',      l:'Prediction X',  min:0, max:0.5, step:0.01, v:0.10, f:two },
+        { t:'slider', k:'py',      l:'Prediction Y',  min:0, max:0.5, step:0.01, v:0.10, f:two }
       ]},
       { n:'Smoothing', rows:[
-        { t:'slider', k:'smooth',    ck:'Smoothness',      l:'Smoothness',    min:0, max:1, step:0.01, v:0.35, f:two },
-        { t:'slider', k:'dead',      ck:'StabilizerDeadzone', l:'Stabilizer deadzone', min:0, max:10, step:0.1, v:3.0, f:one },
-        { t:'slider', k:'react',     ck:'ReactionDelay',   l:'Reaction delay', min:0, max:1, step:0.01, v:0.12, f:sec },
-        { t:'button', k:'bezier',    l:'Bezier curve',     d:'Adjust the smoothing curve.', b:'Edit curve' }
+        { t:'slider', k:'smooth', l:'Smoothness',          min:0, max:1, step:0.01, v:0.35, f:two },
+        { t:'slider', k:'dead',   l:'Stabilizer deadzone', min:0, max:10, step:0.1, v:3.0, f:one },
+        { t:'slider', k:'react',  l:'Reaction delay',      min:0, max:1, step:0.01, v:0.12, f:sec },
+        { t:'button', k:'bezier', l:'Bezier curve',        d:'Adjust the smoothing curve.', b:'Edit curve' }
       ]},
       { n:'Safety', rows:[
-        { t:'toggle', k:'unlock',    ck:'UnlockOnDeath',   l:'Unlock on death', v:true },
-        { t:'toggle', k:'selfdeath', ck:'SelfDeathCheck',  l:'Self death check', v:true }
+        { t:'toggle', k:'unlock',    l:'Unlock on death', v:true },
+        { t:'toggle', k:'selfdeath', l:'Self death check', v:true }
       ]}
     ]},
     { id:'triggerbot', name:'Triggerbot', sub:'Activation, radius and delay', g:'Main', groups:[
       { n:'Activation', rows:[
-        { t:'toggle', k:'trig',      tb:'Enabled',         l:'Enabled',        v:false },
-        { t:'key',    k:'trigkey',   tb:'Keybind',         l:'Keybind',        v:'E'   },
-        { t:'seg',    k:'trigmode',  tb:'KeybindMode',     l:'Keybind mode',   o:['Toggle','Hold'], v:'Hold' },
-        { t:'toggle', k:'camlock',   tb:'RequireCamlock',  l:'Require camlock', v:true }
+        { t:'toggle', k:'trig',     l:'Enabled',         v:false },
+        { t:'key',    k:'trigkey',  l:'Keybind',         v:'E'   },
+        { t:'seg',    k:'trigmode', l:'Keybind mode',    o:['Toggle','Hold'], v:'Hold' },
+        { t:'toggle', k:'camlock',  l:'Require camlock', v:true }
       ]},
       { n:'Targeting', rows:[
-        { t:'select', k:'tpart',     tb:'AimPart',         l:'Aim part',       o:PARTS, v:'Head' },
-        { t:'slider', k:'rad',       tb:'Radius',          l:'Radius',         min:1, max:30, step:0.5, v:12.0, f:one },
-        { t:'slider', k:'tdelay',    tb:'Delay',           l:'Delay',          min:0, max:1, step:0.01, v:0.12, f:sec },
-        { t:'slider', k:'tgun',      tb:'GunswitchDelay',  l:'Gunswitch delay', min:0, max:2, step:0.01, v:0.0, f:sec },
-        { t:'toggle', k:'tstud',     tb:'StudCheck',       l:'Stud check',     v:true },
-        { t:'slider', k:'tstuds',    tb:'MaxStuds',        l:'Max studs',      min:50, max:2000, step:10, v:500, f:int }
+        { t:'select', k:'tpart',  l:'Aim part',         o:PARTS, v:'Head' },
+        { t:'slider', k:'rad',    l:'Radius',           min:1, max:30, step:0.5, v:12.0, f:one },
+        { t:'slider', k:'tdelay', l:'Delay',            min:0, max:1, step:0.01, v:0.12, f:sec },
+        { t:'slider', k:'tgun',   l:'Gunswitch delay',  min:0, max:2, step:0.01, v:0.0, f:sec },
+        { t:'toggle', k:'tstud',  l:'Stud check',       v:true },
+        { t:'slider', k:'tstuds', l:'Max studs',        min:50, max:2000, step:10, v:500, f:int }
       ]},
       { n:'Safety', rows:[
-        { t:'toggle', k:'tdeath',    tb:'DeathCheck',      l:'Death check',    v:true },
-        { t:'toggle', k:'tself',     tb:'SelfDeathCheck',  l:'Self death check', v:true }
+        { t:'toggle', k:'tdeath', l:'Death check',       v:true },
+        { t:'toggle', k:'tself',  l:'Self death check',  v:true }
       ]},
       { n:'Weapons', rows:[
-        { t:'toggle', k:'wspec',     tb:'WeaponSpecific',  l:'Weapon specific', d:'Use separate values per weapon.', v:false, re:true }
-      ].concat(WEAPONS.map(function(w, i){
-        return { t:'weapon', k:'w'+i, wname:w[0] };
-      }))}
+        { t:'toggle', k:'wspec', l:'Weapon specific', d:'Use separate values per weapon.', v:false, re:true }
+      ].concat(WEAPONS.map(function(w, i){ return { t:'weapon', k:'w'+i, wname:w[0] }; }))}
     ]},
     { id:'movement', name:'Movement', sub:'Macro sequence', g:'Player', groups:[
       { n:'Macro', rows:[
-        { t:'toggle', k:'macro',     m:'Enabled',          l:'Enabled',        v:false },
-        { t:'key',    k:'mkey',      m:'Keybind',          l:'Keybind',        v:'F'   },
-        { t:'seg',    k:'mmode',     m:'KeybindMode',      l:'Keybind mode',   o:['Toggle','Hold'], v:'Toggle' },
-        { t:'seg',    k:'mout',      m:'OutputMode',       l:'Output mode',    o:['Keyboard','Mouse'], v:'Keyboard' }
+        { t:'toggle', k:'macro', l:'Enabled',        v:false },
+        { t:'key',    k:'mkey',  l:'Keybind',        v:'F'   },
+        { t:'seg',    k:'mmode', l:'Keybind mode',   o:['Toggle','Hold'], v:'Toggle' },
+        { t:'seg',    k:'mout',  l:'Output mode',    o:['Keyboard','Mouse'], v:'Keyboard' }
       ]},
       { n:'Sequence', rows:[
-        { t:'slider', k:'mdelay',    m:'Delay',            l:'Delay',          min:0, max:1, step:0.01, v:0.05, f:sec },
-        { t:'toggle', k:'mself',     m:'SelfDeathCheck',   l:'Self death check', v:true }
+        { t:'slider', k:'mdelay', l:'Delay',            min:0, max:1, step:0.01, v:0.05, f:sec },
+        { t:'toggle', k:'mself',  l:'Self death check', v:true }
       ]}
     ]},
     { id:'account', name:'Account', sub:'Your account and client', g:'System', groups:[
@@ -332,18 +350,14 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
         { t:'info', l:'Session',  key:'session'  },
         { t:'info', l:'HWID',     key:'hwid'     },
         { t:'info', l:'Client',   key:'client'   }
-      ]},
-      { n:'UI', rows:[
-        { t:'toggle', k:'uibg',      l:'Background image', d:'Set a custom UI background image.', v:false, re:true },
-        { t:'url',    k:'uibgurl',   l:'Image URL',        v:'' }
       ]}
     ]},
     { id:'privacy', name:'Privacy', sub:'Streamproof and exit', g:'System', groups:[
       { n:'Privacy', rows:[
-        { t:'toggle', k:'stream',    ck:'Streamproof',     l:'Stream proof', d:'Hide this window from screen share and recordings.', v:false }
+        { t:'toggle', k:'stream', l:'Stream proof', d:'Hide this window from screen share and recordings.', v:false }
       ]},
       { n:'Exit', rows:[
-        { t:'button', k:'destruct', l:'Self destruct', d:'Closes the menu and signs you out.', b:'Self destruct', danger:true }
+        { t:'button', k:'destruct', l:'Self destruct', d:'Closes the menu and signs you out.', b:'Self destruct' }
       ]}
     ]},
     { id:'community', name:'Community', sub:'Browse and publish configs', g:'System', groups:[
@@ -356,19 +370,21 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     ]}
   ];
 
-  // Build state and defaults
   var S = {}, D = {};
   function walk(fn){ CFG.forEach(function(p){ p.groups.forEach(function(g){ g.rows.forEach(fn); }); }); }
   walk(function(r){ if (r.k && r.v !== undefined) D[r.k] = r.v; });
-  function resetState(){ S = {}; for (var k in D) S[k] = D[k]; weaponConfigs = {}; WEAPONS.forEach(function(w){ weaponConfigs[w[0]] = Object.assign({}, w[1]); }); }
+  function resetState(){
+    S = {}; for (var k in D) S[k] = D[k];
+    weaponConfigs = {};
+    WEAPONS.forEach(function(w){ weaponConfigs[w[0]] = Object.assign({}, w[1]); });
+  }
   var weaponConfigs = {};
   resetState();
 
-  // Curve state
   var curveState = { p1:{x:180,y:200}, p2:{x:420,y:80} };
 
   // ============================================================
-  // DOM refs
+  // DOM
   // ============================================================
   var $ = function(id){ return document.getElementById(id); };
   var nav = $('nav'), content = $('content'), stateEl = $('state'), stt = $('stt'), q = $('q');
@@ -376,9 +392,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   var saveTimer = null, isDirty = false;
   var sessionStart = Date.now();
 
-  // ============================================================
-  // Small helpers
-  // ============================================================
   function el(tag, cls, html){
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -403,14 +416,13 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   }
 
   // ============================================================
-  // Config IO — mirrors old behavior exactly
+  // Config IO
   // ============================================================
   function toBackend(){
-    // Flat camlock fields + nested triggerbot/macro + UI bg
-    var out = {
+    return {
       Enabled: S.aim,
       Keybind: S.aimkey,
-      KeybindMode: S.aimmode.toLowerCase(),
+      KeybindMode: String(S.aimmode).toLowerCase(),
       WebviewKeybind: S.webkey,
       PredictTarget: S.predict,
       PredictionX: S.px,
@@ -431,7 +443,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       triggerbot: {
         Enabled: S.trig,
         Keybind: S.trigkey,
-        KeybindMode: S.trigmode.toLowerCase(),
+        KeybindMode: String(S.trigmode).toLowerCase(),
         RequireCamlock: S.camlock,
         AimPart: S.tpart,
         Radius: S.rad,
@@ -447,23 +459,21 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       macro: {
         Enabled: S.macro,
         Keybind: S.mkey,
-        KeybindMode: S.mmode.toLowerCase(),
-        OutputMode: S.mout.toLowerCase(),
+        KeybindMode: String(S.mmode).toLowerCase(),
+        OutputMode: String(S.mout).toLowerCase(),
         Keys: ['I','O'],
         Delay: S.mdelay,
         SelfDeathCheck: S.mself
-      },
-      UIBackground: { Enabled: S.uibg, URL: S.uibgurl || '' }
+      }
     };
-    return out;
   }
 
   function fromBackend(c){
     if (!c || typeof c !== 'object') return;
-    function set(k, v){ S[k] = v; }
+    var set = function(k, v){ S[k] = v; };
     set('aim',       c.Enabled !== false);
     set('aimkey',    c.Keybind || 'Q');
-    set('aimmode',   (c.KeybindMode || 'toggle').toLowerCase() === 'hold' ? 'Hold' : 'Toggle');
+    set('aimmode',   String(c.KeybindMode || 'toggle').toLowerCase() === 'hold' ? 'Hold' : 'Toggle');
     set('webkey',    c.WebviewKeybind || 'F8');
     set('predict',   c.PredictTarget !== false);
     set('px',        c.PredictionX !== undefined ? c.PredictionX : (c.Prediction !== undefined ? c.Prediction : 0.10));
@@ -483,19 +493,19 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     if (c.CurveP2) curveState.p2 = { x: c.CurveP2.x, y: c.CurveP2.y };
 
     var tb = c.triggerbot || {};
-    set('trig',    tb.Enabled === true);
-    set('trigkey', tb.Keybind || 'E');
-    set('trigmode',(tb.KeybindMode || 'hold').toLowerCase() === 'toggle' ? 'Toggle' : 'Hold');
-    set('camlock', tb.RequireCamlock !== false);
-    set('tpart',   tb.AimPart || 'Head');
-    set('rad',     tb.Radius !== undefined ? tb.Radius : 12.0);
-    set('tdelay',  tb.Delay !== undefined ? tb.Delay : 0.12);
-    set('tgun',    tb.GunswitchDelay !== undefined ? tb.GunswitchDelay : 0.0);
-    set('tstud',   tb.StudCheck !== false);
-    set('tstuds',  tb.MaxStuds !== undefined ? tb.MaxStuds : 500);
-    set('tdeath',  tb.DeathCheck !== false);
-    set('tself',   tb.SelfDeathCheck !== false);
-    set('wspec',   tb.WeaponSpecific === true);
+    set('trig',     tb.Enabled === true);
+    set('trigkey',  tb.Keybind || 'E');
+    set('trigmode', String(tb.KeybindMode || 'hold').toLowerCase() === 'toggle' ? 'Toggle' : 'Hold');
+    set('camlock',  tb.RequireCamlock !== false);
+    set('tpart',    tb.AimPart || 'Head');
+    set('rad',      tb.Radius !== undefined ? tb.Radius : 12.0);
+    set('tdelay',   tb.Delay !== undefined ? tb.Delay : 0.12);
+    set('tgun',     tb.GunswitchDelay !== undefined ? tb.GunswitchDelay : 0.0);
+    set('tstud',    tb.StudCheck !== false);
+    set('tstuds',   tb.MaxStuds !== undefined ? tb.MaxStuds : 500);
+    set('tdeath',   tb.DeathCheck !== false);
+    set('tself',    tb.SelfDeathCheck !== false);
+    set('wspec',    tb.WeaponSpecific === true);
     if (tb.WeaponConfigs && typeof tb.WeaponConfigs === 'object') {
       weaponConfigs = {};
       for (var w in tb.WeaponConfigs) weaponConfigs[w] = tb.WeaponConfigs[w];
@@ -505,15 +515,10 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     var mc = c.macro || {};
     set('macro',  mc.Enabled === true);
     set('mkey',   mc.Keybind || 'F');
-    set('mmode',  (mc.KeybindMode || 'toggle').toLowerCase() === 'hold' ? 'Hold' : 'Toggle');
-    set('mout',   (mc.OutputMode || 'keyboard').toLowerCase() === 'mouse' ? 'Mouse' : 'Keyboard');
+    set('mmode',  String(mc.KeybindMode || 'toggle').toLowerCase() === 'hold' ? 'Hold' : 'Toggle');
+    set('mout',   String(mc.OutputMode || 'keyboard').toLowerCase() === 'mouse' ? 'Mouse' : 'Keyboard');
     set('mdelay', mc.Delay !== undefined ? mc.Delay : 0.05);
     set('mself',  mc.SelfDeathCheck !== false);
-
-    var bg = c.UIBackground || { Enabled: false, URL: '' };
-    set('uibg',    bg.Enabled === true);
-    set('uibgurl', bg.URL || '');
-    applyUIBackground();
   }
 
   async function saveConfig(){
@@ -543,17 +548,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       var cfg = await r.json();
       if (cfg && Object.keys(cfg).length) fromBackend(cfg);
       render();
-    } catch (e) { /* ignore */ }
-  }
-
-  function applyUIBackground(){
-    if (!S.uibg || !S.uibgurl) {
-      document.body.classList.remove('ui-bg');
-      document.body.style.backgroundImage = '';
-      return;
-    }
-    document.body.style.backgroundImage = 'url("' + String(S.uibgurl).replace(/"/g, '\\"') + '")';
-    document.body.classList.add('ui-bg');
+    } catch (e) {}
   }
 
   // ============================================================
@@ -572,9 +567,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
             var map = {' ':'Space', Control:'Ctrl', Escape:'Esc'};
             var k = ev.key;
             S[r.k] = map[k] || (k.length === 1 ? k.toUpperCase() : k);
-            if (r.k === 'aimkey') kb.textContent = S[r.k];
-            else if (r.k === 'trigkey') kb.textContent = S[r.k];
-            else kb.textContent = S[r.k];
+            kb.textContent = S[r.k];
             saved();
           }
           kb.classList.remove('cap');
@@ -593,8 +586,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       b.onclick = function(){
         S[r.k] = !S[r.k];
         b.setAttribute('aria-checked', S[r.k] ? 'true' : 'false');
-        if (r.k === 'uibg') applyUIBackground();
-        if (r.k === 'wspec') { renderKeep(); }
+        if (r.k === 'wspec') renderKeep();
         saved();
       };
       return b;
@@ -660,23 +652,8 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       });
       return g;
     }
-    if (r.t === 'url') {
-      var u = el('input');
-      u.type = 'text';
-      u.value = S[r.k] || '';
-      u.placeholder = 'https://example.com/image.png';
-      u.style.minWidth = '280px';
-      u.style.padding = '7px 10px';
-      u.style.border = '0';
-      u.style.borderRadius = '8px';
-      u.style.background = 'rgba(255,255,255,.08)';
-      u.style.outline = '0';
-      u.oninput = function(){ S[r.k] = u.value; };
-      u.onchange = function(){ applyUIBackground(); saved(); };
-      return u;
-    }
     if (r.t === 'button') {
-      var bt = el('button', 'btn' + (r.danger ? ' danger' : ''), r.b);
+      var bt = el('button', 'btn', r.b);
       bt.onclick = function(){
         if (r.k === 'destruct') {
           if (!bt.dataset.arm) {
@@ -712,7 +689,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   function rowEl(r){
     var row = el('div','row');
     if (r.t === 'weapon') {
-      // Render an inline weapon card: name + part/radius/delay
       var wname = r.wname;
       var wcfg = weaponConfigs[wname] || {};
       var card = el('div','card');
@@ -720,8 +696,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       var h = el('h4','', wname);
       card.appendChild(h);
       var pRow = el('div','row'); pRow.style.minHeight = '36px';
-      var pT = el('div','txt'); var pb = el('b','', 'Aim part'); pT.appendChild(pb);
-      pRow.appendChild(pT);
+      var pT = el('div','txt'); pT.appendChild(el('b','', 'Aim part')); pRow.appendChild(pT);
       var pSel = el('div','dd');
       var pBtn = el('button','dd-btn'); var pLab = el('span','', wcfg.AimPart || 'Head');
       pBtn.appendChild(pLab);
@@ -739,9 +714,8 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       pSel.appendChild(pBtn); pSel.appendChild(pMenu);
       pRow.appendChild(pSel);
       card.appendChild(pRow);
-      // Radius
       var rr = el('div','row'); rr.style.minHeight = '36px';
-      var rrT = el('div','txt'); var rrb = el('b','','Radius'); rrT.appendChild(rrb); rr.appendChild(rrT);
+      rr.appendChild(el('div','txt', '<b>Radius</b>'));
       var rrSl = el('div','sl'); var rrIn = el('input'); rrIn.type='range'; rrIn.min=1; rrIn.max=30; rrIn.step=0.5; rrIn.value = wcfg.Radius || 12.0;
       var rrV = el('span','mono', one(wcfg.Radius || 12.0));
       rrIn.oninput = function(){ var val = +rrIn.value; rrV.textContent = one(val); wcfg.Radius = val; };
@@ -749,9 +723,8 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       rrSl.appendChild(rrIn); rrSl.appendChild(rrV);
       rr.appendChild(rrSl);
       card.appendChild(rr);
-      // Delay
       var dd = el('div','row'); dd.style.minHeight = '36px';
-      var ddT = el('div','txt'); var ddb = el('b','','Delay'); ddT.appendChild(ddb); dd.appendChild(ddT);
+      dd.appendChild(el('div','txt', '<b>Delay</b>'));
       var ddSl = el('div','sl'); var ddIn = el('input'); ddIn.type='range'; ddIn.min=0; ddIn.max=1; ddIn.step=0.01; ddIn.value = wcfg.Delay || 0.08;
       var ddV = el('span','mono', sec(wcfg.Delay || 0.08));
       ddIn.oninput = function(){ var val = +ddIn.value; ddV.textContent = sec(val); wcfg.Delay = val; };
@@ -764,16 +737,13 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     }
 
     var t = el('div','txt');
-    var b = el('b'); b.textContent = r.l; t.appendChild(b);
-    if (r.d) { var sp = el('span'); sp.textContent = r.d; t.appendChild(sp); }
+    t.appendChild(el('b','', r.l));
+    if (r.d) t.appendChild(el('span','', r.d));
     row.appendChild(t);
     row.appendChild(control(r));
     return row;
   }
 
-  // ============================================================
-  // Search and render
-  // ============================================================
   function renderKeep(){
     var y = content.scrollTop;
     render();
@@ -790,12 +760,9 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
           if (g.when && !S[g.when]) return;
           var hits = g.rows.filter(function(r){ return ((r.l || '') + ' ' + (r.d || '')).toLowerCase().indexOf(query) > -1; });
           if (!hits.length) return;
-          if (!n) {
-            var ph = el('div','ph','<b>Results</b><span></span>');
-            content.appendChild(ph);
-          }
+          if (!n) content.appendChild(el('div','ph','<b>Results</b><span></span>'));
           n += hits.length;
-          var grp = el('div','grp'); var h = el('h3'); h.textContent = p.name + ' · ' + g.n; grp.appendChild(h);
+          var grp = el('div','grp'); grp.appendChild(el('h3','', p.name + ' · ' + g.n));
           var pan = el('div','panel');
           hits.forEach(function(r){ pan.appendChild(rowEl(r)); });
           grp.appendChild(pan); content.appendChild(grp);
@@ -810,32 +777,19 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     content.appendChild(el('div','ph','<b>' + p.name + '</b><span>' + p.sub + '</span>'));
     p.groups.forEach(function(g){
       if (g.when && !S[g.when]) return;
-      var grp = el('div','grp'); var h = el('h3'); h.textContent = g.n; grp.appendChild(h);
+      var grp = el('div','grp'); grp.appendChild(el('h3','', g.n));
       var pan = el('div','panel');
       g.rows.forEach(function(r){ pan.appendChild(rowEl(r)); });
       grp.appendChild(pan); content.appendChild(grp);
     });
-    // Fill in info rows for the Account page
-    if (cur === 'account') {
-      S['__username'] = S['__username'] || '—';
-      S['__session']  = S['__session']  || '—';
-      S['__hwid']     = S['__hwid']     || '—';
-      S['__client']   = S['__client']   || '—';
-      [].forEach.call(content.querySelectorAll('.mono'), function(m, i){ /* noop */ });
-    }
-    // Render community grid if on that page
     if (cur === 'community') loadCommunity();
     [].forEach.call(nav.querySelectorAll('button'), function(b){ b.setAttribute('aria-selected', b.dataset.id === cur ? 'true' : 'false'); });
     content.scrollTop = 0;
   }
 
-  // Nav
   var lastG = '';
   CFG.forEach(function(p, i){
-    if (p.g !== lastG) {
-      nav.appendChild(el('small','', p.g));
-      lastG = p.g;
-    }
+    if (p.g !== lastG) { nav.appendChild(el('small','', p.g)); lastG = p.g; }
     var b = el('button','','<span>' + p.name + '</span><i>' + (i + 1) + '</i>');
     b.dataset.id = p.id;
     b.setAttribute('role','tab');
@@ -859,7 +813,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   });
 
   // ============================================================
-  // Session / account / client status
+  // Session / account / client
   // ============================================================
   var currentUser = null;
   async function refreshSession(){
@@ -884,7 +838,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       S['__session']  = 'unable to verify';
     }
   }
-
   async function refreshClientStatus(){
     if (!currentUser) return;
     try {
@@ -892,11 +845,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       if (!r.ok) return;
       var d = await r.json();
       S['__client'] = d.connected ? 'Connected' : 'Offline';
-      if (cur === 'account') {
-        var els = content.querySelectorAll('.mono');
-        // update only the client row (last one)
-        els.forEach(function(m){});
-      }
     } catch (e) {}
   }
 
@@ -910,7 +858,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   setInterval(tickTimer, 1000); tickTimer();
 
   // ============================================================
-  // Sign out / destruct
+  // Sign out
   // ============================================================
   function signOut(){
     var overlay = el('div','gone','<b>Session closed</b><span>Signing you out…</span>');
@@ -923,7 +871,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   $('closeBtn').onclick = signOut;
 
   // ============================================================
-  // Bezier curve editor
+  // Bezier modal
   // ============================================================
   var bezBounds = { left:34, right:582, top:18, bottom:278 };
   var bezSvg = $('bezierSvg');
@@ -964,10 +912,11 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   });
   function openBezier(){ bezDraw(); $('bezierModal').classList.add('show'); }
   $('bezierClose').onclick = function(){ $('bezierModal').classList.remove('show'); };
+  $('bezierX').onclick    = function(){ $('bezierModal').classList.remove('show'); };
   $('bezierReset').onclick = function(){ curveState.p1 = {x:180,y:200}; curveState.p2 = {x:420,y:80}; bezDraw(); saved(); };
 
   // ============================================================
-  // Community — list, publish, like, load, save-mine
+  // Community
   // ============================================================
   var communityConfigs = [], myLikes = new Set();
   async function loadCommunity(){
@@ -1043,6 +992,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   }
   function openPublish(){ $('pubName').value = ''; $('pubDesc').value = ''; $('publishModal').classList.add('show'); }
   $('pubCancel').onclick = function(){ $('publishModal').classList.remove('show'); };
+  $('pubX').onclick      = function(){ $('publishModal').classList.remove('show'); };
   $('publishModal').addEventListener('click', function(e){ if (e.target === $('publishModal')) $('publishModal').classList.remove('show'); });
   $('pubConfirm').onclick = async function(){
     var name = $('pubName').value.trim();
@@ -1078,13 +1028,9 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     return d.toLocaleDateString();
   }
 
-  // ============================================================
-  // Boot
-  // ============================================================
   (async function boot(){
     await refreshSession();
     await loadConfig();
-    applyUIBackground();
     render();
   })();
 })();
