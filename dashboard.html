@@ -67,7 +67,6 @@ button{cursor:pointer}
 .gone b{font-size:16px;font-weight:600}
 .gone span{color:var(--muted);margin-bottom:12px}
 
-/* session time: text only */
 .session{position:fixed;right:18px;bottom:14px;z-index:5;font:500 11px var(--mono);color:var(--dim);pointer-events:none}
 
 .sw{position:relative;flex:none;width:36px;height:21px;padding:0;border:0;border-radius:11px;background:rgba(255,255,255,.16);transition:background .18s}
@@ -111,7 +110,34 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 .card{flex:1;padding:12px 14px;border-radius:10px;background:rgba(255,255,255,.04)}
 .card h4{margin:0 0 4px;font-size:13px;font-weight:600}
 
-/* ==== curve editor ==== */
+.cfgtop{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.ccard{padding:14px;border-radius:12px;background:var(--panel);display:flex;flex-direction:column;gap:9px;min-width:0;cursor:context-menu}
+.ccard h4{margin:0;font-size:13.5px;font-weight:600;overflow-wrap:anywhere}
+.ccard .ctop{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.ccard .meta{font-size:11px;color:var(--dim)}
+.badge{flex:none;font:500 10px var(--mono);letter-spacing:.06em;color:var(--dim)}
+.badge.pub{color:#fff}
+.ccard .desc{font-size:12px;color:var(--muted);line-height:1.5;min-height:18px}
+.ctxmenu{position:fixed;z-index:40;min-width:186px;padding:6px;border-radius:14px;
+  background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03)),rgba(13,18,16,.85);
+  backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);
+  box-shadow:0 20px 50px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.1);
+  opacity:0;transform:scale(.95);transform-origin:top left;transition:opacity .12s ease,transform .12s ease;pointer-events:none}
+.ctxmenu[hidden]{display:none}
+.ctxmenu.show{opacity:1;transform:scale(1);pointer-events:auto}
+.ctxmenu button{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 10px;border:0;border-radius:9px;background:none;color:var(--text);font-size:12.5px;font-weight:500;text-align:left;transition:background .1s}
+.ctxmenu button svg{width:14px;height:14px;flex:none;fill:none;stroke:var(--muted);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ctxmenu button:hover{background:rgba(255,255,255,.1)}
+.ctxmenu button:hover svg{stroke:#fff}
+.ctxmenu .sep{height:1px;margin:5px 8px;background:rgba(255,255,255,.08)}
+.modal label{display:block;font-size:11px;color:var(--dim);margin-bottom:5px}
+.modal .field{margin-bottom:0}
+.vfield{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.vfield label{margin-bottom:0}
+.modal input[type=text],.modal textarea{width:100%;padding:9px 11px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.04);outline:0;font-size:12.5px;resize:vertical;transition:border-color .15s,background .15s}
+.modal input[type=text]:focus,.modal textarea:focus{border-color:rgba(255,255,255,.26);background:rgba(255,255,255,.07)}
+
 .overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(6,10,12,.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);opacity:0;pointer-events:none;transition:opacity .2s}
 .overlay.show{opacity:1;pointer-events:auto}
 .modal{width:min(600px,94vw);max-height:92vh;overflow:auto;border-radius:18px;padding:22px;display:flex;flex-direction:column;gap:16px;
@@ -229,14 +255,36 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   </div>
 </div>
 
+<div class="ctxmenu" id="ctxMenu" role="menu" hidden></div>
+
+<div class="overlay" id="uploadModal">
+  <div class="modal" role="dialog" aria-label="Upload config" style="width:min(460px,94vw)">
+    <div class="mh">
+      <div><h3>Save this config</h3><p>Everything on this page, saved as one.</p></div>
+      <button class="mx" id="upX" aria-label="Close">✕</button>
+    </div>
+    <div class="field"><label>Name</label><input type="text" id="upName" maxlength="40" placeholder="e.g. Legit smooth"></div>
+    <div class="field"><label>Description <span style="opacity:.6">(optional)</span></label><textarea id="upDesc" maxlength="200" rows="3" placeholder="What makes this one good?"></textarea></div>
+    <div class="field vfield">
+      <label>Visibility</label>
+      <div class="seg" id="upVis" role="radiogroup" aria-label="Visibility">
+        <button type="button" data-v="private" aria-checked="true">Private</button>
+        <button type="button" data-v="public" aria-checked="false">Public</button>
+      </div>
+    </div>
+    <div class="mact">
+      <button class="btn" id="upCancel">Cancel</button>
+      <button class="btn primary" id="upSave">Save config</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   var $ = function(id){ return document.getElementById(id); };
   function el(tag, cls, html){ var e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; }
 
-  // ============================================================
-  // Config schema
-  // ============================================================
+  // ---------- config ----------
   var PARTS = ['Head','UpperTorso','LowerTorso','HumanoidRootPart'];
   var WEAPONS = [
     ['Double-Barrel SG', {AimPart:'Head', Radius:12.0, Delay:0.08}],
@@ -313,13 +361,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
         { t:'toggle', k:'mself',  l:'Self death check', v:true }
       ]}
     ]},
-    { id:'settings', name:'Settings', sub:'Account, privacy and closing up', g:'Settings', groups:[
-      { n:'Account', rows:[
-        { t:'info', key:'username', l:'Username' },
-        { t:'info', key:'session',  l:'Session' },
-        { t:'info', key:'hwid',     l:'HWID' },
-        { t:'info', key:'client',   l:'Client' }
-      ]},
+    { id:'settings', name:'Settings', sub:'Privacy and closing up', g:'Settings', groups:[
       { n:'Privacy', rows:[
         { t:'toggle', k:'stream', l:'Stream proof',     d:'Keeps this window out of screen shares and recordings.', v:false },
         { t:'key',    k:'webkey', l:'Webview keybind',  v:'F8' }
@@ -327,18 +369,15 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       { n:'Exit', rows:[
         { t:'button', k:'destruct', l:'Self destruct', d:'Closes the menu and wipes your settings.', b:'Self destruct' }
       ]}
-    ]}
+    ]},
+    { id:'configs', name:'Configs', sub:'Your saved setups', g:'Configs', special:'configs', groups:[] }
   ];
 
-  // ============================================================
-  // State
-  // ============================================================
-  var S = {}, D = {}, weaponConfigs = {}, info = {};
+  // ---------- state ----------
+  var S = {}, D = {}, weaponConfigs = {};
   CFG.forEach(function(p){ p.groups.forEach(function(g){ g.rows.forEach(function(r){ if (r.k && r.v !== undefined) D[r.k] = r.v; }); }); });
-
   var CURVE_DEFAULT = { p1:{x:0.27,y:0.30}, p2:{x:0.70,y:0.76} };
-  var curve = { p1:Object.assign({}, CURVE_DEFAULT.p1), p2:Object.assign({}, CURVE_DEFAULT.p2) };
-
+  var curve = { p1:{x:0.27,y:0.30}, p2:{x:0.70,y:0.76} };
   function resetState(){
     S = {}; for (var k in D) S[k] = D[k];
     weaponConfigs = {};
@@ -350,12 +389,8 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   var nav = $('nav'), content = $('content'), stateEl = $('state'), stt = $('stt'), q = $('q');
   var cur = 'aimassist', saveTimer = null, capturing = false;
 
-  // ============================================================
-  // Backend IO
-  // ============================================================
+  // ---------- backend IO ----------
   function toBackend(){
-    // Old CurveP1/P2 were in 0..600 x 0..310 space; server compares against
-    // 180/200 and 420/80, so scale normalized values to that range.
     var cp1 = { x: Math.round(curve.p1.x * 600), y: Math.round((1 - curve.p1.y) * 310) };
     var cp2 = { x: Math.round(curve.p2.x * 600), y: Math.round((1 - curve.p2.y) * 310) };
     return {
@@ -377,108 +412,89 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       StabilizerDeadzone: S.dead,
       ReactionDelay: S.react,
       Streamproof: S.stream,
-      CurveP1: cp1,
-      CurveP2: cp2,
+      CurveP1: cp1, CurveP2: cp2,
       triggerbot: {
-        Enabled: S.trig,
-        Keybind: S.trigkey,
+        Enabled: S.trig, Keybind: S.trigkey,
         KeybindMode: String(S.trigmode).toLowerCase(),
-        RequireCamlock: S.camlock,
-        AimPart: S.tpart,
-        Radius: S.rad,
-        Delay: S.tdelay,
-        GunswitchDelay: S.tgun,
-        StudCheck: S.tstud,
-        MaxStuds: S.tstuds,
-        DeathCheck: S.tdeath,
-        SelfDeathCheck: S.tself,
-        WeaponSpecific: S.wspec,
-        WeaponConfigs: weaponConfigs
+        RequireCamlock: S.camlock, AimPart: S.tpart,
+        Radius: S.rad, Delay: S.tdelay, GunswitchDelay: S.tgun,
+        StudCheck: S.tstud, MaxStuds: S.tstuds,
+        DeathCheck: S.tdeath, SelfDeathCheck: S.tself,
+        WeaponSpecific: S.wspec, WeaponConfigs: weaponConfigs
       },
       macro: {
-        Enabled: S.macro,
-        Keybind: S.mkey,
+        Enabled: S.macro, Keybind: S.mkey,
         KeybindMode: String(S.mmode).toLowerCase(),
         OutputMode: String(S.mout).toLowerCase(),
-        Keys: ['I','O'],
-        Delay: S.mdelay,
-        SelfDeathCheck: S.mself
+        Keys: ['I','O'], Delay: S.mdelay, SelfDeathCheck: S.mself
       }
     };
   }
-
   function fromBackend(c){
     if (!c || typeof c !== 'object') return;
     var set = function(k, v){ S[k] = v; };
-    set('aim',       c.Enabled !== false);
-    set('aimkey',    c.Keybind || 'Q');
-    set('aimmode',   String(c.KeybindMode || 'toggle').toLowerCase() === 'hold' ? 'Hold' : 'Toggle');
-    set('webkey',    c.WebviewKeybind || 'F8');
-    set('predict',   c.PredictTarget !== false);
-    set('px',        c.PredictionX !== undefined ? c.PredictionX : (c.Prediction !== undefined ? c.Prediction : 0.10));
-    set('py',        c.PredictionY !== undefined ? c.PredictionY : (c.Prediction !== undefined ? c.Prediction : 0.10));
-    set('closest',   c.ClosestPoint !== undefined ? c.ClosestPoint : (c.ClosestPart !== undefined ? c.ClosestPart : true));
-    set('part',      c.FixedPart || 'Head');
-    set('smooth',    c.Smoothness !== undefined ? c.Smoothness : 0.35);
-    set('studchk',   c.MaxStudsCheck !== false);
-    set('studs',     c.MaxStuds !== undefined ? c.MaxStuds : 500);
-    set('unlock',    c.UnlockOnDeath !== false);
+    set('aim', c.Enabled !== false);
+    set('aimkey', c.Keybind || 'Q');
+    set('aimmode', String(c.KeybindMode || 'toggle').toLowerCase() === 'hold' ? 'Hold' : 'Toggle');
+    set('webkey', c.WebviewKeybind || 'F8');
+    set('predict', c.PredictTarget !== false);
+    set('px', c.PredictionX !== undefined ? c.PredictionX : 0.10);
+    set('py', c.PredictionY !== undefined ? c.PredictionY : 0.10);
+    set('closest', c.ClosestPoint !== false);
+    set('part', c.FixedPart || 'Head');
+    set('smooth', c.Smoothness !== undefined ? c.Smoothness : 0.35);
+    set('studchk', c.MaxStudsCheck !== false);
+    set('studs', c.MaxStuds !== undefined ? c.MaxStuds : 500);
+    set('unlock', c.UnlockOnDeath !== false);
     set('selfdeath', c.SelfDeathCheck !== false);
-    set('sticky',    c.StickyMode !== false);
-    set('dead',      c.StabilizerDeadzone !== undefined ? c.StabilizerDeadzone : 3.0);
-    set('react',     c.ReactionDelay !== undefined ? c.ReactionDelay : 0.12);
-    set('stream',    c.Streamproof === true);
+    set('sticky', c.StickyMode !== false);
+    set('dead', c.StabilizerDeadzone !== undefined ? c.StabilizerDeadzone : 3.0);
+    set('react', c.ReactionDelay !== undefined ? c.ReactionDelay : 0.12);
+    set('stream', c.Streamproof === true);
     if (c.CurveP1 && typeof c.CurveP1.x === 'number') {
       curve.p1 = { x: Math.max(0, Math.min(1, c.CurveP1.x / 600)), y: Math.max(0, Math.min(1, 1 - c.CurveP1.y / 310)) };
     }
     if (c.CurveP2 && typeof c.CurveP2.x === 'number') {
       curve.p2 = { x: Math.max(0, Math.min(1, c.CurveP2.x / 600)), y: Math.max(0, Math.min(1, 1 - c.CurveP2.y / 310)) };
     }
-
     var tb = c.triggerbot || {};
-    set('trig',     tb.Enabled === true);
-    set('trigkey',  tb.Keybind || 'E');
+    set('trig', tb.Enabled === true);
+    set('trigkey', tb.Keybind || 'E');
     set('trigmode', String(tb.KeybindMode || 'hold').toLowerCase() === 'toggle' ? 'Toggle' : 'Hold');
-    set('camlock',  tb.RequireCamlock !== false);
-    set('tpart',    tb.AimPart || 'Head');
-    set('rad',      tb.Radius !== undefined ? tb.Radius : 12.0);
-    set('tdelay',   tb.Delay !== undefined ? tb.Delay : 0.12);
-    set('tgun',     tb.GunswitchDelay !== undefined ? tb.GunswitchDelay : 0.0);
-    set('tstud',    tb.StudCheck !== false);
-    set('tstuds',   tb.MaxStuds !== undefined ? tb.MaxStuds : 500);
-    set('tdeath',   tb.DeathCheck !== false);
-    set('tself',    tb.SelfDeathCheck !== false);
-    set('wspec',    tb.WeaponSpecific === true);
+    set('camlock', tb.RequireCamlock !== false);
+    set('tpart', tb.AimPart || 'Head');
+    set('rad', tb.Radius !== undefined ? tb.Radius : 12.0);
+    set('tdelay', tb.Delay !== undefined ? tb.Delay : 0.12);
+    set('tgun', tb.GunswitchDelay !== undefined ? tb.GunswitchDelay : 0.0);
+    set('tstud', tb.StudCheck !== false);
+    set('tstuds', tb.MaxStuds !== undefined ? tb.MaxStuds : 500);
+    set('tdeath', tb.DeathCheck !== false);
+    set('tself', tb.SelfDeathCheck !== false);
+    set('wspec', tb.WeaponSpecific === true);
     if (tb.WeaponConfigs && typeof tb.WeaponConfigs === 'object') {
       weaponConfigs = {};
       for (var w in tb.WeaponConfigs) weaponConfigs[w] = tb.WeaponConfigs[w];
       WEAPONS.forEach(function(w){ if (!weaponConfigs[w[0]]) weaponConfigs[w[0]] = Object.assign({}, w[1]); });
     }
-
     var mc = c.macro || {};
-    set('macro',  mc.Enabled === true);
-    set('mkey',   mc.Keybind || 'F');
-    set('mmode',  String(mc.KeybindMode || 'toggle').toLowerCase() === 'hold' ? 'Hold' : 'Toggle');
-    set('mout',   String(mc.OutputMode || 'keyboard').toLowerCase() === 'mouse' ? 'Mouse' : 'Keyboard');
+    set('macro', mc.Enabled === true);
+    set('mkey', mc.Keybind || 'F');
+    set('mmode', String(mc.KeybindMode || 'toggle').toLowerCase() === 'hold' ? 'Hold' : 'Toggle');
+    set('mout', String(mc.OutputMode || 'keyboard').toLowerCase() === 'mouse' ? 'Mouse' : 'Keyboard');
     set('mdelay', mc.Delay !== undefined ? mc.Delay : 0.05);
-    set('mself',  mc.SelfDeathCheck !== false);
+    set('mself', mc.SelfDeathCheck !== false);
   }
-
   async function saveConfig(){
     try {
       var r = await fetch('/api/config', {
-        method: 'POST',
+        method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify(toBackend())
       });
       if (!r.ok) stt.textContent = 'Save failed';
-    } catch (e) {
-      stt.textContent = 'Save error';
-    }
+    } catch (e) { stt.textContent = 'Save error'; }
   }
-
-  async function loadConfig(){
+  async function loadConfigFromServer(){
     try {
       var r = await fetch('/api/config', { credentials: 'include' });
       if (!r.ok) return;
@@ -487,48 +503,41 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     } catch (e) {}
   }
 
-  async function loadAccount(){
-    try {
-      var r = await fetch('/api/me', { credentials: 'include' });
-      var d = await r.json();
-      if (!d.authenticated) { window.location.href = '/'; return; }
-      info.username = d.username || 'user';
-      info.session  = 'Authenticated';
-      try {
-        var dr = await fetch('/api/dashboard', { credentials: 'include' });
-        if (dr.ok) {
-          var dd = await dr.json();
-          info.hwid = dd.hwid || 'not bound';
-        }
-      } catch (e) {}
-      refreshClient();
-      setInterval(refreshClient, 3000);
-    } catch (e) {
-      info.username = '—'; info.session = 'unable to verify';
-    }
+  // ---------- configs library ----------
+  var STORAGE_KEY = 'light.configs.v2';
+  var CONFIGS = [], configTab = 'public';
+  function loadConfigs(){
+    try { CONFIGS = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+    catch (e) { CONFIGS = []; }
+    // Drop malformed entries
+    CONFIGS = CONFIGS.filter(function(c){
+      return c && typeof c.name === 'string' && c.backend && typeof c.backend === 'object';
+    });
+  }
+  function persistConfigs(){
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(CONFIGS)); } catch (e) {}
+  }
+  // A snapshot stores the backend shape (flat + triggerbot + macro), which is
+  // the exact same JSON the server round-trips. This makes save/load lossless
+  // regardless of which source the config originally came from.
+  function snapshotCurrent(){
+    return JSON.parse(JSON.stringify(toBackend()));
+  }
+  function applySnapshot(backend){
+    if (!backend || typeof backend !== 'object') return;
+    fromBackend(backend);
   }
 
-  async function refreshClient(){
-    if (!info.username) return;
-    try {
-      var r = await fetch('/api/client/status-by-user/' + encodeURIComponent(info.username), { credentials: 'include' });
-      if (!r.ok) return;
-      var d = await r.json();
-      info.client = d.connected ? 'Connected' : 'Offline';
-      if (cur === 'settings') {
-        // Patch only the client info row if it exists
-        [].forEach.call(content.querySelectorAll('.row'), function(row){
-          var b = row.querySelector('.txt b');
-          var v = row.querySelector('.mono');
-          if (b && b.textContent === 'Client' && v) v.textContent = info.client;
-        });
-      }
-    } catch (e) {}
+  function esc(str){ return String(str).replace(/[&<>"']/g, function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; }); }
+  function when(ts){
+    var diff = (Date.now() - ts) / 1000;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+    return new Date(ts).toLocaleDateString();
   }
 
-  // ============================================================
-  // Controls
-  // ============================================================
   function saved(){
     stateEl.classList.add('busy'); stt.textContent = 'Saving…';
     clearTimeout(saveTimer);
@@ -543,11 +552,8 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     });
   }
 
+  // ---------- controls ----------
   function control(r){
-    if (r.t === 'info') {
-      var v = info[r.key] || '—';
-      return el('span','mono', v);
-    }
     if (r.t === 'key') {
       var kb = el('button', 'btn keybtn', S[r.k]);
       kb.setAttribute('aria-label', r.l + ' (click to change)');
@@ -603,12 +609,12 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       return w;
     }
     if (r.t === 'slider') {
-      var s = el('div','sl'), inp = el('input'), vv = el('span','mono');
+      var s = el('div','sl'), inp = el('input'), v = el('span','mono');
       inp.type = 'range'; inp.min = r.min; inp.max = r.max; inp.step = r.step; inp.value = S[r.k]; inp.setAttribute('aria-label', r.l);
-      var paint = function(){ inp.style.setProperty('--p', ((inp.value - r.min) / (r.max - r.min) * 100) + '%'); vv.textContent = r.f(+inp.value); };
+      var paint = function(){ inp.style.setProperty('--p', ((inp.value - r.min) / (r.max - r.min) * 100) + '%'); v.textContent = r.f(+inp.value); };
       inp.oninput = function(){ S[r.k] = +inp.value; paint(); };
       inp.onchange = saved;
-      paint(); s.appendChild(inp); s.appendChild(vv);
+      paint(); s.appendChild(inp); s.appendChild(v);
       return s;
     }
     if (r.t === 'seg') {
@@ -709,16 +715,128 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     }
     var p = CFG.filter(function(x){ return x.id === cur; })[0];
     content.appendChild(el('div','ph','<b>' + p.name + '</b><span>' + p.sub + '</span>'));
-    p.groups.forEach(function(g){
-      var rows = g.rows.filter(visible);
-      if (!rows.length) return;
-      var grp = el('div','grp'); grp.appendChild(el('h3','', g.n));
-      var pan = el('div','panel'); rows.forEach(function(r){ pan.appendChild(rowEl(r)); });
-      grp.appendChild(pan); content.appendChild(grp);
-    });
+    if (p.special === 'configs') { renderConfigsPage(); }
+    else {
+      p.groups.forEach(function(g){
+        var rows = g.rows.filter(visible);
+        if (!rows.length) return;
+        var grp = el('div','grp'); grp.appendChild(el('h3','', g.n));
+        var pan = el('div','panel'); rows.forEach(function(r){ pan.appendChild(rowEl(r)); });
+        grp.appendChild(pan); content.appendChild(grp);
+      });
+    }
     [].forEach.call(nav.querySelectorAll('button'), function(b){ b.setAttribute('aria-selected', b.dataset.id === cur ? 'true' : 'false'); });
     content.scrollTop = 0;
   }
+
+  // ---------- Configs page ----------
+  function renderConfigsPage(){
+    var top = el('div','cfgtop');
+    var seg = el('div','seg'); seg.setAttribute('role','radiogroup'); seg.setAttribute('aria-label','Library');
+    [['public','Public'],['private','Private library']].forEach(function(t){
+      var b = el('button','', t[1]); b.setAttribute('role','radio'); b.setAttribute('aria-checked', configTab === t[0] ? 'true' : 'false');
+      b.onclick = function(){
+        configTab = t[0];
+        [].forEach.call(seg.children, function(x){ x.setAttribute('aria-checked', x === b ? 'true' : 'false'); });
+        drawGrid();
+      };
+      seg.appendChild(b);
+    });
+    var upBtn = el('button','btn primary','Upload config');
+    upBtn.onclick = openUpload;
+    top.appendChild(seg); top.appendChild(upBtn);
+    content.appendChild(top);
+    var grid = el('div','grid2'); grid.id = 'cfgGrid';
+    content.appendChild(grid);
+    drawGrid();
+  }
+  function drawGrid(){
+    var grid = $('cfgGrid'); if (!grid) return;
+    grid.innerHTML = '';
+    var list = CONFIGS.filter(function(c){ return c.visibility === configTab; }).sort(function(a,b){ return b.created - a.created; });
+    if (!list.length) {
+      grid.style.gridTemplateColumns = '1fr';
+      grid.appendChild(el('div','empty', configTab === 'public'
+        ? 'No public configs yet. Upload one and mark it Public to list it here.'
+        : 'Your private library is empty. Upload a config and keep it Private to put it here.'));
+      return;
+    }
+    grid.style.gridTemplateColumns = '';
+    list.forEach(function(c){
+      var card = el('div','ccard');
+      card.innerHTML =
+        '<div class="ctop"><h4>' + esc(c.name) + '</h4><span class="badge' + (c.visibility === 'public' ? ' pub' : '') + '">' + (c.visibility === 'public' ? 'Public' : 'Private') + '</span></div>' +
+        '<div class="meta">Saved ' + when(c.created) + '</div>' +
+        '<div class="desc">' + (c.desc ? esc(c.desc) : 'No description.') + '</div>';
+      card.addEventListener('contextmenu', function(e){ e.preventDefault(); openCtx(e.clientX, e.clientY, c); });
+      grid.appendChild(card);
+    });
+  }
+  var CTX_ICONS = {
+    load: '<path d="M4 3l8 5-8 5z"/>',
+    vis:  '<path d="M1 8s2.7-5 7-5 7 5 7 5-2.7 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.2"/>',
+    del:  '<path d="M3 4h10M6.5 4V2.6c0-.6.4-1 1-1h1c.6 0 1 .4 1 1V4M4.5 4l.6 9c0 .6.5 1 1 1h3.8c.5 0 1-.4 1-1l.6-9"/>'
+  };
+  function openCtx(x, y, c){
+    var m = $('ctxMenu');
+    m.innerHTML =
+      '<button data-a="load"><svg viewBox="0 0 16 16">' + CTX_ICONS.load + '</svg>Load</button>' +
+      '<button data-a="vis"><svg viewBox="0 0 16 16">' + CTX_ICONS.vis + '</svg>' + (c.visibility === 'public' ? 'Make private' : 'Make public') + '</button>' +
+      '<div class="sep"></div>' +
+      '<button data-a="del"><svg viewBox="0 0 16 16">' + CTX_ICONS.del + '</svg><span>Delete</span></button>';
+    m.hidden = false; m.classList.remove('show');
+    var r = m.getBoundingClientRect();
+    m.style.left = Math.min(x, window.innerWidth - r.width - 10) + 'px';
+    m.style.top = Math.min(y, window.innerHeight - r.height - 10) + 'px';
+    requestAnimationFrame(function(){ m.classList.add('show'); });
+    m.querySelector('[data-a="load"]').onclick = function(){
+      applySnapshot(c.backend);
+      saved();
+      closeCtx();
+      renderKeep();
+    };
+    m.querySelector('[data-a="vis"]').onclick = function(){
+      c.visibility = c.visibility === 'public' ? 'private' : 'public';
+      persistConfigs(); closeCtx(); drawGrid();
+    };
+    var del = m.querySelector('[data-a="del"]'), delLabel = del.querySelector('span');
+    del.onclick = function(){
+      if (!del.dataset.arm) { del.dataset.arm = '1'; delLabel.textContent = 'Click to confirm'; return; }
+      CONFIGS = CONFIGS.filter(function(x){ return x.id !== c.id; });
+      persistConfigs(); closeCtx(); drawGrid();
+    };
+  }
+  function closeCtx(){ var m = $('ctxMenu'); m.classList.remove('show'); m.hidden = true; m.innerHTML = ''; }
+
+  function openUpload(){
+    $('upName').value = ''; $('upDesc').value = '';
+    [].forEach.call($('upVis').children, function(x){ x.setAttribute('aria-checked', x.dataset.v === 'private' ? 'true' : 'false'); });
+    $('uploadModal').classList.add('show');
+    $('upName').focus();
+  }
+  function closeUpload(){ $('uploadModal').classList.remove('show'); }
+  [].forEach.call($('upVis').children, function(btn){
+    btn.onclick = function(){
+      [].forEach.call($('upVis').children, function(x){ x.setAttribute('aria-checked', x === btn ? 'true' : 'false'); });
+    };
+  });
+  $('upX').onclick = closeUpload; $('upCancel').onclick = closeUpload;
+  $('uploadModal').addEventListener('click', function(e){ if (e.target === $('uploadModal')) closeUpload(); });
+  $('upSave').onclick = function(){
+    var name = $('upName').value.trim();
+    if (!name) { $('upName').focus(); return; }
+    var vis = 'private';
+    [].forEach.call($('upVis').children, function(x){ if (x.getAttribute('aria-checked') === 'true') vis = x.dataset.v; });
+    CONFIGS.push({
+      id: 'c' + Date.now() + Math.random().toString(36).slice(2,7),
+      name: name, desc: $('upDesc').value.trim(),
+      visibility: vis, created: Date.now(),
+      backend: snapshotCurrent()
+    });
+    persistConfigs(); closeUpload();
+    configTab = vis;
+    if (cur === 'configs') { renderKeep(); }
+  };
 
   var lastG = '';
   CFG.forEach(function(p, i){
@@ -730,11 +848,14 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   });
 
   q.addEventListener('input', render);
-  document.addEventListener('click', function(){ closeMenus(); });
+  document.addEventListener('click', function(){ closeMenus(); closeCtx(); });
+  content.addEventListener('scroll', closeCtx);
+  window.addEventListener('resize', closeCtx);
   document.addEventListener('keydown', function(e){
     if (capturing) return;
     if (e.key === 'Escape') {
-      closeMenus();
+      closeMenus(); closeCtx();
+      if ($('uploadModal').classList.contains('show')) { closeUpload(); return; }
       if ($('bezierModal').classList.contains('show')) { closeBezier(); return; }
       if (document.activeElement === q) { q.value = ''; q.blur(); render(); }
       return;
@@ -746,9 +867,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     if (n >= 1 && n <= CFG.length) { cur = CFG[n - 1].id; q.value = ''; render(); }
   });
 
-  // ============================================================
-  // Session timer
-  // ============================================================
+  // ---------- session timer ----------
   var start = Date.now();
   function tick(){
     var s = Math.floor((Date.now() - start) / 1000), p = function(x){ return String(x).padStart(2,'0'); };
@@ -756,11 +875,8 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   }
   setInterval(tick, 1000); tick();
 
-  // ============================================================
-  // Close / self destruct
-  // ============================================================
+  // ---------- close / self destruct ----------
   function closeSession(clear){
-    // Sign out and shut down the client before hiding the window.
     fetch('/api/logout', { method: 'POST', credentials: 'include' }).catch(function(){});
     fetch('/api/client/shutdown', { method: 'POST', credentials: 'include' }).catch(function(){});
     var w = $('win');
@@ -773,10 +889,11 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
         if (clear) resetState();
         start = Date.now(); q.value = ''; cur = 'aimassist'; render();
         w.style.opacity = '1'; w.style.pointerEvents = '';
+        // If it was a wipe, restore defaults, otherwise pull live from server.
+        if (!clear) loadConfigFromServer().then(render);
       };
     }, 600);
   }
-  // The title ✕ in this design only closes the panel (does not log out).
   $('closeBtn').onclick = function(){
     var w = $('win');
     w.style.transition = 'opacity .4s'; w.style.opacity = '0'; w.style.pointerEvents = 'none';
@@ -790,9 +907,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     }, 450);
   };
 
-  // ============================================================
-  // Smoothing curve editor
-  // ============================================================
+  // ---------- smoothing curve editor ----------
   var X0 = 20, X1 = 540, Y0 = 240, Y1 = 20;
   var gx = function(n){ return X0 + n * (X1 - X0); }, gy = function(n){ return Y0 - n * (Y0 - Y1); };
   var svg = $('bezSvg'), drag = null, loop = null, rev = false;
@@ -851,12 +966,10 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   $('bezierModal').addEventListener('click', function(e){ if (e.target === $('bezierModal')) closeBezier(); });
   $('bezierReset').onclick = function(){ curve = { p1:Object.assign({}, CURVE_DEFAULT.p1), p2:Object.assign({}, CURVE_DEFAULT.p2) }; draw(); saved(); };
 
-  // ============================================================
-  // Boot
-  // ============================================================
-  (async function boot(){
-    await loadAccount();
-    await loadConfig();
+  // ---------- boot ----------
+  loadConfigs();
+  (async function(){
+    await loadConfigFromServer();
     render();
   })();
 })();
