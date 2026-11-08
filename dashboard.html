@@ -333,11 +333,10 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
         { t:'seg',    k:'trigmode', l:'Keybind mode',    o:['Toggle','Hold'], v:'Hold' },
         { t:'toggle', k:'camlock',  l:'Require camlock', v:true }
       ]},
-      { n:'Target selection', rows:[
-        { t:'seg',    k:'tmode',         l:'Target mode',         o:['Automatic','Selected'], v:'Automatic' },
-        { t:'key',    k:'selectkey',     l:'Select target key',   v:'T' },
-        { t:'key',    k:'clearkey',      l:'Clear target key',    v:'Y' },
-        { t:'info',   l:'Selected target', infoKey:'selectedTarget' }
+      { n:'Target mode', rows:[
+        { t:'seg',    k:'tmode',     l:'Mode',            o:['Automatic','Target'], v:'Automatic' },
+        { t:'key',    k:'selectkey', l:'Target key',      v:'T' },
+        { t:'info',   l:'Current target', infoKey:'selectedTarget' }
       ]},
       { n:'Targeting', rows:[
         { t:'select', k:'tpart',  l:'Aim part',        o:PARTS, v:'Head' },
@@ -368,9 +367,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       ]}
     ]},
     { id:'settings', name:'Settings', sub:'Privacy and closing up', g:'Settings', groups:[
-      { n:'Notifications', rows:[
-        { t:'toggle', k:'notifs', l:'Notifications', d:'Show toast notifications for target selection and connection events.', v:true }
-      ]},
       { n:'Privacy', rows:[
         { t:'toggle', k:'stream', l:'Stream proof',     d:'Keeps this window out of screen shares and recordings.', v:false },
         { t:'key',    k:'webkey', l:'Webview keybind',  v:'F8' }
@@ -385,13 +381,16 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   // ---------- state ----------
   var S = {}, D = {}, weaponConfigs = {}, info = {};
   CFG.forEach(function(p){ p.groups.forEach(function(g){ g.rows.forEach(function(r){ if (r.k && r.v !== undefined) D[r.k] = r.v; }); }); });
+
   var CURVE_DEFAULT = { p1:{x:0.27,y:0.30}, p2:{x:0.70,y:0.76} };
   var curve = { p1:{x:0.27,y:0.30}, p2:{x:0.70,y:0.76} };
+
   function resetState(){
     S = {}; for (var k in D) S[k] = D[k];
     weaponConfigs = {};
     WEAPONS.forEach(function(w){ weaponConfigs[w[0]] = Object.assign({}, w[1]); });
     curve = { p1:Object.assign({}, CURVE_DEFAULT.p1), p2:Object.assign({}, CURVE_DEFAULT.p2) };
+    info.selectedTarget = null;
   }
   resetState();
 
@@ -421,26 +420,35 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       StabilizerDeadzone: S.dead,
       ReactionDelay: S.react,
       Streamproof: S.stream,
-      CurveP1: cp1, CurveP2: cp2,
-      NotificationsEnabled: S.notifs,
+      CurveP1: cp1,
+      CurveP2: cp2,
       triggerbot: {
-        Enabled: S.trig, Keybind: S.trigkey,
+        Enabled: S.trig,
+        Keybind: S.trigkey,
         KeybindMode: String(S.trigmode).toLowerCase(),
-        RequireCamlock: S.camlock, AimPart: S.tpart,
-        Radius: S.rad, Delay: S.tdelay, GunswitchDelay: S.tgun,
-        StudCheck: S.tstud, MaxStuds: S.tstuds,
-        DeathCheck: S.tdeath, SelfDeathCheck: S.tself,
-        WeaponSpecific: S.wspec, WeaponConfigs: weaponConfigs,
-        TargetMode: String(S.tmode).toLowerCase(),
-        SelectedTarget: (typeof S.selectedTarget === 'string' && S.selectedTarget) ? S.selectedTarget : null,
-        SelectTargetKey: S.selectkey,
-        ClearTargetKey: S.clearkey
+        RequireCamlock: S.camlock,
+        AimPart: S.tpart,
+        Radius: S.rad,
+        Delay: S.tdelay,
+        GunswitchDelay: S.tgun,
+        StudCheck: S.tstud,
+        MaxStuds: S.tstuds,
+        DeathCheck: S.tdeath,
+        SelfDeathCheck: S.tself,
+        WeaponSpecific: S.wspec,
+        WeaponConfigs: weaponConfigs,
+        TargetMode: String(S.tmode).toLowerCase() === 'target' ? 'target' : 'automatic',
+        SelectedTarget: (typeof info.selectedTarget === 'string' && info.selectedTarget) ? info.selectedTarget : null,
+        SelectTargetKey: S.selectkey
       },
       macro: {
-        Enabled: S.macro, Keybind: S.mkey,
+        Enabled: S.macro,
+        Keybind: S.mkey,
         KeybindMode: String(S.mmode).toLowerCase(),
         OutputMode: String(S.mout).toLowerCase(),
-        Keys: ['I','O'], Delay: S.mdelay, SelfDeathCheck: S.mself
+        Keys: ['I','O'],
+        Delay: S.mdelay,
+        SelfDeathCheck: S.mself
       }
     };
   }
@@ -466,13 +474,13 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     set('dead',      c.StabilizerDeadzone !== undefined ? c.StabilizerDeadzone : 3.0);
     set('react',     c.ReactionDelay !== undefined ? c.ReactionDelay : 0.12);
     set('stream',    c.Streamproof === true);
-    set('notifs',    c.NotificationsEnabled !== false);
     if (c.CurveP1 && typeof c.CurveP1.x === 'number') {
       curve.p1 = { x: Math.max(0, Math.min(1, c.CurveP1.x / 600)), y: Math.max(0, Math.min(1, 1 - c.CurveP1.y / 310)) };
     }
     if (c.CurveP2 && typeof c.CurveP2.x === 'number') {
       curve.p2 = { x: Math.max(0, Math.min(1, c.CurveP2.x / 600)), y: Math.max(0, Math.min(1, 1 - c.CurveP2.y / 310)) };
     }
+
     var tb = c.triggerbot || {};
     set('trig',       tb.Enabled === true);
     set('trigkey',    tb.Keybind || 'E');
@@ -487,15 +495,15 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     set('tdeath',     tb.DeathCheck !== false);
     set('tself',      tb.SelfDeathCheck !== false);
     set('wspec',      tb.WeaponSpecific === true);
-    set('tmode',      String(tb.TargetMode || 'automatic').toLowerCase() === 'selected' ? 'Selected' : 'Automatic');
+    set('tmode',      String(tb.TargetMode || 'automatic').toLowerCase() === 'target' ? 'Target' : 'Automatic');
     set('selectkey',  tb.SelectTargetKey || 'T');
-    set('clearkey',   tb.ClearTargetKey || 'Y');
     info.selectedTarget = tb.SelectedTarget || null;
     if (tb.WeaponConfigs && typeof tb.WeaponConfigs === 'object') {
       weaponConfigs = {};
       for (var w in tb.WeaponConfigs) weaponConfigs[w] = tb.WeaponConfigs[w];
       WEAPONS.forEach(function(w){ if (!weaponConfigs[w[0]]) weaponConfigs[w[0]] = Object.assign({}, w[1]); });
     }
+
     var mc = c.macro || {};
     set('macro',  mc.Enabled === true);
     set('mkey',   mc.Keybind || 'F');
@@ -540,7 +548,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     }
   }
 
-  // ---------- saved configs library ----------
+  // ---------- saved configs ----------
   var STORAGE_KEY = 'light.configs.v2';
   var CONFIGS = [], configTab = 'public';
   function loadConfigs(){
@@ -553,13 +561,8 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   function persistConfigs(){
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(CONFIGS)); } catch (e) {}
   }
-  function snapshotCurrent(){
-    return JSON.parse(JSON.stringify(toBackend()));
-  }
-  function applySnapshot(backend){
-    if (!backend || typeof backend !== 'object') return;
-    fromBackend(backend);
-  }
+  function snapshotCurrent(){ return JSON.parse(JSON.stringify(toBackend())); }
+  function applySnapshot(backend){ if (backend && typeof backend === 'object') fromBackend(backend); }
 
   function esc(str){ return String(str).replace(/[&<>"']/g, function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; }); }
   function when(ts){
@@ -827,16 +830,8 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     m.style.left = Math.min(x, window.innerWidth - r.width - 10) + 'px';
     m.style.top = Math.min(y, window.innerHeight - r.height - 10) + 'px';
     requestAnimationFrame(function(){ m.classList.add('show'); });
-    m.querySelector('[data-a="load"]').onclick = function(){
-      applySnapshot(c.backend);
-      saved();
-      closeCtx();
-      renderKeep();
-    };
-    m.querySelector('[data-a="vis"]').onclick = function(){
-      c.visibility = c.visibility === 'public' ? 'private' : 'public';
-      persistConfigs(); closeCtx(); drawGrid();
-    };
+    m.querySelector('[data-a="load"]').onclick = function(){ applySnapshot(c.backend); saved(); closeCtx(); renderKeep(); };
+    m.querySelector('[data-a="vis"]').onclick = function(){ c.visibility = c.visibility === 'public' ? 'private' : 'public'; persistConfigs(); closeCtx(); drawGrid(); };
     var del = m.querySelector('[data-a="del"]'), delLabel = del.querySelector('span');
     del.onclick = function(){
       if (!del.dataset.arm) { del.dataset.arm = '1'; delLabel.textContent = 'Click to confirm'; return; }
@@ -1004,7 +999,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   $('bezierModal').addEventListener('click', function(e){ if (e.target === $('bezierModal')) closeBezier(); });
   $('bezierReset').onclick = function(){ curve = { p1:Object.assign({}, CURVE_DEFAULT.p1), p2:Object.assign({}, CURVE_DEFAULT.p2) }; draw(); saved(); };
 
-  // ---------- poll for selected target changes (backend keeps it) ----------
+  // ---------- poll for selected target (backend keeps it) ----------
   async function pollSelectedTarget(){
     try {
       var r = await fetch('/api/config', { credentials: 'include' });
@@ -1017,7 +1012,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
           info.selectedTarget = newSel;
           if (cur === 'triggerbot') renderKeep();
         }
-        var newMode = String(tb.TargetMode || 'automatic').toLowerCase() === 'selected' ? 'Selected' : 'Automatic';
+        var newMode = String(tb.TargetMode || 'automatic').toLowerCase() === 'target' ? 'Target' : 'Automatic';
         if (newMode !== S.tmode) {
           S.tmode = newMode;
           if (cur === 'triggerbot') renderKeep();
