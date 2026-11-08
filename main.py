@@ -129,8 +129,8 @@ def migrate_db():
             ("user_accounts", "email", "TEXT"),
             ("user_accounts", "last_login", "TEXT"),
             ("saved_configs", "username", "TEXT"),
-            ("login_sessions", "launched_at", "TEXT"),
             ("saved_configs", "visibility", "TEXT DEFAULT 'private'"),
+            ("login_sessions", "launched_at", "TEXT"),
         ]
         for table, col, definition in migrations:
             try:
@@ -184,6 +184,9 @@ DEFAULT_TRIGGERBOT = {
         "Revolver": {"AimPart": "Head", "Radius": 10.0, "Delay": 0.15},
         "TacticalShotgun": {"AimPart": "Head", "Radius": 14.0, "Delay": 0.10},
     },
+    "TargetMode": "automatic",
+    "SelectedTarget": None,
+    "SelectTargetKey": "T",
 }
 
 DEFAULT_MACRO = {
@@ -403,6 +406,127 @@ async def set_config(request: Request, data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ---------------------------------------------------------------------------
+# Saved configs — user's personal library
+# ---------------------------------------------------------------------------
+
+@app.get("/api/configs")
+async def list_saved_configs(request: Request):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("""
+            SELECT id, config_name, config_data, visibility, created_at
+            FROM saved_configs
+            WHERE username=%s
+            ORDER BY created_at DESC
+        """, (username,))
+        rows = cur.fetchall()
+        db.close()
+        configs = []
+        for row in rows:
+            cid, name, data_json, vis, created = row
+            try:
+                data = json.loads(data_json)
+            except Exception:
+                data = {}
+            configs.append({
+                "id": cid,
+                "name": name,
+                "data": data,
+                "visibility": vis or "private",
+                "created_at": created,
+            })
+        return {"configs": configs}
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/configs")
+async def create_saved_config(request: Request, data: dict):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    name = (data.get("name") or "").strip()
+    cfg = data.get("data")
+    vis = (data.get("visibility") or "private").strip().lower()
+    if vis not in ("private", "public"):
+        vis = "private"
+    if not name:
+        raise HTTPException(status_code=400, detail="Name required")
+    if not isinstance(cfg, dict):
+        raise HTTPException(status_code=400, detail="Config required")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO saved_configs (username, config_name, config_data, visibility, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (username, config_name) DO UPDATE
+                SET config_data = EXCLUDED.config_data,
+                    visibility = EXCLUDED.visibility
+            RETURNING id
+        """, (username, name[:60], json.dumps(cfg), vis, datetime.now().isoformat()))
+        new_id = cur.fetchone()[0]
+        db.commit()
+        db.close()
+        return {"success": True, "id": new_id}
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/configs/{config_id}")
+async def delete_saved_config(request: Request, config_id: int):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("DELETE FROM saved_configs WHERE id=%s AND username=%s",
+                    (config_id, username))
+        db.commit()
+        db.close()
+        return {"success": True}
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/configs/{config_id}/visibility")
+async def set_config_visibility(request: Request, config_id: int, data: dict):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    vis = (data.get("visibility") or "private").strip().lower()
+    if vis not in ("private", "public"):
+        raise HTTPException(status_code=400, detail="Invalid visibility")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("UPDATE saved_configs SET visibility=%s WHERE id=%s AND username=%s",
+                    (vis, config_id, username))
+        db.commit()
+        db.close()
+        return {"success": True}
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Clients
+# ---------------------------------------------------------------------------
+
 @app.post("/api/client/register")
 async def register_client(data: ClientRegister):
     db = get_db()
@@ -564,6 +688,10 @@ async def client_status_by_user(request: Request, username: str):
         return {"connected": False, "error": str(e)}
 
 
+# ---------------------------------------------------------------------------
+# Community configs
+# ---------------------------------------------------------------------------
+
 @app.get("/api/community/configs")
 async def list_community_configs(request: Request):
     username = request.cookies.get("username")
@@ -686,9 +814,9 @@ async def save_community_to_mine(request: Request, data: dict):
                 break
             name = f"{base_name} ({suffix})"
             suffix += 1
-        cur.execute("""INSERT INTO saved_configs (username, config_name, config_data, created_at)
-                       VALUES (%s, %s, %s, %s)""",
-                    (username, name, cfg_json, datetime.now().isoformat()))
+        cur.execute("""INSERT INTO saved_configs (username, config_name, config_data, visibility, created_at)
+                       VALUES (%s, %s, %s, %s, %s)""",
+                    (username, name, cfg_json, "private", datetime.now().isoformat()))
         db.commit()
         db.close()
         return {"success": True, "name": name}
@@ -698,11 +826,6 @@ async def save_community_to_mine(request: Request, data: dict):
         try: db.close()
         except: pass
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/keepalive")
-def keepalive():
-    return {"status": "alive", "timestamp": datetime.now().isoformat()}
 
 
 # ---------------------------------------------------------------------------
@@ -729,7 +852,16 @@ async def launcher_launch(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# HTML routes — "/" serves the launcher (which contains its own login form)
+# Health
+# ---------------------------------------------------------------------------
+
+@app.get("/api/keepalive")
+def keepalive():
+    return {"status": "alive", "timestamp": datetime.now().isoformat()}
+
+
+# ---------------------------------------------------------------------------
+# HTML routes
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
