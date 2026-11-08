@@ -145,6 +145,11 @@ def migrate_db():
             cur.execute("ALTER TABLE login_sessions ALTER COLUMN license_key DROP NOT NULL")
         except Exception:
             pass
+        # Clean up stray license_key column in saved_configs if it exists with NOT NULL
+        try:
+            cur.execute("ALTER TABLE saved_configs ALTER COLUMN license_key DROP NOT NULL")
+        except Exception:
+            pass
         db.commit()
         db.close()
         print("[MIGRATE] Done", flush=True)
@@ -430,7 +435,7 @@ async def list_saved_configs(request: Request):
         for row in rows:
             cid, name, data_json, vis, created = row
             try:
-                data = json.loads(data_json)
+                data = json.loads(data_json) if data_json else {}
             except Exception:
                 data = {}
             configs.append({
@@ -444,7 +449,7 @@ async def list_saved_configs(request: Request):
     except Exception as e:
         try: db.close()
         except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"list failed: {type(e).__name__}: {e}")
 
 
 @app.post("/api/configs")
@@ -452,15 +457,18 @@ async def create_saved_config(request: Request, data: dict):
     username = request.cookies.get("username")
     if not username:
         raise HTTPException(status_code=401, detail="Not authenticated")
+
     name = (data.get("name") or "").strip()
     cfg = data.get("data")
     vis = (data.get("visibility") or "private").strip().lower()
     if vis not in ("private", "public"):
         vis = "private"
+
     if not name:
         raise HTTPException(status_code=400, detail="Name required")
     if not isinstance(cfg, dict):
         raise HTTPException(status_code=400, detail="Config required")
+
     db = get_db()
     cur = db.cursor()
     try:
@@ -477,9 +485,13 @@ async def create_saved_config(request: Request, data: dict):
         db.close()
         return {"success": True, "id": new_id}
     except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print("[CONFIGS] CREATE FAILED:", flush=True)
+        print(tb, flush=True)
         try: db.close()
         except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"create failed: {type(e).__name__}: {e}")
 
 
 @app.delete("/api/configs/{config_id}")
@@ -498,7 +510,7 @@ async def delete_saved_config(request: Request, config_id: int):
     except Exception as e:
         try: db.close()
         except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"delete failed: {type(e).__name__}: {e}")
 
 
 @app.post("/api/configs/{config_id}/visibility")
@@ -520,7 +532,7 @@ async def set_config_visibility(request: Request, config_id: int, data: dict):
     except Exception as e:
         try: db.close()
         except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"visibility failed: {type(e).__name__}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -713,7 +725,7 @@ async def list_community_configs(request: Request):
         for row in rows:
             cid, author, name, desc, cfg_json, likes, created = row
             try:
-                cfg = json.loads(cfg_json)
+                cfg = json.loads(cfg_json) if cfg_json else {}
             except:
                 cfg = {}
             configs.append({
@@ -825,7 +837,7 @@ async def save_community_to_mine(request: Request, data: dict):
     except Exception as e:
         try: db.close()
         except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"save-mine failed: {type(e).__name__}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -857,7 +869,11 @@ async def launcher_launch(request: Request):
 
 @app.get("/api/keepalive")
 def keepalive():
-    return {"status": "alive", "timestamp": datetime.now().isoformat()}
+    return {
+        "status": "alive",
+        "timestamp": datetime.now().isoformat(),
+        "configs_v": 3,
+    }
 
 
 # ---------------------------------------------------------------------------
