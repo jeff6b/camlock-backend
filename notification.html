@@ -1,0 +1,223 @@
+# notification.py — bottom-right toast for features.notify()
+#
+# Reads features.pop_notification() in a loop, shows each toast as a
+# frameless tkinter window in the bottom-right of the primary display.
+# Auto-dismisses after each notification's `duration` seconds.
+# New notifications stack upward.
+
+import time
+import threading
+
+try:
+    import tkinter as tk
+    from tkinter import font as tkfont
+except ImportError:
+    print("[NOTIF] tkinter missing — notifications disabled", flush=True)
+    tk = None
+
+# Lazy import to avoid circular dependency
+def _pop():
+    try:
+        import features
+        return features.pop_notification()
+    except Exception:
+        return None
+
+def _check_enabled():
+    try:
+        import features
+        return bool(features.triggerbot.get("NotificationsEnabled", True))
+    except Exception:
+        return False
+
+
+# ============================================================
+# Toast window
+# ============================================================
+
+TOAST_WIDTH = 320
+TOAST_MARGIN = 16
+TOAST_GAP = 8
+BG_COLOR = "#131316"
+BORDER_COLOR = "#2a2a2e"
+TITLE_COLOR = "#F2F3F5"
+BODY_COLOR = "#A9AFB8"
+
+
+class Toast:
+    def __init__(self, root, notification, stack_index):
+        self.root = root
+        self.duration = float(notification.get("duration", 3.5))
+        self.started = time.time()
+
+        win = tk.Toplevel(root)
+        win.overrideredirect(True)
+        win.configure(bg=BG_COLOR)
+        win.attributes("-topmost", True)
+        win.attributes("-alpha", 0.0)
+
+        # Outer border via a 1px frame
+        outer = tk.Frame(win, bg=BORDER_COLOR)
+        outer.pack(fill="both", expand=True)
+
+        inner = tk.Frame(outer, bg=BG_COLOR)
+        inner.pack(fill="both", expand=True, padx=1, pady=1)
+
+        title_font = tkfont.Font(family="Segoe UI", size=10, weight="bold")
+        body_font = tkfont.Font(family="Segoe UI", size=9)
+
+        title_lbl = tk.Label(
+            inner, text=notification.get("title", ""),
+            font=title_font, fg=TITLE_COLOR, bg=BG_COLOR,
+            anchor="w", justify="left",
+        )
+        title_lbl.pack(fill="x", padx=14, pady=(10, 0))
+
+        body_text = notification.get("body", "")
+        if body_text:
+            body_lbl = tk.Label(
+                inner, text=body_text,
+                font=body_font, fg=BODY_COLOR, bg=BG_COLOR,
+                anchor="w", justify="left",
+                wraplength=TOAST_WIDTH - 28,
+            )
+            body_lbl.pack(fill="x", padx=14, pady=(2, 10))
+        else:
+            # No body — just pad under the title
+            tk.Frame(inner, height=8, bg=BG_COLOR).pack()
+
+        win.update_idletasks()
+        h = win.winfo_reqheight()
+
+        # Position: bottom-right of primary display, stacked upward
+        screen_w = win.winfo_screenwidth()
+        screen_h = win.winfo_screenheight()
+        x = screen_w - TOAST_WIDTH - TOAST_MARGIN
+        y = screen_h - h - TOAST_MARGIN - stack_index * (h + TOAST_GAP)
+
+        win.geometry(f"{TOAST_WIDTH}x{h}+{x}+{y}")
+
+        self.win = win
+        self.h = h
+
+        # Fade in
+        self._fade(0.0, 0.95, 0.18)
+
+    def _fade(self, start, end, duration_s, on_done=None):
+        steps = 8
+        interval = max(10, int(duration_s * 1000 / steps))
+        delta = (end - start) / steps
+
+        def tick(i=1):
+            try:
+                alpha = start + delta * i
+                if alpha < 0: alpha = 0.0
+                if alpha > 1: alpha = 1.0
+                self.win.attributes("-alpha", alpha)
+                if i < steps:
+                    self.win.after(interval, tick, i + 1)
+                elif on_done:
+                    on_done()
+            except tk.TclError:
+                pass
+
+        tick()
+
+    def dismiss(self):
+        def close():
+            try:
+                self.win.destroy()
+            except tk.TclError:
+                pass
+        self._fade(0.95, 0.0, 0.18, on_done=close)
+
+    def is_expired(self, now):
+        return now - self.started >= self.duration
+
+
+# ============================================================
+# Main loop
+# ============================================================
+
+_ACTIVE_TOASTS = []   # list of Toast objects, index 0 = oldest (highest on screen)
+
+
+def _reflow(root):
+    """Reposition all active toasts so newest is at the bottom."""
+    screen_h = root.winfo_screenheight()
+    for idx, toast in enumerate(reversed(_ACTIVE_TOASTS)):
+        try:
+            x = screen_h  # unused
+            w = TOAST_WIDTH
+            h = toast.h
+            scr_w = root.winfo_screenwidth()
+            scr_h = root.winfo_screenheight()
+            x = scr_w - w - TOAST_MARGIN
+            y = scr_h - h - TOAST_MARGIN - idx * (h + TOAST_GAP)
+            toast.win.geometry(f"{w}x{h}+{x}+{y}")
+        except tk.TclError:
+            pass
+
+
+def notification_loop():
+    if tk is None:
+        return
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+
+    while True:
+        # Prune expired toasts
+        now = time.time()
+        expired = [t for t in _ACTIVE_TOASTS if t.is_expired(now)]
+        if expired:
+            for t in expired:
+                try:
+                    t.dismiss()
+                except Exception:
+                    pass
+                if t in _ACTIVE_TOASTS:
+                    _ACTIVE_TOASTS.remove(t)
+            _reflow(root)
+
+        # Pull new notifications
+        if _check_enabled():
+            n = _pop()
+            if n:
+                try:
+                    toast = Toast(root, n, len(_ACTIVE_TOASTS))
+                    _ACTIVE_TOASTS.append(toast)
+                    _reflow(root)
+                except Exception as e:
+                    print(f"[NOTIF] toast failed: {e}", flush=True)
+
+        # Pump tkinter events
+        try:
+            root.update()
+        except tk.TclError:
+            break
+
+        time.sleep(0.05)
+
+    try:
+        root.destroy()
+    except Exception:
+        pass
+
+
+def start():
+    """Start the notification loop in a daemon thread."""
+    t = threading.Thread(target=notification_loop, daemon=True)
+    t.start()
+    return t
+
+
+# Self-start if run as __main__ (for testing)
+if __name__ == "__main__":
+    start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
