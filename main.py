@@ -130,6 +130,7 @@ def migrate_db():
             ("user_accounts", "last_login", "TEXT"),
             ("saved_configs", "username", "TEXT"),
             ("login_sessions", "launched_at", "TEXT"),
+            ("saved_configs", "visibility", "TEXT DEFAULT 'private'"),
         ]
         for table, col, definition in migrations:
             try:
