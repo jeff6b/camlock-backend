@@ -284,7 +284,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   var $ = function(id){ return document.getElementById(id); };
   function el(tag, cls, html){ var e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; }
 
-  // ---------- config schema ----------
   var PARTS = ['Head','UpperTorso','LowerTorso','HumanoidRootPart'];
   var WEAPONS = [
     ['Double-Barrel SG', {AimPart:'Head', Radius:12.0, Delay:0.08}],
@@ -378,7 +377,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     { id:'configs', name:'Configs', sub:'Your saved setups', g:'Configs', special:'configs', groups:[] }
   ];
 
-  // ---------- state ----------
   var S = {}, D = {}, weaponConfigs = {}, info = {};
   CFG.forEach(function(p){ p.groups.forEach(function(g){ g.rows.forEach(function(r){ if (r.k && r.v !== undefined) D[r.k] = r.v; }); }); });
 
@@ -548,19 +546,29 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     }
   }
 
-  // ---------- saved configs ----------
-  var STORAGE_KEY = 'light.configs.v2';
-  var CONFIGS = [], configTab = 'public';
-  function loadConfigs(){
-    try { CONFIGS = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
-    catch (e) { CONFIGS = []; }
-    CONFIGS = CONFIGS.filter(function(c){
-      return c && typeof c.name === 'string' && c.backend && typeof c.backend === 'object';
-    });
+  // ---------- saved configs (BACKEND) ----------
+  var CONFIGS = [], configTab = 'private';
+
+  async function refreshConfigs(){
+    try {
+      var r = await fetch('/api/configs', { credentials: 'include' });
+      if (!r.ok) { CONFIGS = []; return; }
+      var d = await r.json();
+      CONFIGS = (d.configs || []).map(function(c){
+        return {
+          id: c.id,
+          name: c.name,
+          desc: '',
+          visibility: c.visibility || 'private',
+          created: c.created_at ? Date.parse(c.created_at) : Date.now(),
+          backend: c.data || {}
+        };
+      });
+    } catch (e) {
+      CONFIGS = [];
+    }
   }
-  function persistConfigs(){
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(CONFIGS)); } catch (e) {}
-  }
+
   function snapshotCurrent(){ return JSON.parse(JSON.stringify(toBackend())); }
   function applySnapshot(backend){ if (backend && typeof backend === 'object') fromBackend(backend); }
 
@@ -774,7 +782,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   function renderConfigsPage(){
     var top = el('div','cfgtop');
     var seg = el('div','seg'); seg.setAttribute('role','radiogroup'); seg.setAttribute('aria-label','Library');
-    [['public','Public'],['private','Private library']].forEach(function(t){
+    [['private','Private library'],['public','Public']].forEach(function(t){
       var b = el('button','', t[1]); b.setAttribute('role','radio'); b.setAttribute('aria-checked', configTab === t[0] ? 'true' : 'false');
       b.onclick = function(){
         configTab = t[0];
@@ -783,14 +791,17 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       };
       seg.appendChild(b);
     });
-    var upBtn = el('button','btn primary','Upload config');
+    var upBtn = el('button','btn primary','Save current as config');
     upBtn.onclick = openUpload;
     top.appendChild(seg); top.appendChild(upBtn);
     content.appendChild(top);
     var grid = el('div','grid2'); grid.id = 'cfgGrid';
     content.appendChild(grid);
-    drawGrid();
+
+    grid.appendChild(el('div','empty','Loading…'));
+    refreshConfigs().then(function(){ drawGrid(); });
   }
+
   function drawGrid(){
     var grid = $('cfgGrid'); if (!grid) return;
     grid.innerHTML = '';
@@ -798,8 +809,8 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     if (!list.length) {
       grid.style.gridTemplateColumns = '1fr';
       grid.appendChild(el('div','empty', configTab === 'public'
-        ? 'No public configs yet. Upload one and mark it Public to list it here.'
-        : 'Your private library is empty. Upload a config and keep it Private to put it here.'));
+        ? 'No public configs yet. Save one and mark it Public.'
+        : 'Your private library is empty. Save a config and keep it Private to put it here.'));
       return;
     }
     grid.style.gridTemplateColumns = '';
@@ -808,16 +819,18 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       card.innerHTML =
         '<div class="ctop"><h4>' + esc(c.name) + '</h4><span class="badge' + (c.visibility === 'public' ? ' pub' : '') + '">' + (c.visibility === 'public' ? 'Public' : 'Private') + '</span></div>' +
         '<div class="meta">Saved ' + when(c.created) + '</div>' +
-        '<div class="desc">' + (c.desc ? esc(c.desc) : 'No description.') + '</div>';
+        '<div class="desc">' + (c.desc ? esc(c.desc) : 'Saved config') + '</div>';
       card.addEventListener('contextmenu', function(e){ e.preventDefault(); openCtx(e.clientX, e.clientY, c); });
       grid.appendChild(card);
     });
   }
+
   var CTX_ICONS = {
     load: '<path d="M4 3l8 5-8 5z"/>',
     vis:  '<path d="M1 8s2.7-5 7-5 7 5 7 5-2.7 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.2"/>',
     del:  '<path d="M3 4h10M6.5 4V2.6c0-.6.4-1 1-1h1c.6 0 1 .4 1 1V4M4.5 4l.6 9c0 .6.5 1 1 1h3.8c.5 0 1-.4 1-1l.6-9"/>'
   };
+
   function openCtx(x, y, c){
     var m = $('ctxMenu');
     m.innerHTML =
@@ -830,13 +843,39 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     m.style.left = Math.min(x, window.innerWidth - r.width - 10) + 'px';
     m.style.top = Math.min(y, window.innerHeight - r.height - 10) + 'px';
     requestAnimationFrame(function(){ m.classList.add('show'); });
-    m.querySelector('[data-a="load"]').onclick = function(){ applySnapshot(c.backend); saved(); closeCtx(); renderKeep(); };
-    m.querySelector('[data-a="vis"]').onclick = function(){ c.visibility = c.visibility === 'public' ? 'private' : 'public'; persistConfigs(); closeCtx(); drawGrid(); };
+
+    m.querySelector('[data-a="load"]').onclick = function(){
+      applySnapshot(c.backend);
+      saved();
+      closeCtx();
+      renderKeep();
+    };
+
+    m.querySelector('[data-a="vis"]').onclick = function(){
+      var newVis = c.visibility === 'public' ? 'private' : 'public';
+      fetch('/api/configs/' + c.id + '/visibility', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ visibility: newVis })
+      }).then(function(){
+        c.visibility = newVis;
+        closeCtx();
+        drawGrid();
+      }).catch(function(){ closeCtx(); });
+    };
+
     var del = m.querySelector('[data-a="del"]'), delLabel = del.querySelector('span');
     del.onclick = function(){
       if (!del.dataset.arm) { del.dataset.arm = '1'; delLabel.textContent = 'Click to confirm'; return; }
-      CONFIGS = CONFIGS.filter(function(x){ return x.id !== c.id; });
-      persistConfigs(); closeCtx(); drawGrid();
+      fetch('/api/configs/' + c.id, {
+        method: 'DELETE',
+        credentials: 'include'
+      }).then(function(){
+        CONFIGS = CONFIGS.filter(function(x){ return x.id !== c.id; });
+        closeCtx();
+        drawGrid();
+      }).catch(function(){ closeCtx(); });
     };
   }
   function closeCtx(){ var m = $('ctxMenu'); m.classList.remove('show'); m.hidden = true; m.innerHTML = ''; }
@@ -860,15 +899,30 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     if (!name) { $('upName').focus(); return; }
     var vis = 'private';
     [].forEach.call($('upVis').children, function(x){ if (x.getAttribute('aria-checked') === 'true') vis = x.dataset.v; });
-    CONFIGS.push({
-      id: 'c' + Date.now() + Math.random().toString(36).slice(2,7),
-      name: name, desc: $('upDesc').value.trim(),
-      visibility: vis, created: Date.now(),
-      backend: snapshotCurrent()
+    var desc = $('upDesc').value.trim();
+    var snap = snapshotCurrent();
+
+    $('upSave').disabled = true;
+    $('upSave').textContent = 'Saving…';
+
+    fetch('/api/configs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ name: name, data: snap, visibility: vis })
+    }).then(function(r){
+      if (!r.ok) throw new Error('save failed');
+      return r.json();
+    }).then(function(){
+      closeUpload();
+      configTab = vis;
+      return refreshConfigs();
+    }).then(function(){
+      if (cur === 'configs') drawGrid();
+    }).catch(function(){
+      $('upSave').disabled = false;
+      $('upSave').textContent = 'Save config';
     });
-    persistConfigs(); closeUpload();
-    configTab = vis;
-    if (cur === 'configs') { renderKeep(); }
   };
 
   // ---------- nav ----------
@@ -999,7 +1053,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   $('bezierModal').addEventListener('click', function(e){ if (e.target === $('bezierModal')) closeBezier(); });
   $('bezierReset').onclick = function(){ curve = { p1:Object.assign({}, CURVE_DEFAULT.p1), p2:Object.assign({}, CURVE_DEFAULT.p2) }; draw(); saved(); };
 
-  // ---------- poll for selected target (backend keeps it) ----------
+  // ---------- poll for selected target ----------
   async function pollSelectedTarget(){
     try {
       var r = await fetch('/api/config', { credentials: 'include' });
@@ -1023,10 +1077,10 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   setInterval(pollSelectedTarget, 1500);
 
   // ---------- boot ----------
-  loadConfigs();
   (async function(){
     await loadAccount();
     await loadConfig();
+    await refreshConfigs();
     render();
   })();
 })();
