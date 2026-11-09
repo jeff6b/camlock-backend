@@ -10,9 +10,109 @@
 *,*::before,*::after{box-sizing:inherit}
 html,body{height:100%;margin:0}
 body{background:#0e1218;color:var(--text);font:400 13px/1.45 Geist,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;display:grid;place-items:stretch;padding:0;overflow:hidden}
-button,input{font:inherit;color:inherit}
+body.ui-bg{background-size:cover;background-position:center;background-repeat:no-repeat;background-attachment:fixed}
+body.ui-bg::before{content:"";position:fixed;inset:0;background:rgba(10,12,14,.75);pointer-events:none;z-index:0}
+button,input,textarea,select{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+/* ============================================================
+   SLIDER DRAG FIX — everything interactive is no-drag
+   ============================================================ */
+
+/* Only the title bar is draggable */
+.title {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+/* Every interactive element inside the title (close button, etc.) */
+.title button,
+.title .wc,
+.title .wc button,
+.title .state {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Everywhere else — no drag, so sliders/buttons/inputs work */
+button,
+input,
+textarea,
+select,
+label,
+a,
+.side,
+.nav,
+.nav button,
+.search,
+.search input,
+.search kbd,
+.content,
+.main,
+.body,
+.grp,
+.panel,
+.row,
+.txt,
+.mono,
+.sw,
+.toggle,
+.dd,
+.dd-btn,
+.dd-menu,
+.dd-menu button,
+.sl,
+.fill-slider,
+input[type=range],
+.seg,
+.seg button,
+.btn,
+.keybtn,
+.overview-tool,
+.card,
+.weapon-cards,
+.weapon-card,
+.ccard,
+.cfgtop,
+.grid2,
+.cfg-modal,
+.cfg-modal input,
+.cfg-modal textarea,
+.cfg-modal-actions,
+.cfg-modal-actions .text-button,
+.bez,
+.bez svg,
+.rail,
+.mrow,
+.reads,
+.ctxmenu,
+.ctxmenu button,
+.overlay,
+.modal,
+.modal input,
+.modal textarea,
+.modal-actions,
+.modal-actions .btn,
+.session,
+.sessionBar,
+#toast {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Sliders specifically — extra safety */
+input[type=range],
+.sl input[type=range] {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+  pointer-events: auto !important;
+  user-select: none;
+}
+
+/* ============================================================
+   Layout
+   ============================================================ */
 
 .scene{position:fixed;inset:0;z-index:0;background:#0e1218 url("https://cdn.corenexis.com/f/0yjd54ZW.webp") center/cover no-repeat}
 .scene::before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.3)}
@@ -20,12 +120,12 @@ button{cursor:pointer}
 .win{position:relative;z-index:1;width:100%;height:100vh;height:100dvh;overflow:hidden;display:grid;grid-template-rows:44px 1fr;
   background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.025)),rgba(9,14,12,.7);
   backdrop-filter:blur(30px) saturate(140%);-webkit-backdrop-filter:blur(30px) saturate(140%)}
-.title{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 8px 0 20px;-webkit-app-region:drag;app-region:drag}
+.title{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 8px 0 20px}
 .brand{font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--muted)}
 .state{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dim);transition:color .2s}
 .state svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .state.busy{color:var(--text)}
-.wc{display:flex;gap:2px;justify-self:end;-webkit-app-region:no-drag;app-region:no-drag}
+.wc{display:flex;gap:2px;justify-self:end}
 .wc button{width:36px;height:30px;border:0;border-radius:8px;background:none;color:var(--muted);font-size:13px}
 .wc button:hover{background:rgba(255,255,255,.1);color:#fff}
 
@@ -109,6 +209,12 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 
 .card{flex:1;padding:12px 14px;border-radius:10px;background:rgba(255,255,255,.04)}
 .card h4{margin:0 0 4px;font-size:13px;font-weight:600}
+
+/* URL input row (for bg URL) */
+.urlrow{display:flex;flex-direction:column;gap:6px;padding:9px 0}
+.urlrow label{font-size:11px;color:var(--dim)}
+.urlrow input{width:100%;padding:9px 11px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.04);outline:0;font-size:12.5px}
+.urlrow input:focus{border-color:rgba(255,255,255,.26);background:rgba(255,255,255,.07)}
 
 .cfgtop{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;flex-wrap:wrap}
 .grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
@@ -365,7 +471,17 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
         { t:'toggle', k:'mself',  l:'Self death check', v:true }
       ]}
     ]},
-    { id:'settings', name:'Settings', sub:'Privacy and closing up', g:'Settings', groups:[
+    { id:'settings', name:'Settings', sub:'Appearance, privacy and account', g:'Settings', groups:[
+      { n:'Appearance', rows:[
+        { t:'toggle', k:'uibg',      l:'Custom background', d:'Use a background image behind the UI.', v:false },
+        { t:'url',    k:'uibgurl',   l:'Image URL',          v:'' }
+      ]},
+      { n:'Account', rows:[
+        { t:'info',  l:'Username', infoKey:'username' },
+        { t:'info',  l:'Session',  infoKey:'session'  },
+        { t:'info',  l:'HWID',     infoKey:'hwid'     },
+        { t:'info',  l:'Client',   infoKey:'client'   }
+      ]},
       { n:'Privacy', rows:[
         { t:'toggle', k:'stream', l:'Stream proof',     d:'Keeps this window out of screen shares and recordings.', v:false },
         { t:'key',    k:'webkey', l:'Webview keybind',  v:'F8' }
@@ -389,6 +505,8 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     WEAPONS.forEach(function(w){ weaponConfigs[w[0]] = Object.assign({}, w[1]); });
     curve = { p1:Object.assign({}, CURVE_DEFAULT.p1), p2:Object.assign({}, CURVE_DEFAULT.p2) };
     info.selectedTarget = null;
+    info.hwid = '—';
+    info.client = '—';
   }
   resetState();
 
@@ -420,6 +538,10 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       Streamproof: S.stream,
       CurveP1: cp1,
       CurveP2: cp2,
+      UIBackground: {
+        Enabled: S.uibg === true,
+        URL: (S.uibgurl || '').trim()
+      },
       triggerbot: {
         Enabled: S.trig,
         Keybind: S.trigkey,
@@ -479,6 +601,11 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       curve.p2 = { x: Math.max(0, Math.min(1, c.CurveP2.x / 600)), y: Math.max(0, Math.min(1, 1 - c.CurveP2.y / 310)) };
     }
 
+    // UI background
+    var bg = c.UIBackground || {};
+    set('uibg',    bg.Enabled === true);
+    set('uibgurl', bg.URL || '');
+
     var tb = c.triggerbot || {};
     set('trig',       tb.Enabled === true);
     set('trigkey',    tb.Keybind || 'E');
@@ -511,6 +638,16 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     set('mself',  mc.SelfDeathCheck !== false);
   }
 
+  function applyUIBackground(){
+    if (S.uibg === true && S.uibgurl) {
+      document.body.style.backgroundImage = 'url("' + S.uibgurl.replace(/"/g, '\\"') + '")';
+      document.body.classList.add('ui-bg');
+    } else {
+      document.body.style.backgroundImage = '';
+      document.body.classList.remove('ui-bg');
+    }
+  }
+
   async function saveConfig(){
     try {
       var r = await fetch('/api/config', {
@@ -541,9 +678,35 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       if (!d.authenticated) { window.location.href = '/'; return; }
       info.username = d.username || 'user';
       info.session  = 'Authenticated';
+      try {
+        var dr = await fetch('/api/dashboard', { credentials: 'include' });
+        if (dr.ok) {
+          var dd = await dr.json();
+          info.hwid = dd.hwid || 'not bound';
+        }
+      } catch (e) {}
+      refreshClientStatus();
+      setInterval(refreshClientStatus, 3000);
     } catch (e) {
       info.username = '—'; info.session = 'unable to verify';
     }
+  }
+
+  async function refreshClientStatus(){
+    if (!info.username) return;
+    try {
+      var r = await fetch('/api/client/status-by-user/' + encodeURIComponent(info.username), { credentials: 'include' });
+      if (!r.ok) return;
+      var d = await r.json();
+      info.client = d.connected ? 'Connected' : 'Offline';
+      if (cur === 'settings') {
+        [].forEach.call(content.querySelectorAll('.row'), function(row){
+          var b = row.querySelector('.txt b');
+          var v = row.querySelector('.mono');
+          if (b && b.textContent === 'Client' && v) v.textContent = info.client;
+        });
+      }
+    } catch (e) {}
   }
 
   // ---------- saved configs (BACKEND) ----------
@@ -602,6 +765,17 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       var val = info[r.infoKey];
       return el('span', 'mono', val || '—');
     }
+    if (r.t === 'url') {
+      var wrap = el('div', 'urlrow');
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.value = S[r.k] || '';
+      input.placeholder = 'https://example.com/image.png';
+      input.addEventListener('input', function(){ S[r.k] = input.value; });
+      input.addEventListener('change', function(){ applyUIBackground(); saved(); });
+      wrap.appendChild(input);
+      return wrap;
+    }
     if (r.t === 'key') {
       var kb = el('button', 'btn keybtn', S[r.k]);
       kb.setAttribute('aria-label', r.l + ' (click to change)');
@@ -629,6 +803,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       b.onclick = function(){
         S[r.k] = !S[r.k];
         b.setAttribute('aria-checked', S[r.k] ? 'true' : 'false');
+        if (r.k === 'uibg') applyUIBackground();
         saved();
         if (r.re) renderKeep();
       };
@@ -733,6 +908,14 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 
   function rowEl(r){
     if (r.t === 'weapon') { var wr = el('div','row'); wr.appendChild(weaponRow(r)); return wr; }
+    if (r.t === 'url') {
+      var row = el('div','row'); row.style.flexDirection = 'column'; row.style.alignItems = 'stretch';
+      var t = el('div','txt'); t.appendChild(el('b','', r.l));
+      if (r.d) t.appendChild(el('span','', r.d));
+      row.appendChild(t);
+      row.appendChild(control(r));
+      return row;
+    }
     var row = el('div','row'), t = el('div','txt');
     t.appendChild(el('b','', r.l));
     if (r.d) t.appendChild(el('span','', r.d));
@@ -846,6 +1029,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 
     m.querySelector('[data-a="load"]').onclick = function(){
       applySnapshot(c.backend);
+      applyUIBackground();
       saved();
       closeCtx();
       renderKeep();
@@ -977,7 +1161,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
         if (clear) resetState();
         start = Date.now(); q.value = ''; cur = 'aimassist'; render();
         w.style.opacity = '1'; w.style.pointerEvents = '';
-        if (!clear) loadConfig().then(render);
+        if (!clear) loadConfig().then(function(){ applyUIBackground(); render(); });
       };
     }, 600);
   }
@@ -1080,7 +1264,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   (async function(){
     await loadAccount();
     await loadConfig();
-    await refreshConfigs();
+    applyUIBackground();
     render();
   })();
 })();
