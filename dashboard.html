@@ -11,103 +11,41 @@
 html,body{height:100%;margin:0}
 body{background:#0e1218;color:var(--text);font:400 13px/1.45 Geist,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;display:grid;place-items:stretch;padding:0;overflow:hidden}
 body.ui-bg{background-size:cover;background-position:center;background-repeat:no-repeat;background-attachment:fixed}
-body.ui-bg::before{content:"";position:fixed;inset:0;background:rgba(10,12,14,.75);pointer-events:none;z-index:0}
+body.ui-bg::before{content:"";position:fixed;inset:0;background:rgba(12,12,14,.55);pointer-events:none;z-index:0}
+body.ui-bg .win{position:relative;z-index:1;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.015)),rgba(9,14,12,.55);backdrop-filter:blur(15px) saturate(140%);-webkit-backdrop-filter:blur(15px) saturate(140%)}
+body.ui-bg .scene{opacity:0;pointer-events:none;transition:opacity .3s ease}
 button,input,textarea,select{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid #fff;outline-offset:2px}
 
 /* ============================================================
-   SLIDER DRAG FIX — everything interactive is no-drag
+   SLIDER DRAG FIX — only .title is draggable
    ============================================================ */
 
-/* Only the title bar is draggable */
-.title {
-  -webkit-app-region: drag;
-  app-region: drag;
-}
-
-/* Every interactive element inside the title (close button, etc.) */
+.title{-webkit-app-region:drag;app-region:drag}
 .title button,
 .title .wc,
 .title .wc button,
-.title .state {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
+.title .state{-webkit-app-region:no-drag;app-region:no-drag}
 
-/* Everywhere else — no drag, so sliders/buttons/inputs work */
-button,
-input,
-textarea,
-select,
-label,
-a,
-.side,
-.nav,
-.nav button,
-.search,
-.search input,
-.search kbd,
-.content,
-.main,
-.body,
-.grp,
-.panel,
-.row,
-.txt,
-.mono,
-.sw,
-.toggle,
-.dd,
-.dd-btn,
-.dd-menu,
-.dd-menu button,
-.sl,
-.fill-slider,
-input[type=range],
-.seg,
-.seg button,
-.btn,
-.keybtn,
-.overview-tool,
-.card,
-.weapon-cards,
-.weapon-card,
-.ccard,
-.cfgtop,
-.grid2,
-.cfg-modal,
-.cfg-modal input,
-.cfg-modal textarea,
-.cfg-modal-actions,
-.cfg-modal-actions .text-button,
-.bez,
-.bez svg,
-.rail,
-.mrow,
-.reads,
-.ctxmenu,
-.ctxmenu button,
-.overlay,
-.modal,
-.modal input,
-.modal textarea,
-.modal-actions,
-.modal-actions .btn,
-.session,
-.sessionBar,
-#toast {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
+button,input,textarea,select,label,a,
+.side,.nav,.nav button,.search,.search input,.search kbd,
+.content,.main,.body,.grp,.panel,.row,.txt,.mono,
+.sw,.toggle,.dd,.dd-btn,.dd-menu,.dd-menu button,
+.sl,.fill-slider,input[type=range],.seg,.seg button,
+.btn,.keybtn,.overview-tool,.card,.weapon-cards,.weapon-card,
+.ccard,.cfgtop,.grid2,.cfg-modal,.cfg-modal input,.cfg-modal textarea,
+.cfg-modal-actions,.cfg-modal-actions .text-button,
+.bez,.bez svg,.rail,.mrow,.reads,
+.ctxmenu,.ctxmenu button,.overlay,.modal,.modal input,.modal textarea,
+.modal-actions,.modal-actions .btn,.session,#toast,
+.urlrow,.urlrow input{-webkit-app-region:no-drag;app-region:no-drag}
 
-/* Sliders specifically — extra safety */
-input[type=range],
-.sl input[type=range] {
-  -webkit-app-region: no-drag !important;
-  app-region: no-drag !important;
-  pointer-events: auto !important;
-  user-select: none;
+input[type=range],.sl input[type=range]{
+  -webkit-app-region:no-drag !important;
+  app-region:no-drag !important;
+  pointer-events:auto !important;
+  user-select:none;
 }
 
 /* ============================================================
@@ -210,7 +148,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 .card{flex:1;padding:12px 14px;border-radius:10px;background:rgba(255,255,255,.04)}
 .card h4{margin:0 0 4px;font-size:13px;font-weight:600}
 
-/* URL input row (for bg URL) */
 .urlrow{display:flex;flex-direction:column;gap:6px;padding:9px 0}
 .urlrow label{font-size:11px;color:var(--dim)}
 .urlrow input{width:100%;padding:9px 11px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.04);outline:0;font-size:12.5px}
@@ -513,7 +450,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   var nav = $('nav'), content = $('content'), stateEl = $('state'), stt = $('stt'), q = $('q');
   var cur = 'aimassist', saveTimer = null, capturing = false;
 
-  // ---------- backend IO ----------
   function toBackend(){
     var cp1 = { x: Math.round(curve.p1.x * 600), y: Math.round((1 - curve.p1.y) * 310) };
     var cp2 = { x: Math.round(curve.p2.x * 600), y: Math.round((1 - curve.p2.y) * 310) };
@@ -601,7 +537,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       curve.p2 = { x: Math.max(0, Math.min(1, c.CurveP2.x / 600)), y: Math.max(0, Math.min(1, 1 - c.CurveP2.y / 310)) };
     }
 
-    // UI background
     var bg = c.UIBackground || {};
     set('uibg',    bg.Enabled === true);
     set('uibgurl', bg.URL || '');
@@ -709,7 +644,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     } catch (e) {}
   }
 
-  // ---------- saved configs (BACKEND) ----------
   var CONFIGS = [], configTab = 'private';
 
   async function refreshConfigs(){
@@ -759,7 +693,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     });
   }
 
-  // ---------- controls ----------
   function control(r){
     if (r.t === 'info') {
       var val = info[r.infoKey];
@@ -961,7 +894,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     content.scrollTop = 0;
   }
 
-  // ---------- Configs page ----------
   function renderConfigsPage(){
     var top = el('div','cfgtop');
     var seg = el('div','seg'); seg.setAttribute('role','radiogroup'); seg.setAttribute('aria-label','Library');
@@ -1109,7 +1041,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     });
   };
 
-  // ---------- nav ----------
   var lastG = '';
   CFG.forEach(function(p, i){
     if (p.g !== lastG) { nav.appendChild(el('small','', p.g)); lastG = p.g; }
@@ -1139,7 +1070,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     if (n >= 1 && n <= CFG.length) { cur = CFG[n - 1].id; q.value = ''; render(); }
   });
 
-  // ---------- session timer ----------
   var start = Date.now();
   function tick(){
     var s = Math.floor((Date.now() - start) / 1000), p = function(x){ return String(x).padStart(2,'0'); };
@@ -1147,7 +1077,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   }
   setInterval(tick, 1000); tick();
 
-  // ---------- close / self destruct ----------
   function closeSession(clear){
     fetch('/api/logout', { method: 'POST', credentials: 'include' }).catch(function(){});
     fetch('/api/client/shutdown', { method: 'POST', credentials: 'include' }).catch(function(){});
@@ -1178,7 +1107,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     }, 450);
   };
 
-  // ---------- smoothing curve editor ----------
   var X0 = 20, X1 = 540, Y0 = 240, Y1 = 20;
   var gx = function(n){ return X0 + n * (X1 - X0); }, gy = function(n){ return Y0 - n * (Y0 - Y1); };
   var svg = $('bezSvg'), drag = null, loop = null, rev = false;
@@ -1237,7 +1165,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   $('bezierModal').addEventListener('click', function(e){ if (e.target === $('bezierModal')) closeBezier(); });
   $('bezierReset').onclick = function(){ curve = { p1:Object.assign({}, CURVE_DEFAULT.p1), p2:Object.assign({}, CURVE_DEFAULT.p2) }; draw(); saved(); };
 
-  // ---------- poll for selected target ----------
   async function pollSelectedTarget(){
     try {
       var r = await fetch('/api/config', { credentials: 'include' });
@@ -1260,7 +1187,6 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
   }
   setInterval(pollSelectedTarget, 1500);
 
-  // ---------- boot ----------
   (async function(){
     await loadAccount();
     await loadConfig();
