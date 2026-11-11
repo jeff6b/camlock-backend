@@ -5,6 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Light Launcher</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<script>
+  // Block MB4/MB5 from triggering WebView2 back/forward
+  (function(){
+    var block = function(e){
+      if (e.button === 3 || e.button === 4) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return false;
+      }
+    };
+    ['mousedown','mouseup','auxclick','contextmenu','pointerdown','pointerup'].forEach(function(ev){
+      window.addEventListener(ev, block, true);
+      document.addEventListener(ev, block, true);
+    });
+  })();
+
+  // Neutralize history back/forward so MB4/MB5 can't navigate
+  window.addEventListener('load', function(){
+    try { history.pushState(null, '', location.href); } catch(e) {}
+  });
+  window.addEventListener('popstate', function(){
+    try { history.pushState(null, '', location.href); } catch(e) {}
+  });
+</script>
 <style>
 :root{--text:#F6F7F9;--muted:#C3C8D0;--dim:#98A0AB;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *,*::before,*::after{box-sizing:inherit}
