@@ -769,7 +769,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     });
   }
 
-  function control(r){
+    function control(r){
     if (r.t === 'info') {
       var val = info[r.infoKey];
       return el('span', 'mono', val || '—');
@@ -785,40 +785,47 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       wrap.appendChild(input);
       return wrap;
     }
-        if (r.t === 'key') {
+    if (r.t === 'key') {
       var kb = el('button', 'btn keybtn', S[r.k]);
       kb.setAttribute('aria-label', r.l + ' (click to change)');
       kb.onclick = function(e){
         e.stopPropagation();
-        kb.textContent = 'Press a key…'; kb.classList.add('cap'); capturing = true;
+        kb.textContent = 'Press a key…';
+        kb.classList.add('cap');
+        capturing = true;
+
+        function finish() {
+          kb.textContent = S[r.k];
+          kb.classList.remove('cap');
+          capturing = false;
+          document.removeEventListener('keydown', done, true);
+          document.removeEventListener('mousedown', doneMB, true);
+        }
 
         function done(ev){
-          ev.preventDefault(); ev.stopPropagation();
+          ev.preventDefault();
+          ev.stopPropagation();
           if (ev.key !== 'Escape') {
             var map = {' ':'Space', Control:'Ctrl', Escape:'Esc'}, k = ev.key;
             S[r.k] = map[k] || (k.length === 1 ? k.toUpperCase() : k);
             saved();
           }
-          kb.textContent = S[r.k]; kb.classList.remove('cap'); capturing = false;
-          document.removeEventListener('keydown', done, true);
-          document.removeEventListener('mousedown', doneMB, true);
+          finish();
         }
 
         function doneMB(ev){
           if (ev.button === 3) {
-            ev.preventDefault(); ev.stopPropagation();
+            ev.preventDefault();
+            ev.stopPropagation();
             S[r.k] = 'MB4';
             saved();
-            kb.textContent = 'MB4'; kb.classList.remove('cap'); capturing = false;
-            document.removeEventListener('keydown', done, true);
-            document.removeEventListener('mousedown', doneMB, true);
+            finish();
           } else if (ev.button === 4) {
-            ev.preventDefault(); ev.stopPropagation();
+            ev.preventDefault();
+            ev.stopPropagation();
             S[r.k] = 'MB5';
             saved();
-            kb.textContent = 'MB5'; kb.classList.remove('cap'); capturing = false;
-            document.removeEventListener('keydown', done, true);
-            document.removeEventListener('mousedown', doneMB, true);
+            finish();
           }
         }
 
