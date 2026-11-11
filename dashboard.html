@@ -5,6 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Light Settings</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<script>
+  // Block MB4/MB5 from triggering WebView2 back/forward
+  (function(){
+    var block = function(e){
+      if (e.button === 3 || e.button === 4) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return false;
+      }
+    };
+    ['mousedown','mouseup','auxclick','contextmenu','pointerdown','pointerup'].forEach(function(ev){
+      window.addEventListener(ev, block, true);
+      document.addEventListener(ev, block, true);
+    });
+  })();
+
+  // Neutralize history back/forward so MB4/MB5 can't navigate
+  window.addEventListener('load', function(){
+    try { history.pushState(null, '', location.href); } catch(e) {}
+  });
+  window.addEventListener('popstate', function(){
+    try { history.pushState(null, '', location.href); } catch(e) {}
+  });
+</script>   
 <style>
 :root{--text:#F2F3F5;--muted:#A9AFB8;--dim:#7B828C;--hair:rgba(255,255,255,.06);--panel:rgba(255,255,255,.045);--mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *,*::before,*::after{box-sizing:inherit}
@@ -761,12 +786,13 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       wrap.appendChild(input);
       return wrap;
     }
-    if (r.t === 'key') {
+        if (r.t === 'key') {
       var kb = el('button', 'btn keybtn', S[r.k]);
       kb.setAttribute('aria-label', r.l + ' (click to change)');
       kb.onclick = function(e){
         e.stopPropagation();
         kb.textContent = 'Press a key…'; kb.classList.add('cap'); capturing = true;
+
         function done(ev){
           ev.preventDefault(); ev.stopPropagation();
           if (ev.key !== 'Escape') {
@@ -776,8 +802,29 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
           }
           kb.textContent = S[r.k]; kb.classList.remove('cap'); capturing = false;
           document.removeEventListener('keydown', done, true);
+          document.removeEventListener('mousedown', doneMB, true);
         }
+
+        function doneMB(ev){
+          if (ev.button === 3) {
+            ev.preventDefault(); ev.stopPropagation();
+            S[r.k] = 'MB4';
+            saved();
+            kb.textContent = 'MB4'; kb.classList.remove('cap'); capturing = false;
+            document.removeEventListener('keydown', done, true);
+            document.removeEventListener('mousedown', doneMB, true);
+          } else if (ev.button === 4) {
+            ev.preventDefault(); ev.stopPropagation();
+            S[r.k] = 'MB5';
+            saved();
+            kb.textContent = 'MB5'; kb.classList.remove('cap'); capturing = false;
+            document.removeEventListener('keydown', done, true);
+            document.removeEventListener('mousedown', doneMB, true);
+          }
+        }
+
         document.addEventListener('keydown', done, true);
+        document.addEventListener('mousedown', doneMB, true);
       };
       return kb;
     }
