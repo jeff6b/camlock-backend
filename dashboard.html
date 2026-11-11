@@ -6,14 +6,13 @@
 <title>Light Settings</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <script>
-  // Block MB4/MB5 from triggering WebView2 back/forward
+  // Block MB4/MB5 from triggering WebView2 back/forward.
+  // Note: we only preventDefault() — we do NOT stopPropagation, because
+  // the keybind capture handler in the page needs to see the mousedown.
   (function(){
     var block = function(e){
       if (e.button === 3 || e.button === 4) {
         e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        return false;
       }
     };
     ['mousedown','mouseup','auxclick','contextmenu','pointerdown','pointerup'].forEach(function(ev){
@@ -29,7 +28,7 @@
   window.addEventListener('popstate', function(){
     try { history.pushState(null, '', location.href); } catch(e) {}
   });
-</script>   
+</script>
 <style>
 :root{--text:#F2F3F5;--muted:#A9AFB8;--dim:#7B828C;--hair:rgba(255,255,255,.06);--panel:rgba(255,255,255,.045);--mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *,*::before,*::after{box-sizing:inherit}
