@@ -406,7 +406,7 @@ button{font:inherit;color:inherit;cursor:pointer}
     rep.disabled = false;
   }
 
-  function run() {
+   function run() {
     if (busy) return;
     busy = true;
     go.disabled = true;
@@ -428,12 +428,33 @@ button{font:inherit;color:inherit;cursor:pointer}
       } else {
         clearInterval(timer);
         timer = null;
-        ml.textContent = 'Roblox Player is running';
-        pc.textContent = 'Opening dashboard…';
-        la.textContent = 'Just now';
-        fetch('/api/launcher/launch', { method: 'POST', credentials: 'include' })
-          .then(function() { window.location.href = '/dashboard'; })
-          .catch(function() { window.location.href = '/dashboard'; });
+
+        // Tell the local Light client to spawn Roblox on this machine.
+        fetch('http://127.0.0.1:48623/launch-roblox', { method: 'POST' })
+          .then(function(r){ return r.json(); })
+          .catch(function(){ return { ok: false, error: 'local client not running' }; })
+          .then(function(res){
+            if (!res || !res.ok) {
+              ml.textContent = 'Could not start Roblox — is Light running?';
+              pc.textContent = '';
+              fill.style.width = '0';
+              go.disabled = false;
+              go.classList.remove('alt');
+              go.textContent = 'Launch Roblox Player';
+              rep.disabled = false;
+              busy = false;
+              return;
+            }
+
+            ml.textContent = 'Roblox is starting…';
+            pc.textContent = 'Opening dashboard…';
+            la.textContent = 'Just now';
+
+            // Stamp the backend session and go to the dashboard.
+            fetch('/api/launcher/launch', { method: 'POST', credentials: 'include' })
+              .then(function() { window.location.href = '/dashboard'; })
+              .catch(function() { window.location.href = '/dashboard'; });
+          });
       }
     }, 50);
   }
