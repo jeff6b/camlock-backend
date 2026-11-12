@@ -6,12 +6,13 @@
 <title>Light Settings</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <script>
-  // Block MB4/MB5 from triggering WebView2 back/forward.
-  // Note: we only preventDefault() — we do NOT stopPropagation, because
-  // the keybind capture handler in the page needs to see the mousedown.
+  // Shared flag so the global MB4/MB5 blocker can yield during keybind capture.
+  window.__capturingKeybind = false;
+
   (function(){
     var block = function(e){
       if (e.button === 3 || e.button === 4) {
+        if (window.__capturingKeybind) return; // let the capture handler see it
         e.preventDefault();
       }
     };
@@ -46,13 +47,11 @@ button{cursor:pointer}
    SLIDER DRAG FIX — only .title is draggable
    ============================================================ */
 
-/* Title bar is the only draggable region */
 .title {
   -webkit-app-region: drag;
   app-region: drag;
 }
 
-/* Buttons and interactive elements inside the title must be clickable */
 .title button,
 .title .wc,
 .title .wc button,
@@ -61,7 +60,6 @@ button{cursor:pointer}
   app-region: no-drag;
 }
 
-/* Everything else — no drag, so sliders/buttons/inputs work */
 input[type=range],
 button,
 input,
@@ -97,7 +95,6 @@ a,
   app-region: no-drag;
 }
 
-/* Extra safety for sliders specifically */
 input[type=range] {
   -webkit-app-region: no-drag !important;
   app-region: no-drag !important;
@@ -769,7 +766,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     });
   }
 
-    function control(r){
+  function control(r){
     if (r.t === 'info') {
       var val = info[r.infoKey];
       return el('span', 'mono', val || '—');
@@ -793,13 +790,15 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
         kb.textContent = 'Press a key…';
         kb.classList.add('cap');
         capturing = true;
+        window.__capturingKeybind = true;
 
         function finish() {
           kb.textContent = S[r.k];
           kb.classList.remove('cap');
           capturing = false;
+          window.__capturingKeybind = false;
           document.removeEventListener('keydown', done, true);
-          document.removeEventListener('mousedown', doneMB, true);
+          document.removeEventListener('pointerdown', doneMB, true);
         }
 
         function done(ev){
@@ -830,7 +829,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
         }
 
         document.addEventListener('keydown', done, true);
-        document.addEventListener('mousedown', doneMB, true);
+        document.addEventListener('pointerdown', doneMB, true);
       };
       return kb;
     }
