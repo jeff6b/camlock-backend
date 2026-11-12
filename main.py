@@ -846,14 +846,23 @@ async def save_community_to_mine(request: Request, data: dict):
 
 @app.post("/api/launcher/launch")
 async def launcher_launch(request: Request):
+    """
+    Records that the user pressed Launch. The actual Roblox process is
+    spawned by the local Python client (see auth.launch_roblox), which
+    is running on the user's machine and exposes a localhost listener.
+    """
     session_id = request.cookies.get("session_id")
-    if not session_id:
+    username = request.cookies.get("username")
+    if not session_id or not username:
         raise HTTPException(status_code=401, detail="Not authenticated")
     db = get_db()
     cur = db.cursor()
     try:
         cur.execute("UPDATE login_sessions SET launched_at=%s WHERE session_id=%s",
                     (datetime.now().isoformat(), session_id))
+        # flip the client's authenticated flag so injection_loop can start
+        cur.execute("UPDATE clients SET authenticated=1, username=%s WHERE username=%s",
+                    (username, username))
         db.commit()
         db.close()
         return {"ok": True}
