@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Light — Connect</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -11,59 +11,62 @@
 --bg:#090909;--panel:#0e0e0e;--panel2:#131313;--border:#242424;
 --text:#bdbdbd;--muted:#686868;--dim:#494949;--accent:#aaa;
 }
-*{box-sizing:border-box;margin:0;padding:0}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{background:var(--bg);color:var(--text);font:13px Inter,sans-serif}
 button,input,select{font:inherit}
 button{cursor:pointer}
-.app{min-height:100vh}
-.sidebar{position:fixed;inset:0 auto 0 0;width:230px;background:#0b0b0b;border-right:1px solid var(--border);padding:25px 16px;display:flex;flex-direction:column;z-index:5}
+.app{min-height:100vh;min-height:100dvh}
+
+/* SIDEBAR (desktop) */
+.sidebar{position:fixed;inset:0 auto 0 0;width:230px;background:#0b0b0b;border-right:1px solid var(--border);padding:25px 16px;display:flex;flex-direction:column;z-index:50}
 .brand{display:flex;align-items:center;gap:11px;padding:2px 9px 34px}
 .brand-name{font-weight:800;font-size:17px;letter-spacing:3px}
 .brand-tag{font-size:9px;color:#555;letter-spacing:1.5px;margin-top:3px}
 .nav-label{font-size:9px;letter-spacing:1.5px;color:#505050;font-weight:700;padding:15px 10px 9px}
-.nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:5px;color:#777;margin:2px 0;cursor:pointer;font-size:11px;transition:.2s}
+.nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:5px;color:#777;margin:2px 0;cursor:pointer;font-size:11px;transition:.2s;user-select:none}
 .nav-item:hover{background:#141414;color:#bbb}
 .nav-item.active{background:#171717;border:1px solid #292929;color:#c5c5c5}
-.nav-icon{width:18px;height:18px;display:grid;place-items:center;font-size:15px}
+.nav-icon{width:18px;height:18px;display:grid;place-items:center;font-size:15px;flex-shrink:0}
 .nav-icon img,.icon-img{width:19px;height:19px;object-fit:contain;filter:grayscale(1) brightness(0) invert(.72);opacity:.85}
 .nav-item.active .nav-icon img{filter:grayscale(1) brightness(0) invert(.88)}
 .nav-bottom{margin-top:auto}
 .account{border:1px solid var(--border);border-radius:6px;padding:11px;display:flex;align-items:center;gap:10px;margin-top:12px}
-.account-name{font-size:11px;font-weight:600}
+.account-name{font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .account-sub{font-size:10px;color:#626262;margin-top:4px}
-.main{margin-left:230px;min-height:100vh}
+
+/* MAIN */
+.main{margin-left:230px;min-height:100vh;min-height:100dvh}
 .topbar{height:65px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 35px;background:#0b0b0b}
 .breadcrumb{color:#666;font-size:11px}.breadcrumb span{color:#aaa}
-.content{max-width:1450px;margin:auto;padding:38px}
+.content{max-width:1450px;margin:auto;padding:38px;width:100%}
 .page{display:none}.page.active{display:block;animation:fade .2s}
 @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-.page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:28px}
+.page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:28px;flex-wrap:wrap}
 .eyebrow{font-size:9px;color:#626262;letter-spacing:1.7px;margin-bottom:12px}
 h1{font-size:26px;letter-spacing:-.8px;font-weight:600}
 .subtitle{font-size:11px;color:#686868;margin-top:9px}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:18px}
-.card-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:18px;min-width:0}
+.card-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:10px;flex-wrap:wrap}
 .card-title{font-size:11px;font-weight:600;color:#bbb}
 .card-description{font-size:10px;color:#686868;margin-top:5px}
-.tag{font-size:9px;padding:5px 8px;border:1px solid #303030;border-radius:3px;color:#858585}
+.tag{font-size:9px;padding:5px 8px;border:1px solid #303030;border-radius:3px;color:#858585;white-space:nowrap}
 .primary-btn{background:#bdbdbd;color:#101010;border:0;padding:10px 15px;border-radius:4px;font-size:10px;font-weight:700}
 .primary-btn:hover{background:#d0d0d0}
 .primary-btn:disabled{opacity:.5;cursor:not-allowed}
-.secondary-btn,.danger-btn{background:#151515;border:1px solid #303030;color:#999;padding:9px 13px;border-radius:4px;font-size:10px}
+.secondary-btn,.danger-btn{background:#151515;border:1px solid #303030;color:#999;padding:9px 13px;border-radius:4px;font-size:10px;white-space:nowrap}
 .secondary-btn:hover{background:#202020;color:#bbb}
-.danger-btn{padding:7px 10px;color:#777}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
-.stat-top{display:flex;justify-content:space-between;align-items:center;color:#777;font-size:10px}
-.stat-value{font-size:24px;font-weight:600;margin-top:18px;color:#bdbdbd}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.stat-top{display:flex;justify-content:space-between;align-items:center;color:#777;font-size:10px;gap:8px}
+.stat-value{font-size:24px;font-weight:600;margin-top:18px;color:#bdbdbd;overflow:hidden;text-overflow:ellipsis}
 .stat-foot{font-size:9px;color:#626262;margin-top:7px}
 .grid-main{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
-.device{display:flex;align-items:center;gap:13px;padding:14px 0;border-top:1px solid #202020}
+.device{display:flex;align-items:center;gap:13px;padding:14px 0;border-top:1px solid #202020;min-width:0}
 .device-icon{width:39px;height:39px;border-radius:5px;background:#171717;border:1px solid #292929;display:grid;place-items:center;flex-shrink:0}
 .device-icon img{width:21px;height:21px;filter:grayscale(1) brightness(0) invert(.72)}
 .device-info{flex:1;min-width:0}
-.device-name{font-size:10px;font-weight:600;color:#bcbcbc}
+.device-name{font-size:10px;font-weight:600;color:#bcbcbc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .device-type{font-size:9px;color:#656565;margin-top:5px}
-.device-status{font-size:9px;color:#888}
+.device-status{font-size:9px;color:#888;white-space:nowrap}
 .offline{color:#666}
 .status-box{background:#141414;border:1px solid #292929;border-radius:5px;padding:16px;margin-bottom:15px}
 .status-row{display:flex;justify-content:space-between;align-items:center}
@@ -71,16 +74,18 @@ h1{font-size:26px;letter-spacing:-.8px;font-weight:600}
 .progress{height:3px;background:#252525;margin-top:16px}
 .progress-inner{height:100%;width:0;background:#777}
 .activity{display:flex;gap:12px;padding:13px 0;border-top:1px solid #202020}
-.activity-marker{width:6px;height:6px;background:#777;border-radius:50%;margin-top:4px}
-.activity-text{font-size:10px;color:#aaa}.activity-time{font-size:9px;color:#626262;margin-top:5px}
+.activity-marker{width:6px;height:6px;background:#777;border-radius:50%;margin-top:4px;flex-shrink:0}
+.activity-text{font-size:10px;color:#aaa;overflow-wrap:anywhere}
+.activity-time{font-size:9px;color:#626262;margin-top:5px}
 
+/* CONFIG */
 .config-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
 .config-toolbar-left{display:flex;align-items:center;gap:8px}
-.config-toolbar-right{display:flex;gap:8px}
+.config-toolbar-right{display:flex;gap:8px;flex-wrap:wrap}
 .config-status{font-size:9px;color:#777}
 .config-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
 .config-section{display:flex;flex-direction:column;height:calc(100vh - 290px);min-height:360px;max-height:680px;padding:16px 8px 8px 16px}
-.config-section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-right:8px;flex-shrink:0}
+.config-section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-right:8px;flex-shrink:0;gap:8px}
 .config-section-title{font-size:12px;font-weight:600;color:#bdbdbd}
 .config-section-subtitle{font-size:10px;color:#656565;margin-top:5px}
 .config-scroll{flex:1;min-height:0;overflow-y:auto;padding-right:8px;scrollbar-width:thin;scrollbar-color:#333 transparent;overscroll-behavior:contain}
@@ -88,12 +93,12 @@ h1{font-size:26px;letter-spacing:-.8px;font-weight:600}
 .config-scroll::-webkit-scrollbar-thumb{background:#303030;border-radius:4px}
 .config-subhead{font-size:8px;letter-spacing:1.6px;color:#555;font-weight:700;text-transform:uppercase;padding:16px 0 4px}
 .config-subhead:first-child{padding-top:4px}
-.config-field{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #1d1d1d}
+.config-field{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #1d1d1d;min-width:0}
 .config-subhead + .config-field{border-top:0}
 .config-label{font-size:10px;color:#aaa;min-width:0;word-break:break-word}
 .config-control{width:110px;flex-shrink:0}
 .config-field.bool .config-control{width:auto}
-.config-control input:not([type=checkbox]){width:100%;background:#101010;border:1px solid #303030;border-radius:4px;padding:7px 8px;color:#aaa;outline:none;font-size:10px;}
+.config-control input:not([type=checkbox]){width:100%;background:#101010;border:1px solid #303030;border-radius:4px;padding:7px 8px;color:#aaa;outline:none;font-size:10px}
 .config-control input:focus{border-color:#666}
 input[type=checkbox]{appearance:none;-webkit-appearance:none;width:16px;height:16px;border:1px solid #4a4a4a;border-radius:3px;background:transparent;position:relative;cursor:pointer;flex-shrink:0;transition:.15s;display:block}
 input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
@@ -104,38 +109,33 @@ input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
 .weapon-field label{display:block;font-size:8px;letter-spacing:1px;color:#5f5f5f;text-transform:uppercase;margin-bottom:4px}
 .weapon-field input{width:100%;background:#101010;border:1px solid #2c2c2c;border-radius:4px;padding:6px 7px;color:#aaa;outline:none;font-size:10px}
 .dd{position:relative}
-.dd-btn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;background:#101010;border:1px solid #303030;border-radius:4px;padding:7px 8px;color:#aaa;font-size:10px;text-align:left;transition:.15s}
-.dd-btn:hover{border-color:#464646}
-.dd.open .dd-btn{border-color:#666}
+.dd-btn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;background:#101010;border:1px solid #303030;border-radius:4px;padding:7px 8px;color:#aaa;font-size:10px;text-align:left}
 .dd-val{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dd-arrow{width:8px;height:8px;flex-shrink:0;stroke:#777;fill:none;stroke-width:1.6;transition:.15s}
 .dd.open .dd-arrow{transform:rotate(180deg)}
-.dd-menu{position:fixed;display:none;z-index:60;background:#0f0f0f;border:1px solid #333;border-radius:5px;padding:4px;max-height:150px;overflow-y:auto;box-shadow:0 10px 30px #000a;scrollbar-width:thin;scrollbar-color:#3a3a3a transparent}
+.dd-menu{position:fixed;display:none;z-index:60;background:#0f0f0f;border:1px solid #333;border-radius:5px;padding:4px;max-height:150px;overflow-y:auto;box-shadow:0 10px 30px #000a}
 .dd.open .dd-menu{display:block}
-.dd-menu::-webkit-scrollbar{width:4px}
-.dd-menu::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:4px}
 .dd-opt{padding:7px 8px;font-size:10px;color:#8a8a8a;border-radius:3px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
-.dd-opt:hover{background:#1a1a1a;color:#ccc}
 .dd-opt.sel{color:#d0d0d0;background:#171717}
-.dd-opt.sel:after{content:"";width:5px;height:5px;background:#bdbdbd;border-radius:1px}
-.weapon-field .dd-btn{padding:6px 7px}
 .config-object{border:1px solid #242424;border-radius:5px;margin-top:12px;padding:12px;background:#0b0b0b}
 .config-object-title{font-size:10px;color:#aaa;font-weight:600;margin-bottom:4px}
 
-.toast{position:fixed;bottom:25px;right:25px;padding:13px 17px;background:#252525;border:1px solid #414141;color:#bbb;border-radius:4px;font-size:10px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;z-index:50;max-width:calc(100vw - 40px)}
+/* TOAST + MODAL */
+.toast{position:fixed;bottom:25px;right:25px;padding:13px 17px;background:#252525;border:1px solid #414141;color:#bbb;border-radius:4px;font-size:10px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;z-index:60;max-width:calc(100vw - 40px)}
 .toast.show{opacity:1;transform:none}
-.modal-overlay{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center;z-index:30;padding:20px}
+.modal-overlay{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
 .modal-overlay.show{display:flex}
 .modal{width:390px;max-width:100%;background:#101010;border:1px solid #303030;border-radius:7px;padding:25px}
 .modal h2{font-size:17px;font-weight:600;margin-bottom:9px}
 .modal p{font-size:10px;color:#777;line-height:1.7;margin-bottom:20px}
 .modal input{width:100%;background:#090909;border:1px solid #303030;border-radius:4px;padding:12px;color:#bbb;outline:none;margin-bottom:15px;font-size:11px}
-.modal-actions{display:flex;justify-content:flex-end;gap:9px}
+.modal-actions{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap}
 
-.auth{display:none;min-height:calc(100vh - 76px);align-items:center;justify-content:center;text-align:center;position:relative}
+/* AUTH */
+.auth{display:none;min-height:calc(100vh - 76px);align-items:center;justify-content:center;text-align:center;position:relative;padding:20px}
 .auth:before{content:"";position:absolute;width:560px;height:560px;max-width:100%;border-radius:50%;background:radial-gradient(circle,#ffffff0d 0%,transparent 65%);pointer-events:none}
 .auth-inner{position:relative;max-width:430px;width:100%;animation:fade .35s}
-.auth-logo{display:block;width:120px;max-width:60%;height:auto;margin:0 auto 4px;background:none;border:0;border-radius:0}
+.auth-logo{display:block;width:120px;max-width:60%;height:auto;margin:0 auto 4px}
 .auth-brand{font-size:10px;letter-spacing:5px;color:#5c5c5c;font-weight:700;margin-bottom:14px}
 .auth h1{font-size:34px;letter-spacing:-1.2px}
 .auth-sub{font-size:11px;color:#6e6e6e;line-height:1.8;margin:14px auto 28px;max-width:340px}
@@ -146,13 +146,10 @@ input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
 .auth-step span{font-size:10px;color:#8a8a8a}
 .auth-foot{font-size:9px;color:#4f4f4f;margin-top:18px;letter-spacing:.5px}
 
-body:not(.paired) .sidebar,
-body:not(.paired) .topbar,
-body:not(.paired) .content > .page { display: none !important; }
+body:not(.paired) .sidebar, body:not(.paired) .topbar, body:not(.paired) .content > .page { display: none !important; }
 body:not(.paired) .main { margin-left: 0; }
 body:not(.paired) .auth { display: flex; }
 body:not(.paired) .content { padding: 0; }
-
 body.paired .auth { display: none; }
 body.paired .sidebar { display: flex; }
 body.paired .topbar { display: flex; }
@@ -160,22 +157,55 @@ body.paired .main { margin-left: 230px; }
 body.paired .content > .page { display: none; }
 body.paired .content > .page.active { display: block; }
 
-@media(max-width:1000px){
-.grid-main{grid-template-columns:1fr}
-.config-columns{grid-template-columns:repeat(2,minmax(0,1fr))}
-.config-columns>.config-section:nth-child(3){grid-column:1/-1}
-}
-@media(max-width:650px){
-.sidebar{width:62px;padding:20px 8px}.brand{display:none}
-.brand-text,.nav-label,.nav-item span:not(.nav-icon),.account-details{display:none}
-.nav-item{justify-content:center;padding:12px 0}.account{display:none}
-.main{margin-left:62px}.content{padding:25px 15px}.topbar{padding:0 15px}
-.stats{grid-template-columns:1fr 1fr}.page-header{align-items:flex-start;flex-direction:column}
-.config-columns{gap:10px}
-.config-section{padding:12px 4px 6px 12px;height:calc(100vh - 250px);min-height:320px}
-.config-section-subtitle{display:none}
-.config-field:not(.bool){flex-direction:column;align-items:flex-start;gap:6px}
-.config-field:not(.bool) .config-control{width:100%}
+/* ============================================================
+   MOBILE OPTIMIZATION (phones)
+   ============================================================ */
+@media(max-width:768px){
+  /* Turn sidebar into a bottom navigation bar */
+  .sidebar{
+    position:fixed; top:auto; bottom:0; left:0; right:0; width:100%; height:60px;
+    flex-direction:row; justify-content:space-around; align-items:center;
+    padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    border-right:none; border-top:1px solid var(--border); background:#0b0b0b;
+    z-index: 100;
+  }
+  .sidebar .brand, .sidebar .nav-label, .sidebar .nav-bottom { display:none; }
+  .nav-item {
+    flex-direction: column; justify-content: center; align-items: center;
+    padding: 8px 0; margin: 0; height: 100%; border-radius: 0;
+    background: none !important; border: none !important;
+  }
+  .nav-item span:not(.nav-icon) { display:none; } /* Hide text, show only icons */
+  .nav-icon { width: 22px; height: 22px; }
+  .nav-icon img { width: 22px; height: 22px; }
+
+  /* Main content fills the screen */
+  .main { margin-left: 0 !important; padding-bottom: 70px; }
+  .topbar { display:none !important; } /* Hide topbar on mobile to save space */
+  .content { padding: 24px 16px; }
+
+  /* Header adjustments */
+  .page-header { margin-bottom: 20px; align-items:flex-start; flex-direction:column; gap: 10px; }
+  h1 { font-size: 22px; }
+  .stats { grid-template-columns: 1fr 1fr; gap:10px; }
+  .grid-main { grid-template-columns: 1fr; }
+
+  /* Config stacks vertically */
+  .config-columns { grid-template-columns: 1fr; gap: 12px; }
+  .config-section { height: auto; min-height: 250px; max-height: 450px; padding: 16px 12px; }
+  .config-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .config-toolbar-left { text-align: center; justify-content: center; }
+  .config-toolbar-right { display: flex; gap: 8px; justify-content: space-between; }
+  .config-toolbar-right button { flex: 1; }
+  .config-field:not(.bool) { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .config-field:not(.bool) .config-control { width: 100%; }
+
+  /* Modal adjustments */
+  .modal { padding: 20px; width: 100%; border-radius: 10px; }
+  .modal-actions button { flex: 1; }
+
+  /* Toast above bottom nav */
+  .toast { bottom: 75px; right: 16px; left: 16px; text-align:center; max-width: 100%; }
 }
 </style>
 </head>
@@ -303,9 +333,6 @@ body.paired .content > .page.active { display: block; }
 <div class="toast" id="toast"></div>
 
 <script>
-/* ============================================================
-   DEFAULT CONFIG (fallback if backend unreachable)
-   ============================================================ */
 const DEFAULT_CONFIG = {
     "Enabled":true,"Keybind":"Q","KeybindMode":"toggle","WebviewKeybind":"F8",
     "PredictTarget":true,"PredictionX":0.10,"PredictionY":0.10,"ClosestPoint":true,
@@ -345,24 +372,13 @@ const SECTION_HEADS = {
     "macro.Enabled":"General","macro.OutputMode":"Output"
 };
 
-/* In-memory config — loaded from backend on boot, saved to backend on Save */
 let config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-
-/* ============================================================
-   STATE
-   ============================================================ */
-
 let paired = false;
 let devices = [];
 let activities = [];
 let currentUsername = "";
 let isAuthenticated = false;
-
 const DEVICE_ICON = "https://img.icons8.com/?size=100&id=gwCmus5W03wM&format=png&color=000000";
-
-/* ============================================================
-   HELPERS
-   ============================================================ */
 
 function notify(message){
     const toast = document.getElementById("toast");
@@ -376,17 +392,11 @@ function escapeHTML(value){
 }
 function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
-/* ============================================================
-   CONFIG — LOAD/SAVE via /api/config (same as dashboard.html)
-   ============================================================ */
-
 async function loadConfigFromBackend(){
     try {
         const r = await fetch('/api/config', { credentials: 'include' });
         if (!r.ok) return clone(DEFAULT_CONFIG);
         const cfg = await r.json();
-        // Backend returns DEFAULT_CONFIG merged with stored config.
-        // Merge on top of our local default so missing keys don't crash.
         return mergeDefaults(clone(DEFAULT_CONFIG), cfg);
     } catch (e) {
         return clone(DEFAULT_CONFIG);
@@ -432,10 +442,6 @@ async function saveConfigToBackend(){
         btn.textContent = "Save configuration";
     }
 }
-
-/* ============================================================
-   BOOT
-   ============================================================ */
 
 async function boot(){
     try {
@@ -495,10 +501,6 @@ function applyPairedState(isPaired){
     }
 }
 
-/* ============================================================
-   PAIRING MODAL
-   ============================================================ */
-
 function startPairing(){
     document.getElementById("pairModal").classList.add("show");
     const input = document.getElementById("pairCodeInput");
@@ -508,6 +510,7 @@ function startPairing(){
 function closeModal(){
     document.getElementById("pairModal").classList.remove("show");
 }
+
 async function submitPairCode(){
     const input = document.getElementById("pairCodeInput");
     const btn = document.getElementById("pairSubmitBtn");
@@ -540,13 +543,11 @@ async function submitPairCode(){
         notify("Paired to " + d.paired_with + ".");
         closeModal();
 
-        // Backend just set session cookies on this browser.
         isAuthenticated = true;
         currentUsername = d.username || currentUsername || d.paired_with;
         document.getElementById("sidebarUsername").textContent = currentUsername;
         document.getElementById("welcomeName").textContent = currentUsername;
 
-        // Now that we have a session, load their config from the backend.
         try {
             config = await loadConfigFromBackend();
             renderConfig();
@@ -565,10 +566,6 @@ async function submitPairCode(){
 window.submitPairCode = submitPairCode;
 window.startPairing = startPairing;
 window.closeModal = closeModal;
-
-/* ============================================================
-   DEVICE + ACTIVITY RENDER
-   ============================================================ */
 
 function renderDevices(){
     const html = devices.map(d => `
@@ -597,10 +594,6 @@ function updateUI(){
     renderDevices();
     renderActivity();
 }
-
-/* ============================================================
-   CONFIG EDITOR (renders and reads in-memory `config`)
-   ============================================================ */
 
 function mergeDefaults(defaults,loaded){
     for(const key in loaded){
@@ -715,7 +708,6 @@ function markConfigChanged(){
     document.getElementById("configStatusText").textContent = "Unsaved changes — click Save to push to backend";
 }
 
-/* Save/reset buttons */
 function saveConfig(){
     return saveConfigToBackend();
 }
@@ -728,10 +720,6 @@ function resetConfig(){
 }
 window.saveConfig = saveConfig;
 window.resetConfig = resetConfig;
-
-/* ============================================================
-   NAV
-   ============================================================ */
 
 const pages = document.querySelectorAll(".page");
 const navItems = document.querySelectorAll(".nav-item");
@@ -749,10 +737,6 @@ function navigate(page){
     if(page === "configurations") renderConfig();
 }
 navItems.forEach(item=>item.addEventListener("click",()=>navigate(item.dataset.page)));
-
-/* ============================================================
-   CUSTOM DROPDOWNS
-   ============================================================ */
 
 function closeDD(){ document.querySelectorAll(".dd.open").forEach(d=>d.classList.remove("open")); }
 function openDD(dd){
@@ -792,15 +776,8 @@ window.addEventListener("scroll",e=>{
 },true);
 window.addEventListener("resize",closeDD);
 
-/* ============================================================
-   BOOT SEQUENCE
-   ============================================================ */
-
 (async function(){
-    // 1. Auth check + pair status first (this determines if we even have a session)
     await boot();
-
-    // 2. If logged in (via existing session OR after pairing), pull config from backend
     if (isAuthenticated) {
         try {
             config = await loadConfigFromBackend();
@@ -810,11 +787,7 @@ window.addEventListener("resize",closeDD);
             document.getElementById("configStatusText").textContent = "Could not load config — using defaults";
         }
     }
-
-    // 3. Render the config editor
     renderConfig();
-
-    // 4. Periodic refresh of pair status
     setInterval(()=>{ if (paired) refreshPairStatus(); }, 15000);
 })();
 </script>
