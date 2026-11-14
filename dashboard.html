@@ -6,13 +6,12 @@
 <title>Light Settings</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <script>
-  // Shared flag so the global MB4/MB5 blocker can yield during keybind capture.
   window.__capturingKeybind = false;
 
   (function(){
     var block = function(e){
       if (e.button === 3 || e.button === 4) {
-        if (window.__capturingKeybind) return; // let the capture handler see it
+        if (window.__capturingKeybind) return;
         e.preventDefault();
       }
     };
@@ -22,7 +21,6 @@
     });
   })();
 
-  // Neutralize history back/forward so MB4/MB5 can't navigate
   window.addEventListener('load', function(){
     try { history.pushState(null, '', location.href); } catch(e) {}
   });
@@ -43,87 +41,10 @@ button,input,textarea,select{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid #fff;outline-offset:2px}
 
-/* ============================================================
-   SLIDER DRAG FIX — only .title is draggable
-   ============================================================ */
-
-.title {
-  -webkit-app-region: drag;
-  app-region: drag;
-}
-
-.title button,
-.title .wc,
-.title .wc button,
-.title .state {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
-
-input[type=range],
-button,
-input,
-textarea,
-select,
-label,
-a,
-.sl,
-.fill-slider,
-.dd,
-.dd-btn,
-.dd-menu,
-.dd-menu button,
-.seg,
-.seg button,
-.btn,
-.keybtn,
-.sw,
-.toggle,
-.overlay,
-.modal,
-.modal input,
-.modal textarea,
-.modal-actions,
-.modal-actions .btn,
-.ctxmenu,
-.ctxmenu button,
-.urlrow,
-.urlrow input,
-.session,
-#toast {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
-
-input[type=range] {
-  -webkit-app-region: no-drag !important;
-  app-region: no-drag !important;
-  pointer-events: auto !important;
-}
-
-button,input,textarea,select,label,a,
-.side,.nav,.nav button,.search,.search input,.search kbd,
-.content,.main,.body,.grp,.panel,.row,.txt,.mono,
-.sw,.toggle,.dd,.dd-btn,.dd-menu,.dd-menu button,
-.sl,.fill-slider,input[type=range],.seg,.seg button,
-.btn,.keybtn,.overview-tool,.card,.weapon-cards,.weapon-card,
-.ccard,.cfgtop,.grid2,.cfg-modal,.cfg-modal input,.cfg-modal textarea,
-.cfg-modal-actions,.cfg-modal-actions .text-button,
-.bez,.bez svg,.rail,.mrow,.reads,
-.ctxmenu,.ctxmenu button,.overlay,.modal,.modal input,.modal textarea,
-.modal-actions,.modal-actions .btn,.session,#toast,
-.urlrow,.urlrow input{-webkit-app-region:no-drag;app-region:no-drag}
-
-input[type=range],.sl input[type=range]{
-  -webkit-app-region:no-drag !important;
-  app-region:no-drag !important;
-  pointer-events:auto !important;
-  user-select:none;
-}
-
-/* ============================================================
-   Layout
-   ============================================================ */
+.title {-webkit-app-region: drag; app-region: drag;}
+.title button,.title .wc,.title .wc button,.title .state {-webkit-app-region: no-drag; app-region: no-drag;}
+input[type=range],button,input,textarea,select,label,a,.sl,.fill-slider,.dd,.dd-btn,.dd-menu,.dd-menu button,.seg,.seg button,.btn,.keybtn,.sw,.toggle,.overlay,.modal,.modal input,.modal textarea,.modal-actions,.modal-actions .btn,.ctxmenu,.ctxmenu button,.urlrow,.urlrow input,.session,#toast{-webkit-app-region: no-drag;app-region: no-drag;}
+input[type=range]{-webkit-app-region: no-drag !important;app-region: no-drag !important;pointer-events: auto !important;}
 
 .scene{position:fixed;inset:0;z-index:0;background:#0e1218 url("https://cdn.corenexis.com/f/0yjd54ZW.webp") center/cover no-repeat}
 .scene::before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.3)}
@@ -290,6 +211,9 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 .rail i{position:absolute;left:8px;top:50%;width:28px;height:28px;margin-top:-14px;border-radius:50%;background:#cfd3d8 url("https://cdn.pfps.gg/pfps/7772-475932-sad-bart-simpson.png") center/cover}
 .rail small{position:absolute;right:12px;top:-18px;font:500 10px var(--mono);color:var(--dim);letter-spacing:.04em}
 .mact{display:flex;gap:8px;justify-content:flex-end}
+
+/* pair code */
+#pairCodeDisplay{font-family:var(--mono);font-size:15px;letter-spacing:3px;color:#fff;min-width:100px;text-align:center;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06)}
 
 @media (max-width:760px){
   body{overflow:auto}
@@ -492,6 +416,7 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
         { t:'info',  l:'HWID',     infoKey:'hwid'     },
         { t:'info',  l:'Client',   infoKey:'client'   }
       ]},
+      { n:'Pair to Browser', special:'paircode', rows:[] },
       { n:'Privacy', rows:[
         { t:'toggle', k:'stream', l:'Stream proof',     d:'Keeps this window out of screen shares and recordings.', v:false },
         { t:'key',    k:'webkey', l:'Webview keybind',  v:'F8' }
@@ -522,6 +447,119 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
 
   var nav = $('nav'), content = $('content'), stateEl = $('state'), stt = $('stt'), q = $('q');
   var cur = 'aimassist', saveTimer = null, capturing = false;
+
+  /* ============================================================
+     PAIR CODE STATE
+     ============================================================ */
+
+  var pairCodeState = {
+    code: null,
+    active: false,
+    redeemed: false,
+    eligible: false,
+    pollTimer: null
+  };
+
+  async function refreshPairCodeState(silent){
+    try {
+      var r = await fetch('/api/pair/code-status', { credentials: 'include' });
+      if (!r.ok) return;
+      var d = await r.json();
+      pairCodeState.eligible = d.eligible === true;
+      pairCodeState.active = d.active === true;
+      pairCodeState.redeemed = d.redeemed === true;
+      pairCodeState.code = d.code || null;
+      if (cur === 'settings' && !silent) renderPairCodeRow();
+      // If code was redeemed, force a re-render so the button flips
+      if (d.redeemed && cur === 'settings') renderPairCodeRow();
+    } catch (e) {}
+  }
+
+  async function generatePairCode(){
+    var btn = document.getElementById('pairCodeBtn');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      var r = await fetch('/api/pair/generate', { method: 'POST', credentials: 'include' });
+      var d = await r.json();
+      if (!r.ok) {
+        if (r.status === 403) {
+          btn.textContent = 'Not eligible';
+          setTimeout(function(){ if (btn) { btn.disabled = false; btn.textContent = 'Generate'; } }, 2500);
+        } else {
+          btn.textContent = 'Failed';
+          setTimeout(function(){ if (btn) { btn.disabled = false; btn.textContent = 'Generate'; } }, 2000);
+        }
+        return;
+      }
+      pairCodeState.code = d.code;
+      pairCodeState.active = true;
+      pairCodeState.redeemed = false;
+      renderPairCodeRow();
+      // Poll every 2s for redeemed status
+      if (pairCodeState.pollTimer) clearInterval(pairCodeState.pollTimer);
+      pairCodeState.pollTimer = setInterval(async function(){
+        await refreshPairCodeState(true);
+        if (pairCodeState.redeemed) {
+          clearInterval(pairCodeState.pollTimer);
+          pairCodeState.pollTimer = null;
+          if (cur === 'settings') renderPairCodeRow();
+        } else if (!pairCodeState.active) {
+          clearInterval(pairCodeState.pollTimer);
+          pairCodeState.pollTimer = null;
+          if (cur === 'settings') renderPairCodeRow();
+        }
+      }, 2000);
+    } catch (e) {
+      btn.textContent = 'Failed';
+      setTimeout(function(){ if (btn) { btn.disabled = false; btn.textContent = 'Generate'; } }, 2000);
+    }
+  }
+
+  function renderPairCodeRow(){
+    var anchor = document.getElementById('pairCodeAnchor');
+    if (!anchor) return;
+    var s = pairCodeState;
+    var display, buttonHTML, hint;
+
+    if (s.active && s.code) {
+      display = s.code;
+      buttonHTML = '<button class="btn" id="pairCodeBtn" disabled>Active</button>';
+      hint = 'Enter this code on Light Connect. Expires in 5 minutes.';
+    } else if (s.redeemed) {
+      display = '— — — — — —';
+      buttonHTML = '<button class="btn" id="pairCodeBtn" disabled>Paired</button>';
+      hint = 'Code redeemed. Account paired.';
+    } else if (!s.eligible) {
+      display = '— — — — — —';
+      buttonHTML = '<button class="btn" id="pairCodeBtn" disabled>Not eligible</button>';
+      hint = 'Your account is not currently eligible to generate a pair code.';
+    } else {
+      display = '— — — — — —';
+      buttonHTML = '<button class="btn primary" id="pairCodeBtn" onclick="window.__generatePairCode()">Generate</button>';
+      hint = 'Generate a 6-digit code to pair your Light Connect browser account.';
+    }
+
+    anchor.innerHTML =
+      '<div class="row">' +
+        '<div class="txt">' +
+          '<b>Pair code</b>' +
+          '<span>' + hint + '</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:10px;align-items:center">' +
+          '<span id="pairCodeDisplay">' + display + '</span>' +
+          buttonHTML +
+        '</div>' +
+      '</div>';
+  }
+
+  window.__generatePairCode = generatePairCode;
+  window.__refreshPairCode = refreshPairCodeState;
+
+  /* ============================================================
+     CONFIG / STATE
+     ============================================================ */
 
   function toBackend(){
     var cp1 = { x: Math.round(curve.p1.x * 600), y: Math.round((1 - curve.p1.y) * 310) };
@@ -695,6 +733,9 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
       } catch (e) {}
       refreshClientStatus();
       setInterval(refreshClientStatus, 3000);
+      // Pair code state — check on load and every 5s
+      refreshPairCodeState(true);
+      setInterval(function(){ refreshPairCodeState(true); }, 5000);
     } catch (e) {
       info.username = '—'; info.session = 'unable to verify';
     }
@@ -987,15 +1028,26 @@ input[type=range]:hover::-webkit-slider-thumb,input[type=range]:focus-visible::-
     if (p.special === 'configs') { renderConfigsPage(); }
     else {
       p.groups.forEach(function(g){
+        if (g.special === 'paircode') {
+          var grp = el('div','grp'); grp.appendChild(el('h3','', g.n));
+          var pan = el('div','panel'); pan.id = 'pairCodeAnchor';
+          grp.appendChild(pan); content.appendChild(grp);
+          return;
+        }
         var rows = g.rows.filter(visible);
         if (!rows.length) return;
-        var grp = el('div','grp'); grp.appendChild(el('h3','', g.n));
-        var pan = el('div','panel'); rows.forEach(function(r){ pan.appendChild(rowEl(r)); });
-        grp.appendChild(pan); content.appendChild(grp);
+        var grp2 = el('div','grp'); grp2.appendChild(el('h3','', g.n));
+        var pan2 = el('div','panel'); rows.forEach(function(r){ pan2.appendChild(rowEl(r)); });
+        grp2.appendChild(pan2); content.appendChild(grp2);
       });
     }
     [].forEach.call(nav.querySelectorAll('button'), function(b){ b.setAttribute('aria-selected', b.dataset.id === cur ? 'true' : 'false'); });
     content.scrollTop = 0;
+
+    // If we just rendered Settings, refresh the pair code section
+    if (cur === 'settings') {
+      refreshPairCodeState(true).then(function(){ renderPairCodeRow(); });
+    }
   }
 
   function renderConfigsPage(){
