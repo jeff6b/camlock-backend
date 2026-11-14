@@ -18,7 +18,6 @@ button{cursor:pointer}
 .app{min-height:100vh}
 .sidebar{position:fixed;inset:0 auto 0 0;width:230px;background:#0b0b0b;border-right:1px solid var(--border);padding:25px 16px;display:flex;flex-direction:column;z-index:5}
 .brand{display:flex;align-items:center;gap:11px;padding:2px 9px 34px}
-.brand-icon{width:30px;height:30px;border:1px solid #444;border-radius:6px;display:grid;place-items:center;font-size:17px;font-weight:800}
 .brand-name{font-weight:800;font-size:17px;letter-spacing:3px}
 .brand-tag{font-size:9px;color:#555;letter-spacing:1.5px;margin-top:3px}
 .nav-label{font-size:9px;letter-spacing:1.5px;color:#505050;font-weight:700;padding:15px 10px 9px}
@@ -30,16 +29,11 @@ button{cursor:pointer}
 .nav-item.active .nav-icon img{filter:grayscale(1) brightness(0) invert(.88)}
 .nav-bottom{margin-top:auto}
 .account{border:1px solid var(--border);border-radius:6px;padding:11px;display:flex;align-items:center;gap:10px;margin-top:12px}
-.avatar,.top-avatar{width:30px;height:30px;border-radius:5px;background:#222;display:grid;place-items:center;color:#aaa;font-weight:700}
 .account-name{font-size:11px;font-weight:600}
 .account-sub{font-size:10px;color:#626262;margin-top:4px}
 .main{margin-left:230px;min-height:100vh}
 .topbar{height:65px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 35px;background:#0b0b0b}
 .breadcrumb{color:#666;font-size:11px}.breadcrumb span{color:#aaa}
-.top-right{display:flex;align-items:center;gap:18px}
-.connection{display:flex;align-items:center;gap:8px;color:#777;font-size:10px}
-.dot{width:6px;height:6px;border-radius:50%;background:#858585}
-.top-avatar{border-radius:50%;font-size:11px;font-weight:400}
 .content{max-width:1450px;margin:auto;padding:38px}
 .page{display:none}.page.active{display:block;animation:fade .2s}
 @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
@@ -74,15 +68,12 @@ h1{font-size:26px;letter-spacing:-.8px;font-weight:600}
 .status-box{background:#141414;border:1px solid #292929;border-radius:5px;padding:16px;margin-bottom:15px}
 .status-row{display:flex;justify-content:space-between;align-items:center}
 .status-title{font-size:11px;font-weight:600;color:#aaa}
-.status-sub{font-size:9px;color:#666;margin-top:5px}
-.status-indicator{font-size:10px;color:#777;display:flex;align-items:center;gap:7px}
 .progress{height:3px;background:#252525;margin-top:16px}
 .progress-inner{height:100%;width:0;background:#777}
 .activity{display:flex;gap:12px;padding:13px 0;border-top:1px solid #202020}
 .activity-marker{width:6px;height:6px;background:#777;border-radius:50%;margin-top:4px}
 .activity-text{font-size:10px;color:#aaa}.activity-time{font-size:9px;color:#626262;margin-top:5px}
 
-/* CONFIGURATION UI */
 .config-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
 .config-toolbar-left{display:flex;align-items:center;gap:8px}
 .config-toolbar-right{display:flex;gap:8px}
@@ -95,7 +86,6 @@ h1{font-size:26px;letter-spacing:-.8px;font-weight:600}
 .config-scroll{flex:1;min-height:0;overflow-y:auto;padding-right:8px;scrollbar-width:thin;scrollbar-color:#333 transparent;overscroll-behavior:contain}
 .config-scroll::-webkit-scrollbar{width:5px}
 .config-scroll::-webkit-scrollbar-thumb{background:#303030;border-radius:4px}
-.config-scroll::-webkit-scrollbar-track{background:transparent}
 .config-subhead{font-size:8px;letter-spacing:1.6px;color:#555;font-weight:700;text-transform:uppercase;padding:16px 0 4px}
 .config-subhead:first-child{padding-top:4px}
 .config-field{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #1d1d1d}
@@ -106,7 +96,6 @@ h1{font-size:26px;letter-spacing:-.8px;font-weight:600}
 .config-control input:not([type=checkbox]){width:100%;background:#101010;border:1px solid #303030;border-radius:4px;padding:7px 8px;color:#aaa;outline:none;font-size:10px;}
 .config-control input:focus{border-color:#666}
 input[type=checkbox]{appearance:none;-webkit-appearance:none;width:16px;height:16px;border:1px solid #4a4a4a;border-radius:3px;background:transparent;position:relative;cursor:pointer;flex-shrink:0;transition:.15s;display:block}
-input[type=checkbox]:hover{border-color:#777}
 input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
 .weapon-list{display:flex;flex-direction:column;gap:8px;margin-top:6px}
 .weapon{background:#0b0b0b;border:1px solid #232323;border-radius:5px;padding:10px}
@@ -114,9 +103,6 @@ input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
 .weapon-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(68px,1fr));gap:8px}
 .weapon-field label{display:block;font-size:8px;letter-spacing:1px;color:#5f5f5f;text-transform:uppercase;margin-bottom:4px}
 .weapon-field input{width:100%;background:#101010;border:1px solid #2c2c2c;border-radius:4px;padding:6px 7px;color:#aaa;outline:none;font-size:10px}
-.weapon-field input:focus{border-color:#666}
-
-/* custom dropdown */
 .dd{position:relative}
 .dd-btn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;background:#101010;border:1px solid #303030;border-radius:4px;padding:7px 8px;color:#aaa;font-size:10px;text-align:left;transition:.15s}
 .dd-btn:hover{border-color:#464646}
@@ -128,7 +114,6 @@ input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
 .dd.open .dd-menu{display:block}
 .dd-menu::-webkit-scrollbar{width:4px}
 .dd-menu::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:4px}
-.dd-menu::-webkit-scrollbar-track{background:transparent}
 .dd-opt{padding:7px 8px;font-size:10px;color:#8a8a8a;border-radius:3px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
 .dd-opt:hover{background:#1a1a1a;color:#ccc}
 .dd-opt.sel{color:#d0d0d0;background:#171717}
@@ -137,7 +122,7 @@ input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
 .config-object{border:1px solid #242424;border-radius:5px;margin-top:12px;padding:12px;background:#0b0b0b}
 .config-object-title{font-size:10px;color:#aaa;font-weight:600;margin-bottom:4px}
 
-.toast{position:fixed;bottom:25px;right:25px;padding:13px 17px;background:#252525;border:1px solid #414141;color:#bbb;border-radius:4px;font-size:10px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;z-index:50}
+.toast{position:fixed;bottom:25px;right:25px;padding:13px 17px;background:#252525;border:1px solid #414141;color:#bbb;border-radius:4px;font-size:10px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;z-index:50;max-width:calc(100vw - 40px)}
 .toast.show{opacity:1;transform:none}
 .modal-overlay{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center;z-index:30;padding:20px}
 .modal-overlay.show{display:flex}
@@ -147,11 +132,6 @@ input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
 .modal input{width:100%;background:#090909;border:1px solid #303030;border-radius:4px;padding:12px;color:#bbb;outline:none;margin-bottom:15px;font-size:11px}
 .modal-actions{display:flex;justify-content:flex-end;gap:9px}
 
-/* login state + pairing screen */
-.login-state{background:#101010;border:1px solid #2a2a2a;color:#6a6a6a;border-radius:4px;padding:7px 11px;font-size:10px;font-family:ui-monospace,Menlo,Consolas,monospace;transition:.15s}
-.login-state:hover{border-color:#444}
-.login-state b{font-weight:600;color:#888}
-.login-state.on b{color:#d0d0d0}
 .auth{display:none;min-height:calc(100vh - 76px);align-items:center;justify-content:center;text-align:center;position:relative}
 .auth:before{content:"";position:absolute;width:560px;height:560px;max-width:100%;border-radius:50%;background:radial-gradient(circle,#ffffff0d 0%,transparent 65%);pointer-events:none}
 .auth-inner{position:relative;max-width:430px;width:100%;animation:fade .35s}
@@ -166,7 +146,6 @@ input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
 .auth-step span{font-size:10px;color:#8a8a8a}
 .auth-foot{font-size:9px;color:#4f4f4f;margin-top:18px;letter-spacing:.5px}
 
-/* Paired / not-paired visibility */
 body:not(.paired) .sidebar,
 body:not(.paired) .topbar,
 body:not(.paired) .content > .page { display: none !important; }
@@ -288,17 +267,17 @@ body.paired .content > .page.active { display: block; }
 
 <section class="page" id="configurations">
     <div class="page-header">
-        <div><div class="eyebrow">PREFERENCES / CONFIGURATIONS</div><h1>Configurations.</h1><div class="subtitle">Customize and manage your local configuration.</div></div>
-        <span class="tag" id="configState">UNSAVED CHANGES</span>
+        <div><div class="eyebrow">PREFERENCES / CONFIGURATIONS</div><h1>Configurations.</h1><div class="subtitle">Changes save to the backend and reach your client within ~2 seconds.</div></div>
+        <span class="tag" id="configState">SAVED</span>
     </div>
 
     <div class="config-toolbar">
         <div class="config-toolbar-left">
-            <span class="config-status">Default configuration</span>
+            <span class="config-status" id="configStatusText">Loaded from backend</span>
         </div>
         <div class="config-toolbar-right">
             <button class="secondary-btn" onclick="resetConfig()">Reset defaults</button>
-            <button class="primary-btn" onclick="saveConfig()">Save configuration</button>
+            <button class="primary-btn" id="saveConfigBtn" onclick="saveConfig()">Save configuration</button>
         </div>
     </div>
 
@@ -325,7 +304,7 @@ body.paired .content > .page.active { display: block; }
 
 <script>
 /* ============================================================
-   DEFAULT CONFIG
+   DEFAULT CONFIG (fallback if backend unreachable)
    ============================================================ */
 const DEFAULT_CONFIG = {
     "Enabled":true,"Keybind":"Q","KeybindMode":"toggle","WebviewKeybind":"F8",
@@ -366,9 +345,8 @@ const SECTION_HEADS = {
     "macro.Enabled":"General","macro.OutputMode":"Output"
 };
 
-const STORAGE_KEY = "vital_configuration_v1";
-
-let config = loadConfig();
+/* In-memory config — loaded from backend on boot, saved to backend on Save */
+let config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 
 /* ============================================================
    STATE
@@ -395,6 +373,64 @@ function notify(message){
 }
 function escapeHTML(value){
     return String(value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
+
+/* ============================================================
+   CONFIG — LOAD/SAVE via /api/config (same as dashboard.html)
+   ============================================================ */
+
+async function loadConfigFromBackend(){
+    try {
+        const r = await fetch('/api/config', { credentials: 'include' });
+        if (!r.ok) return clone(DEFAULT_CONFIG);
+        const cfg = await r.json();
+        // Backend returns DEFAULT_CONFIG merged with stored config.
+        // Merge on top of our local default so missing keys don't crash.
+        return mergeDefaults(clone(DEFAULT_CONFIG), cfg);
+    } catch (e) {
+        return clone(DEFAULT_CONFIG);
+    }
+}
+
+async function saveConfigToBackend(){
+    const btn = document.getElementById("saveConfigBtn");
+    const stateEl = document.getElementById("configState");
+    const statusEl = document.getElementById("configStatusText");
+
+    config = getCurrentEditorConfig();
+
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    stateEl.textContent = "SAVING";
+    statusEl.textContent = "Pushing to backend…";
+
+    try {
+        const r = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(config)
+        });
+        if (!r.ok) {
+            let err = "";
+            try { err = (await r.json()).detail || ""; } catch(e) {}
+            stateEl.textContent = "SAVE FAILED";
+            statusEl.textContent = "Failed (" + r.status + ")" + (err ? ": " + err : "");
+            notify("Save failed (" + r.status + ")");
+            return;
+        }
+        stateEl.textContent = "SAVED";
+        statusEl.textContent = "Saved — client picks it up within ~2 seconds";
+        notify("Configuration saved.");
+    } catch (e) {
+        stateEl.textContent = "SAVE ERROR";
+        statusEl.textContent = "Network error";
+        notify("Save error: " + e);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Save configuration";
+    }
 }
 
 /* ============================================================
@@ -504,12 +540,19 @@ async function submitPairCode(){
         notify("Paired to " + d.paired_with + ".");
         closeModal();
 
-        // Backend just set session cookies on THIS browser (even if it wasn't logged in).
-        // Update local state and re-fetch everything.
+        // Backend just set session cookies on this browser.
         isAuthenticated = true;
         currentUsername = d.username || currentUsername || d.paired_with;
         document.getElementById("sidebarUsername").textContent = currentUsername;
         document.getElementById("welcomeName").textContent = currentUsername;
+
+        // Now that we have a session, load their config from the backend.
+        try {
+            config = await loadConfigFromBackend();
+            renderConfig();
+            document.getElementById("configState").textContent = "SAVED";
+            document.getElementById("configStatusText").textContent = "Loaded from backend";
+        } catch (e) {}
 
         await refreshPairStatus();
         if (paired) navigate("overview");
@@ -556,22 +599,9 @@ function updateUI(){
 }
 
 /* ============================================================
-   CONFIG EDITOR
+   CONFIG EDITOR (renders and reads in-memory `config`)
    ============================================================ */
 
-function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
-function loadConfig(){
-    try{
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if(saved){
-            const merged = mergeDefaults(clone(DEFAULT_CONFIG), JSON.parse(saved));
-            delete merged.CurveP1; delete merged.CurveP2;
-            if(merged.macro) delete merged.macro.Keys;
-            return merged;
-        }
-    }catch(e){}
-    return clone(DEFAULT_CONFIG);
-}
 function mergeDefaults(defaults,loaded){
     for(const key in loaded){
         if(loaded[key] && typeof loaded[key] === "object" && !Array.isArray(loaded[key]) && defaults[key] && typeof defaults[key] === "object"){
@@ -681,25 +711,23 @@ function getCurrentEditorConfig(){
     return result;
 }
 function markConfigChanged(){
-    document.getElementById("configState").textContent = "UNSAVED CHANGES";
+    document.getElementById("configState").textContent = "UNSAVED";
+    document.getElementById("configStatusText").textContent = "Unsaved changes — click Save to push to backend";
 }
+
+/* Save/reset buttons */
 function saveConfig(){
-    config = getCurrentEditorConfig();
-    try{
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(config,null,2));
-        document.getElementById("configState").textContent = "SAVED";
-        notify("Configuration saved locally.");
-    }catch(e){
-        notify("Could not save configuration.");
-    }
+    return saveConfigToBackend();
 }
 function resetConfig(){
     if(!confirm("Reset all configuration values to their defaults?")) return;
     config = clone(DEFAULT_CONFIG);
     renderConfig();
     markConfigChanged();
-    notify("Default values restored. Save to keep them.");
+    notify("Default values restored. Click Save to push to backend.");
 }
+window.saveConfig = saveConfig;
+window.resetConfig = resetConfig;
 
 /* ============================================================
    NAV
@@ -765,12 +793,30 @@ window.addEventListener("scroll",e=>{
 window.addEventListener("resize",closeDD);
 
 /* ============================================================
-   BOOT
+   BOOT SEQUENCE
    ============================================================ */
 
-renderConfig();
-boot();
-setInterval(()=>{ if (paired) refreshPairStatus(); }, 15000);
+(async function(){
+    // 1. Auth check + pair status first (this determines if we even have a session)
+    await boot();
+
+    // 2. If logged in (via existing session OR after pairing), pull config from backend
+    if (isAuthenticated) {
+        try {
+            config = await loadConfigFromBackend();
+            document.getElementById("configState").textContent = "SAVED";
+            document.getElementById("configStatusText").textContent = "Loaded from backend";
+        } catch (e) {
+            document.getElementById("configStatusText").textContent = "Could not load config — using defaults";
+        }
+    }
+
+    // 3. Render the config editor
+    renderConfig();
+
+    // 4. Periodic refresh of pair status
+    setInterval(()=>{ if (paired) refreshPairStatus(); }, 15000);
+})();
 </script>
 </body>
 </html>
