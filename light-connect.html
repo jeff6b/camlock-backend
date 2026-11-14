@@ -247,7 +247,7 @@ body.paired .content > .page.active { display: block; }
 
 <div class="auth" id="auth">
     <div class="auth-inner">
-        <img class="auth-logo" src="https://res.cloudinary.com/dtz0urit6/image/upload/q_auto:best,f_png/cloudinary-tools-uploads/uujeuyzvsg4qtpveucjh" alt="Light">
+        <img class="auth-logo" src="https://cdn.corenexis.com/f/RYE3jwCK.png" alt="Light">
         <div class="auth-brand">LIGHT</div>
         <h1>Pair your account.</h1>
         <p class="auth-sub">Enter the 6-digit pair code from your Light client's Settings page to link this browser account to your client.</p>
@@ -322,7 +322,7 @@ body.paired .content > .page.active { display: block; }
     <div class="modal">
         <div class="eyebrow">LIGHT CONNECT / PAIR</div>
         <h2>Enter your pair code.</h2>
-        <p>Open your Light client → Settings → "Pair to Browser", generate a 6-digit code, and paste it below.</p>
+        <p>Open your Light client, go to Settings, Pair to Browser, generate a 6-digit code, and paste it below.</p>
         <input id="pairCodeInput" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="off" style="text-align:center;font-size:22px;letter-spacing:10px;font-family:ui-monospace,Menlo,Consolas,monospace">
         <div class="modal-actions">
             <button class="secondary-btn" onclick="closeModal()">Cancel</button>
@@ -334,7 +334,7 @@ body.paired .content > .page.active { display: block; }
 
 <script>
 /* ============================================================
-   DEFAULT CONFIG (only used by the local config editor below)
+   DEFAULT CONFIG (local config editor)
    ============================================================ */
 const DEFAULT_CONFIG = {
     "Enabled":true,"Keybind":"Q","KeybindMode":"toggle","WebviewKeybind":"F8",
@@ -380,14 +380,14 @@ const STORAGE_KEY = "vital_configuration_v1";
 let config = loadConfig();
 
 /* ============================================================
-   STATE — driven by backend, NOT localStorage
+   STATE
    ============================================================ */
 
 let paired = false;
 let devices = [];
 let activities = [];
 let currentUsername = "";
-let pendingRefresh = null;
+let isAuthenticated = false;
 
 const DEVICE_ICON = "https://img.icons8.com/?size=100&id=gwCmus5W03wM&format=png&color=000000";
 
@@ -407,55 +407,56 @@ function escapeHTML(value){
 }
 
 /* ============================================================
-   PAIR STATE (BACKEND)
+   BOOT — NO REDIRECT
    ============================================================ */
 
 async function boot(){
+    // 1. Check auth quietly. Don't redirect if not logged in.
     try {
-        // 1. Are we logged in?
         const meRes = await fetch('/api/me', { credentials: 'include' });
-        if (!meRes.ok) { window.location.href = '/'; return; }
         const me = await meRes.json();
-        if (!me.authenticated) { window.location.href = '/'; return; }
-
-        currentUsername = me.username || "user";
-        document.getElementById("sidebarUsername").textContent = currentUsername;
-        document.getElementById("welcomeName").textContent = currentUsername;
-
-        // 2. Are we paired?
-        await refreshPairStatus();
+        isAuthenticated = me.authenticated === true;
+        if (isAuthenticated) {
+            currentUsername = me.username || "user";
+            document.getElementById("sidebarUsername").textContent = currentUsername;
+            document.getElementById("welcomeName").textContent = currentUsername;
+        } else {
+            document.getElementById("sidebarUsername").textContent = "guest";
+            document.getElementById("welcomeName").textContent = "guest";
+        }
     } catch (e) {
-        console.error("boot failed", e);
-        window.location.href = '/';
+        isAuthenticated = false;
+    }
+
+    // 2. Pair status — only if logged in. Otherwise show pairing screen.
+    if (isAuthenticated) {
+        await refreshPairStatus();
+    } else {
+        applyPairedState(false);
     }
 }
 
 async function refreshPairStatus(){
+    if (!isAuthenticated) { applyPairedState(false); return; }
     try {
         const r = await fetch('/api/pair/status', { credentials: 'include' });
         if (!r.ok) { applyPairedState(false); return; }
         const d = await r.json();
-
         paired = d.paired === true;
         devices = (d.devices || []).map(dev => ({
             name: dev.name,
             type: dev.type || "Light client",
             online: dev.online === true
         }));
-
-        // Build a small activity log from the pairing data
         activities = (d.pairs || []).map(p => `${p.client_username} paired`);
         if (activities.length === 0) activities = ["No activity yet"];
-
         applyPairedState(paired);
-
         if (paired) {
             updateUI();
             if (document.getElementById("devices").classList.contains("active")) renderDevices();
             if (document.getElementById("activity").classList.contains("active")) renderActivity();
         }
     } catch (e) {
-        console.error("refreshPairStatus failed", e);
         applyPairedState(false);
     }
 }
@@ -465,7 +466,6 @@ function applyPairedState(isPaired){
     document.getElementById("loginVal").textContent = String(isPaired);
     document.getElementById("loginState").classList.toggle("on", isPaired);
     if (isPaired) {
-        // If a page is already active, keep it. Otherwise go to overview.
         if (!document.querySelector(".page.active")) navigate("overview");
     } else {
         document.getElementById("breadcrumb").textContent = "Pairing";
@@ -486,6 +486,10 @@ function closeModal(){
     document.getElementById("pairModal").classList.remove("show");
 }
 async function submitPairCode(){
+    if (!isAuthenticated) {
+        notify("You need to be logged in on the launcher to pair.");
+        return;
+    }
     const input = document.getElementById("pairCodeInput");
     const btn = document.getElementById("pairSubmitBtn");
     const code = input.value.trim();
@@ -494,7 +498,7 @@ async function submitPairCode(){
         return;
     }
     btn.disabled = true;
-    btn.textContent = "Pairing…";
+    btn.textContent = "Pairing...";
     try {
         const r = await fetch('/api/pair/redeem', {
             method: 'POST',
@@ -509,6 +513,7 @@ async function submitPairCode(){
             else if (r.status === 410) msg = 'That code has expired.';
             else if (r.status === 404) msg = 'Code not found.';
             else if (r.status === 400) msg = "You can't pair to yourself.";
+            else if (r.status === 401) msg = "You need to be logged in on the launcher first.";
             notify(msg);
             btn.disabled = false;
             btn.textContent = "Pair";
@@ -582,7 +587,7 @@ function updateUI(){
 }
 
 /* ============================================================
-   CONFIG EDITOR (local, unchanged from original)
+   CONFIG EDITOR
    ============================================================ */
 
 function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
@@ -794,9 +799,9 @@ window.addEventListener("resize",closeDD);
    BOOT
    ============================================================ */
 
-renderConfig();     // config editor
-boot();             // auth + pair status
-setInterval(()=>{ if (paired) refreshPairStatus(); }, 15000);  // keep devices fresh
+renderConfig();
+boot();
+setInterval(()=>{ if (paired) refreshPairStatus(); }, 15000);
 </script>
 </body>
 </html>
