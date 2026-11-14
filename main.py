@@ -1,4 +1,4 @@
-# main.py — backend for username/password accounts + community config
+# main.py — backend for username/password accounts + community config + discord bot
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
@@ -11,6 +11,7 @@ import pathlib
 from datetime import datetime, timedelta
 import hashlib
 import hmac
+import random as _random
 
 try:
     from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -32,25 +33,33 @@ if HAS_LIMITER:
 
 BASE_DIR = pathlib.Path(__file__).parent
 
+
 def load_html(filename: str) -> str:
     path = BASE_DIR / filename
     if not path.exists():
         return f"<h1 style='color:#fff;background:#000;padding:40px'>Missing: {filename}</h1>"
     return path.read_text(encoding="utf-8")
 
+
 LAUNCHER_HTML = load_html("launcher.html")
 DASHBOARD_HTML = load_html("dashboard.html")
+CONNECT_HTML = load_html("light-connect.html")
 
 DATABASE_URL = "postgresql://neondb_owner:npg_S7hoDMeaw2cQ@ep-wandering-dream-ah21egpt-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
 
+BOT_SHARED_SECRET = os.environ.get("BOT_SHARED_SECRET", "change-me-please")
+
+
 def get_db():
     return psycopg2.connect(DATABASE_URL)
+
 
 def hash_password(password: str, salt: str = None):
     if salt is None:
         salt = secrets.token_hex(16)
     key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
     return f"{salt}:{key.hex()}", salt
+
 
 def verify_password(stored_hash: str, password: str) -> bool:
     try:
@@ -59,6 +68,7 @@ def verify_password(stored_hash: str, password: str) -> bool:
         return hmac.compare_digest(key.hex(), stored_key)
     except:
         return False
+
 
 def init_db():
     try:
@@ -74,6 +84,7 @@ def init_db():
             hwid TEXT,
             hwid_resets INTEGER DEFAULT 0,
             active INTEGER DEFAULT 1,
+            pair_token_generated INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
             last_login TEXT)""")
         cur.execute("""CREATE TABLE IF NOT EXISTS login_sessions (
@@ -84,6 +95,7 @@ def init_db():
         cur.execute("""CREATE TABLE IF NOT EXISTS saved_configs (
             id SERIAL PRIMARY KEY, username TEXT NOT NULL,
             config_name TEXT NOT NULL, config_data TEXT NOT NULL,
+            visibility TEXT DEFAULT 'private',
             created_at TEXT NOT NULL, UNIQUE(username, config_name))""")
         cur.execute("""CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY, config TEXT NOT NULL)""")
@@ -99,15 +111,26 @@ def init_db():
             description TEXT,
             config_data TEXT NOT NULL,
             likes INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL
-        )""")
+            created_at TEXT NOT NULL)""")
         cur.execute("""CREATE TABLE IF NOT EXISTS community_likes (
             id SERIAL PRIMARY KEY,
             config_id INTEGER NOT NULL REFERENCES community_configs(id) ON DELETE CASCADE,
             username TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            UNIQUE(config_id, username)
-        )""")
+            UNIQUE(config_id, username))""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS pair_tokens (
+            code TEXT PRIMARY KEY,
+            owner_username TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            redeemed INTEGER DEFAULT 0,
+            redeemed_by TEXT)""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS account_pairs (
+            id SERIAL PRIMARY KEY,
+            browser_username TEXT NOT NULL,
+            client_username TEXT NOT NULL,
+            paired_at TEXT NOT NULL,
+            UNIQUE(browser_username, client_username))""")
         cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_configs_created ON community_configs(created_at DESC)""")
         cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_likes_config ON community_likes(config_id)""")
         cur.execute("""CREATE INDEX IF NOT EXISTS idx_community_likes_user ON community_likes(username)""")
@@ -116,6 +139,7 @@ def init_db():
         print("DB initialized", flush=True)
     except Exception as e:
         print(f"DB init error: {e}", flush=True)
+
 
 def migrate_db():
     try:
@@ -128,6 +152,7 @@ def migrate_db():
             ("user_accounts", "active", "INTEGER DEFAULT 1"),
             ("user_accounts", "email", "TEXT"),
             ("user_accounts", "last_login", "TEXT"),
+            ("user_accounts", "pair_token_generated", "INTEGER DEFAULT 0"),
             ("saved_configs", "username", "TEXT"),
             ("saved_configs", "visibility", "TEXT DEFAULT 'private'"),
             ("login_sessions", "launched_at", "TEXT"),
@@ -137,24 +162,12 @@ def migrate_db():
                 cur.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {definition}')
             except Exception as e:
                 print(f"[MIGRATE] {table}.{col} skip: {e}", flush=True)
-        try:
-            cur.execute("ALTER TABLE user_accounts ALTER COLUMN license_key DROP NOT NULL")
-        except Exception:
-            pass
-        try:
-            cur.execute("ALTER TABLE login_sessions ALTER COLUMN license_key DROP NOT NULL")
-        except Exception:
-            pass
-        # Clean up stray license_key column in saved_configs if it exists with NOT NULL
-        try:
-            cur.execute("ALTER TABLE saved_configs ALTER COLUMN license_key DROP NOT NULL")
-        except Exception:
-            pass
         db.commit()
         db.close()
         print("[MIGRATE] Done", flush=True)
     except Exception as e:
         print(f"[MIGRATE] Error: {e}", flush=True)
+
 
 init_db()
 migrate_db()
@@ -210,6 +223,7 @@ DEFAULT_CONFIG = {
     "macro": DEFAULT_MACRO,
     "UIBackground": {"Enabled": False, "URL": ""},
 }
+
 
 class UserLogin(BaseModel):
     username: str
@@ -270,7 +284,6 @@ async def user_login(request: Request, data: UserLogin):
                 SET authenticated=1, username=%s, last_ping=%s
                 WHERE client_id=%s
             """, (username, datetime.now().isoformat(), data.client_id))
-            print(f"[CLIENT] Authenticated client {data.client_id[:8]}... for {username}", flush=True)
 
         cur.execute("UPDATE user_accounts SET last_login=%s WHERE username=%s",
                     (datetime.now().isoformat(), username))
@@ -412,7 +425,7 @@ async def set_config(request: Request, data: dict):
 
 
 # ---------------------------------------------------------------------------
-# Saved configs — user's personal library
+# Saved configs
 # ---------------------------------------------------------------------------
 
 @app.get("/api/configs")
@@ -439,11 +452,8 @@ async def list_saved_configs(request: Request):
             except Exception:
                 data = {}
             configs.append({
-                "id": cid,
-                "name": name,
-                "data": data,
-                "visibility": vis or "private",
-                "created_at": created,
+                "id": cid, "name": name, "data": data,
+                "visibility": vis or "private", "created_at": created,
             })
         return {"configs": configs}
     except Exception as e:
@@ -457,18 +467,15 @@ async def create_saved_config(request: Request, data: dict):
     username = request.cookies.get("username")
     if not username:
         raise HTTPException(status_code=401, detail="Not authenticated")
-
     name = (data.get("name") or "").strip()
     cfg = data.get("data")
     vis = (data.get("visibility") or "private").strip().lower()
     if vis not in ("private", "public"):
         vis = "private"
-
     if not name:
         raise HTTPException(status_code=400, detail="Name required")
     if not isinstance(cfg, dict):
         raise HTTPException(status_code=400, detail="Config required")
-
     db = get_db()
     cur = db.cursor()
     try:
@@ -485,10 +492,6 @@ async def create_saved_config(request: Request, data: dict):
         db.close()
         return {"success": True, "id": new_id}
     except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        print("[CONFIGS] CREATE FAILED:", flush=True)
-        print(tb, flush=True)
         try: db.close()
         except: pass
         raise HTTPException(status_code=500, detail=f"create failed: {type(e).__name__}: {e}")
@@ -502,8 +505,7 @@ async def delete_saved_config(request: Request, config_id: int):
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("DELETE FROM saved_configs WHERE id=%s AND username=%s",
-                    (config_id, username))
+        cur.execute("DELETE FROM saved_configs WHERE id=%s AND username=%s", (config_id, username))
         db.commit()
         db.close()
         return {"success": True}
@@ -610,7 +612,6 @@ async def client_authenticate(data: ClientAuthenticate):
             current_hwid = urow[0]
             if not current_hwid:
                 cur.execute("UPDATE user_accounts SET hwid=%s WHERE username=%s", (client_hwid, data.username))
-                print(f"[HWID] Bound {client_hwid[:12]}... to {data.username}", flush=True)
             elif current_hwid != client_hwid:
                 db.close()
                 raise HTTPException(status_code=403, detail="HWID mismatch — account bound to another PC")
@@ -841,28 +842,408 @@ async def save_community_to_mine(request: Request, data: dict):
 
 
 # ---------------------------------------------------------------------------
+# Pairing (dashboard <-> light-connect)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/pair/generate")
+async def pair_generate(request: Request):
+    username = request.cookies.get("username")
+    session_id = request.cookies.get("session_id")
+    if not username or not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT pair_token_generated FROM user_accounts WHERE username=%s", (username,))
+        row = cur.fetchone()
+        if not row:
+            db.close()
+            raise HTTPException(status_code=404, detail="User not found")
+        if not row[0]:
+            db.close()
+            raise HTTPException(status_code=403, detail="Account not eligible for pairing")
+
+        cur.execute("""SELECT code, expires_at FROM pair_tokens
+                       WHERE owner_username=%s AND redeemed=0 AND expires_at > %s""",
+                    (username, datetime.now().isoformat()))
+        live = cur.fetchone()
+        if live:
+            db.close()
+            return {"ok": True, "code": live[0], "expires_at": live[1], "reused": True}
+
+        code = None
+        for _ in range(20):
+            candidate = f"{_random.randint(0, 999999):06d}"
+            cur.execute("SELECT 1 FROM pair_tokens WHERE code=%s", (candidate,))
+            if not cur.fetchone():
+                code = candidate
+                break
+        if not code:
+            db.close()
+            raise HTTPException(status_code=500, detail="Could not generate unique code")
+
+        now = datetime.now()
+        expires = (now + timedelta(minutes=5)).isoformat()
+        cur.execute("""INSERT INTO pair_tokens (code, owner_username, created_at, expires_at, redeemed)
+                       VALUES (%s, %s, %s, %s, 0)""",
+                    (code, username, now.isoformat(), expires))
+        db.commit()
+        db.close()
+        return {"ok": True, "code": code, "expires_at": expires, "reused": False}
+    except HTTPException:
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=f"pair_generate: {e}")
+
+
+@app.post("/api/pair/redeem")
+async def pair_redeem(request: Request, data: dict):
+    browser_username = request.cookies.get("username")
+    session_id = request.cookies.get("session_id")
+    if not browser_username or not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    code = (data.get("code") or "").strip()
+    if len(code) != 6 or not code.isdigit():
+        raise HTTPException(status_code=400, detail="Invalid code format")
+
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("""SELECT code, owner_username, expires_at, redeemed
+                       FROM pair_tokens WHERE code=%s""", (code,))
+        row = cur.fetchone()
+        if not row:
+            db.close()
+            raise HTTPException(status_code=404, detail="Code not found")
+        _, owner_username, expires_at, redeemed = row
+        if redeemed:
+            db.close()
+            raise HTTPException(status_code=409, detail="Code already redeemed")
+        try:
+            exp_dt = datetime.fromisoformat(expires_at)
+            if datetime.now() > exp_dt:
+                db.close()
+                raise HTTPException(status_code=410, detail="Code expired")
+        except ValueError:
+            db.close()
+            raise HTTPException(status_code=500, detail="Bad expiry in DB")
+
+        if owner_username == browser_username:
+            db.close()
+            raise HTTPException(status_code=400, detail="Cannot pair to yourself")
+
+        now_iso = datetime.now().isoformat()
+        cur.execute("UPDATE pair_tokens SET redeemed=1, redeemed_by=%s WHERE code=%s",
+                    (browser_username, code))
+        cur.execute("""INSERT INTO account_pairs (browser_username, client_username, paired_at)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT (browser_username, client_username) DO NOTHING""",
+                    (browser_username, owner_username, now_iso))
+        cur.execute("UPDATE user_accounts SET pair_token_generated=0 WHERE username=%s",
+                    (owner_username,))
+        db.commit()
+        db.close()
+        return {"ok": True, "paired_with": owner_username}
+    except HTTPException:
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=f"pair_redeem: {e}")
+
+
+@app.get("/api/pair/status")
+async def pair_status(request: Request):
+    browser_username = request.cookies.get("username")
+    if not browser_username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("""SELECT client_username, paired_at FROM account_pairs
+                       WHERE browser_username=%s ORDER BY paired_at DESC""", (browser_username,))
+        rows = cur.fetchall()
+        db.close()
+        devices = []
+        for r in rows:
+            uname = r[0]
+            devices.append({
+                "name": uname,
+                "type": "Light client",
+                "online": _is_client_online(uname),
+            })
+        return {
+            "paired": len(rows) > 0,
+            "devices": devices,
+            "pairs": [{"client_username": r[0], "paired_at": r[1]} for r in rows],
+        }
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=f"pair_status: {e}")
+
+
+@app.get("/api/pair/code-status")
+async def pair_code_status(request: Request):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT pair_token_generated FROM user_accounts WHERE username=%s", (username,))
+        row = cur.fetchone()
+        eligible = bool(row and row[0])
+        cur.execute("""SELECT code, expires_at, redeemed FROM pair_tokens
+                       WHERE owner_username=%s ORDER BY created_at DESC LIMIT 1""", (username,))
+        token = cur.fetchone()
+        db.close()
+        if not token:
+            return {"eligible": eligible, "active": False, "code": None, "redeemed": False}
+        code, expires_at, redeemed = token
+        try:
+            live = not redeemed and datetime.now() < datetime.fromisoformat(expires_at)
+        except Exception:
+            live = False
+        return {
+            "eligible": eligible,
+            "active": live,
+            "code": code,
+            "expires_at": expires_at,
+            "redeemed": bool(redeemed),
+        }
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=f"pair_code_status: {e}")
+
+
+@app.post("/api/pair/unpair")
+async def pair_unpair(request: Request):
+    browser_username = request.cookies.get("username")
+    if not browser_username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("DELETE FROM account_pairs WHERE browser_username=%s", (browser_username,))
+        db.commit()
+        db.close()
+        return {"ok": True}
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=f"pair_unpair: {e}")
+
+
+def _is_client_online(username):
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("""SELECT last_ping FROM clients
+                       WHERE username=%s AND authenticated=1
+                       ORDER BY last_ping DESC LIMIT 1""", (username,))
+        row = cur.fetchone()
+        db.close()
+        if not row or not row[0]:
+            return False
+        last = datetime.fromisoformat(row[0])
+        return (datetime.now() - last).total_seconds() < 15
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Discord bot endpoints
+# ---------------------------------------------------------------------------
+
+class _BotRegReq(BaseModel):
+    discord_id: str
+    username: str
+    password: str
+
+class _BotDiscReq(BaseModel):
+    discord_id: str
+
+class _BotGrantPairReq(BaseModel):
+    discord_id: str
+
+
+def _check_bot_auth(request: Request):
+    auth = request.headers.get("x-bot-secret", "")
+    if not auth or auth != BOT_SHARED_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid bot secret")
+
+
+@app.post("/api/bot/register")
+async def bot_register(request: Request, data: _BotRegReq):
+    _check_bot_auth(request)
+    username = (data.username or "").strip()
+    password = data.password or ""
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username and password required")
+    if len(username) > 32:
+        raise HTTPException(status_code=400, detail="Username too long")
+    if len(password) < 4:
+        raise HTTPException(status_code=400, detail="Password too short")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT username FROM user_accounts WHERE discord_id=%s", (data.discord_id,))
+        if cur.fetchone():
+            db.close()
+            raise HTTPException(status_code=409, detail="This Discord account already has a Light account")
+        cur.execute("SELECT username FROM user_accounts WHERE username=%s", (username,))
+        if cur.fetchone():
+            db.close()
+            raise HTTPException(status_code=409, detail="Username already taken")
+        pw_hash, _ = hash_password(password)
+        now = datetime.now().isoformat()
+        cur.execute(
+            """INSERT INTO user_accounts
+               (username, password_hash, discord_id, active, pair_token_generated, created_at)
+               VALUES (%s, %s, %s, 1, 0, %s)""",
+            (username, pw_hash, data.discord_id, now),
+        )
+        db.commit()
+        db.close()
+        return {"ok": True, "username": username}
+    except HTTPException:
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=f"register failed: {e}")
+
+
+@app.post("/api/bot/delete-account")
+async def bot_delete_account(request: Request, data: _BotDiscReq):
+    _check_bot_auth(request)
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT username FROM user_accounts WHERE discord_id=%s", (data.discord_id,))
+        row = cur.fetchone()
+        if not row:
+            db.close()
+            raise HTTPException(status_code=404, detail="No account linked to this Discord")
+        username = row[0]
+        cur.execute("DELETE FROM user_accounts WHERE username=%s", (username,))
+        cur.execute("DELETE FROM settings WHERE key=%s", (username,))
+        cur.execute("DELETE FROM saved_configs WHERE username=%s", (username,))
+        cur.execute("DELETE FROM login_sessions WHERE username=%s", (username,))
+        cur.execute("DELETE FROM clients WHERE username=%s", (username,))
+        cur.execute("DELETE FROM account_pairs WHERE browser_username=%s OR client_username=%s", (username, username))
+        db.commit()
+        db.close()
+        return {"ok": True, "username": username}
+    except HTTPException:
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=f"delete failed: {e}")
+
+
+@app.post("/api/bot/reset-hwid")
+async def bot_reset_hwid(request: Request, data: _BotDiscReq):
+    _check_bot_auth(request)
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT username FROM user_accounts WHERE discord_id=%s", (data.discord_id,))
+        row = cur.fetchone()
+        if not row:
+            db.close()
+            raise HTTPException(status_code=404, detail="No account linked to this Discord")
+        username = row[0]
+        cur.execute(
+            "UPDATE user_accounts SET hwid=NULL, hwid_resets=COALESCE(hwid_resets,0)+1 WHERE username=%s",
+            (username,),
+        )
+        db.commit()
+        db.close()
+        return {"ok": True, "username": username}
+    except HTTPException:
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=f"reset failed: {e}")
+
+
+@app.post("/api/bot/grant-pair-key")
+async def bot_grant_pair_key(request: Request, data: _BotGrantPairReq):
+    _check_bot_auth(request)
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT username FROM user_accounts WHERE discord_id=%s", (data.discord_id,))
+        row = cur.fetchone()
+        if not row:
+            db.close()
+            raise HTTPException(status_code=404, detail="No account linked to this Discord")
+        username = row[0]
+        cur.execute("UPDATE user_accounts SET pair_token_generated=1 WHERE username=%s", (username,))
+        db.commit()
+        db.close()
+        return {"ok": True, "username": username}
+    except HTTPException:
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=f"grant failed: {e}")
+
+
+@app.get("/api/bot/lookup/{discord_id}")
+async def bot_lookup(request: Request, discord_id: str):
+    _check_bot_auth(request)
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute(
+            """SELECT username, hwid, pair_token_generated, active, created_at
+               FROM user_accounts WHERE discord_id=%s""",
+            (discord_id,),
+        )
+        row = cur.fetchone()
+        db.close()
+        if not row:
+            raise HTTPException(status_code=404, detail="Not linked")
+        return {
+            "username": row[0],
+            "hwid": row[1],
+            "pair_token_generated": bool(row[2]),
+            "active": bool(row[3]),
+            "created_at": row[4],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=f"lookup failed: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Launcher
 # ---------------------------------------------------------------------------
 
 @app.post("/api/launcher/launch")
 async def launcher_launch(request: Request):
-    """
-    Records that the user pressed Launch. The actual Roblox process is
-    spawned by the local Python client (see auth.launch_roblox), which
-    is running on the user's machine and exposes a localhost listener.
-    """
     session_id = request.cookies.get("session_id")
-    username = request.cookies.get("username")
-    if not session_id or not username:
+    if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
     db = get_db()
     cur = db.cursor()
     try:
         cur.execute("UPDATE login_sessions SET launched_at=%s WHERE session_id=%s",
                     (datetime.now().isoformat(), session_id))
-        # flip the client's authenticated flag so injection_loop can start
-        cur.execute("UPDATE clients SET authenticated=1, username=%s WHERE username=%s",
-                    (username, username))
         db.commit()
         db.close()
         return {"ok": True}
@@ -871,10 +1252,6 @@ async def launcher_launch(request: Request):
         except: pass
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# ---------------------------------------------------------------------------
-# Health
-# ---------------------------------------------------------------------------
 
 @app.get("/api/keepalive")
 def keepalive():
@@ -893,13 +1270,21 @@ def keepalive():
 async def serve_root():
     return HTMLResponse(content=LAUNCHER_HTML)
 
+
 @app.get("/menu", response_class=HTMLResponse)
 async def serve_menu():
     return HTMLResponse(content=LAUNCHER_HTML)
 
+
 @app.get("/launcher", response_class=HTMLResponse)
 async def serve_launcher():
     return HTMLResponse(content=LAUNCHER_HTML)
+
+
+@app.get("/connect", response_class=HTMLResponse)
+async def serve_connect():
+    return HTMLResponse(content=CONNECT_HTML)
+
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
