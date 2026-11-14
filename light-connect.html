@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Light — Connect</title>
+<link rel="icon" type="image/png" href="https://cdn.corenexis.com/f/RYE3jwCK.png">
+<link rel="apple-touch-icon" href="https://cdn.corenexis.com/f/RYE3jwCK.png">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
@@ -163,24 +165,24 @@ body.paired .content > .page.active { display: block; }
 @media(max-width:768px){
   /* Turn sidebar into a bottom navigation bar */
   .sidebar{
-    position:fixed; top:auto; bottom:0; left:0; right:0; width:100%; height:60px;
+    position:fixed; top:auto; bottom:0; left:0; right:0; width:100%; height:auto;
     flex-direction:row; justify-content:space-around; align-items:center;
-    padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    padding: 10px env(safe-area-inset-right, 16px) max(env(safe-area-inset-bottom, 16px), 16px) env(safe-area-inset-left, 16px);
     border-right:none; border-top:1px solid var(--border); background:#0b0b0b;
     z-index: 100;
   }
   .sidebar .brand, .sidebar .nav-label, .sidebar .nav-bottom { display:none; }
   .nav-item {
     flex-direction: column; justify-content: center; align-items: center;
-    padding: 8px 0; margin: 0; height: 100%; border-radius: 0;
+    padding: 4px 0; margin: 0; height: 100%; border-radius: 0;
     background: none !important; border: none !important;
   }
   .nav-item span:not(.nav-icon) { display:none; } /* Hide text, show only icons */
-  .nav-icon { width: 22px; height: 22px; }
-  .nav-icon img { width: 22px; height: 22px; }
+  .nav-icon { width: 24px; height: 24px; }
+  .nav-icon img { width: 24px; height: 24px; }
 
   /* Main content fills the screen */
-  .main { margin-left: 0 !important; padding-bottom: 70px; }
+  .main { margin-left: 0 !important; padding-bottom: 80px; }
   .topbar { display:none !important; } /* Hide topbar on mobile to save space */
   .content { padding: 24px 16px; }
 
@@ -205,7 +207,7 @@ body.paired .content > .page.active { display: block; }
   .modal-actions button { flex: 1; }
 
   /* Toast above bottom nav */
-  .toast { bottom: 75px; right: 16px; left: 16px; text-align:center; max-width: 100%; }
+  .toast { bottom: 100px; right: 16px; left: 16px; text-align:center; max-width: 100%; }
 }
 </style>
 </head>
