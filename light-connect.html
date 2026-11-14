@@ -146,9 +146,6 @@ input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
 .modal p{font-size:10px;color:#777;line-height:1.7;margin-bottom:20px}
 .modal input{width:100%;background:#090909;border:1px solid #303030;border-radius:4px;padding:12px;color:#bbb;outline:none;margin-bottom:15px;font-size:11px}
 .modal-actions{display:flex;justify-content:flex-end;gap:9px}
-.pair-code{text-align:center;background:#161616;border:1px solid #303030;padding:22px;border-radius:5px;margin:15px 0}
-.pair-code strong{display:block;font-size:25px;letter-spacing:7px;margin:12px 0}
-.pair-code small{font-size:9px;color:#777}
 
 /* login state + pairing screen */
 .login-state{background:#101010;border:1px solid #2a2a2a;color:#6a6a6a;border-radius:4px;padding:7px 11px;font-size:10px;font-family:ui-monospace,Menlo,Consolas,monospace;transition:.15s}
@@ -235,12 +232,6 @@ body.paired .content > .page.active { display: block; }
 <main class="main">
 <header class="topbar">
     <div class="breadcrumb">Light <span>/ <span id="breadcrumb">Overview</span></span></div>
-    <div class="top-right">
-        <button class="secondary-btn" onclick="unpairAll()" style="padding:6px 11px;font-size:10px">Unpair all</button>
-        <button class="login-state" id="loginState" title="Pairing status">
-            paired = <b id="loginVal">false</b>
-        </button>
-    </div>
 </header>
 
 <div class="content">
@@ -334,7 +325,7 @@ body.paired .content > .page.active { display: block; }
 
 <script>
 /* ============================================================
-   DEFAULT CONFIG (local config editor)
+   DEFAULT CONFIG
    ============================================================ */
 const DEFAULT_CONFIG = {
     "Enabled":true,"Keybind":"Q","KeybindMode":"toggle","WebviewKeybind":"F8",
@@ -407,11 +398,10 @@ function escapeHTML(value){
 }
 
 /* ============================================================
-   BOOT — NO REDIRECT
+   BOOT
    ============================================================ */
 
 async function boot(){
-    // 1. Check auth quietly. Don't redirect if not logged in.
     try {
         const meRes = await fetch('/api/me', { credentials: 'include' });
         const me = await meRes.json();
@@ -428,7 +418,6 @@ async function boot(){
         isAuthenticated = false;
     }
 
-    // 2. Pair status — only if logged in. Otherwise show pairing screen.
     if (isAuthenticated) {
         await refreshPairStatus();
     } else {
@@ -463,8 +452,6 @@ async function refreshPairStatus(){
 
 function applyPairedState(isPaired){
     document.body.classList.toggle("paired", isPaired);
-    document.getElementById("loginVal").textContent = String(isPaired);
-    document.getElementById("loginState").classList.toggle("on", isPaired);
     if (isPaired) {
         if (!document.querySelector(".page.active")) navigate("overview");
     } else {
@@ -486,10 +473,6 @@ function closeModal(){
     document.getElementById("pairModal").classList.remove("show");
 }
 async function submitPairCode(){
-    if (!isAuthenticated) {
-        notify("You need to be logged in on the launcher to pair.");
-        return;
-    }
     const input = document.getElementById("pairCodeInput");
     const btn = document.getElementById("pairSubmitBtn");
     const code = input.value.trim();
@@ -513,7 +496,6 @@ async function submitPairCode(){
             else if (r.status === 410) msg = 'That code has expired.';
             else if (r.status === 404) msg = 'Code not found.';
             else if (r.status === 400) msg = "You can't pair to yourself.";
-            else if (r.status === 401) msg = "You need to be logged in on the launcher first.";
             notify(msg);
             btn.disabled = false;
             btn.textContent = "Pair";
@@ -521,6 +503,14 @@ async function submitPairCode(){
         }
         notify("Paired to " + d.paired_with + ".");
         closeModal();
+
+        // Backend just set session cookies on THIS browser (even if it wasn't logged in).
+        // Update local state and re-fetch everything.
+        isAuthenticated = true;
+        currentUsername = d.username || currentUsername || d.paired_with;
+        document.getElementById("sidebarUsername").textContent = currentUsername;
+        document.getElementById("welcomeName").textContent = currentUsername;
+
         await refreshPairStatus();
         if (paired) navigate("overview");
     } catch (e) {
@@ -529,28 +519,7 @@ async function submitPairCode(){
         btn.textContent = "Pair";
     }
 }
-async function unpairAll(){
-    if (!confirm("Unpair all clients from this browser account?")) return;
-    try {
-        const r = await fetch('/api/pair/unpair', {
-            method: 'POST',
-            credentials: 'include'
-        });
-        if (!r.ok) {
-            notify("Unpair failed.");
-            return;
-        }
-        notify("Unpaired.");
-        paired = false;
-        devices = [];
-        activities = [];
-        applyPairedState(false);
-    } catch (e) {
-        notify("Connection error.");
-    }
-}
 window.submitPairCode = submitPairCode;
-window.unpairAll = unpairAll;
 window.startPairing = startPairing;
 window.closeModal = closeModal;
 
