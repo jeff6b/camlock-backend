@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Light — Connect</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root{
+--bg:#090909;--panel:#0e0e0e;--panel2:#131313;--border:#242424;
+--text:#bdbdbd;--muted:#686868;--dim:#494949;--accent:#aaa;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:13px Inter,sans-serif}
+button,input,select{font:inherit}
+button{cursor:pointer}
+.app{min-height:100vh}
+.sidebar{position:fixed;inset:0 auto 0 0;width:230px;background:#0b0b0b;border-right:1px solid var(--border);padding:25px 16px;display:flex;flex-direction:column;z-index:5}
+.brand{display:flex;align-items:center;gap:11px;padding:2px 9px 34px}
+.brand-icon{width:30px;height:30px;border:1px solid #444;border-radius:6px;display:grid;place-items:center;font-size:17px;font-weight:800}
+.brand-name{font-weight:800;font-size:17px;letter-spacing:3px}
+.brand-tag{font-size:9px;color:#555;letter-spacing:1.5px;margin-top:3px}
+.nav-label{font-size:9px;letter-spacing:1.5px;color:#505050;font-weight:700;padding:15px 10px 9px}
+.nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:5px;color:#777;margin:2px 0;cursor:pointer;font-size:11px;transition:.2s}
+.nav-item:hover{background:#141414;color:#bbb}
+.nav-item.active{background:#171717;border:1px solid #292929;color:#c5c5c5}
+.nav-icon{width:18px;height:18px;display:grid;place-items:center;font-size:15px}
+.nav-icon img,.icon-img{width:19px;height:19px;object-fit:contain;filter:grayscale(1) brightness(0) invert(.72);opacity:.85}
+.nav-item.active .nav-icon img{filter:grayscale(1) brightness(0) invert(.88)}
+.nav-bottom{margin-top:auto}
+.account{border:1px solid var(--border);border-radius:6px;padding:11px;display:flex;align-items:center;gap:10px;margin-top:12px}
+.avatar,.top-avatar{width:30px;height:30px;border-radius:5px;background:#222;display:grid;place-items:center;color:#aaa;font-weight:700}
+.account-name{font-size:11px;font-weight:600}
+.account-sub{font-size:10px;color:#626262;margin-top:4px}
+.main{margin-left:230px;min-height:100vh}
+.topbar{height:65px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 35px;background:#0b0b0b}
+.breadcrumb{color:#666;font-size:11px}.breadcrumb span{color:#aaa}
+.top-right{display:flex;align-items:center;gap:18px}
+.connection{display:flex;align-items:center;gap:8px;color:#777;font-size:10px}
+.dot{width:6px;height:6px;border-radius:50%;background:#858585}
+.top-avatar{border-radius:50%;font-size:11px;font-weight:400}
+.content{max-width:1450px;margin:auto;padding:38px}
+.page{display:none}.page.active{display:block;animation:fade .2s}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:28px}
+.eyebrow{font-size:9px;color:#626262;letter-spacing:1.7px;margin-bottom:12px}
+h1{font-size:26px;letter-spacing:-.8px;font-weight:600}
+.subtitle{font-size:11px;color:#686868;margin-top:9px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:18px}
+.card-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.card-title{font-size:11px;font-weight:600;color:#bbb}
+.card-description{font-size:10px;color:#686868;margin-top:5px}
+.tag{font-size:9px;padding:5px 8px;border:1px solid #303030;border-radius:3px;color:#858585}
+.primary-btn{background:#bdbdbd;color:#101010;border:0;padding:10px 15px;border-radius:4px;font-size:10px;font-weight:700}
+.primary-btn:hover{background:#d0d0d0}
+.primary-btn:disabled{opacity:.5;cursor:not-allowed}
+.secondary-btn,.danger-btn{background:#151515;border:1px solid #303030;color:#999;padding:9px 13px;border-radius:4px;font-size:10px}
+.secondary-btn:hover{background:#202020;color:#bbb}
+.danger-btn{padding:7px 10px;color:#777}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+.stat-top{display:flex;justify-content:space-between;align-items:center;color:#777;font-size:10px}
+.stat-value{font-size:24px;font-weight:600;margin-top:18px;color:#bdbdbd}
+.stat-foot{font-size:9px;color:#626262;margin-top:7px}
+.grid-main{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+.device{display:flex;align-items:center;gap:13px;padding:14px 0;border-top:1px solid #202020}
+.device-icon{width:39px;height:39px;border-radius:5px;background:#171717;border:1px solid #292929;display:grid;place-items:center;flex-shrink:0}
+.device-icon img{width:21px;height:21px;filter:grayscale(1) brightness(0) invert(.72)}
+.device-info{flex:1;min-width:0}
+.device-name{font-size:10px;font-weight:600;color:#bcbcbc}
+.device-type{font-size:9px;color:#656565;margin-top:5px}
+.device-status{font-size:9px;color:#888}
+.offline{color:#666}
+.status-box{background:#141414;border:1px solid #292929;border-radius:5px;padding:16px;margin-bottom:15px}
+.status-row{display:flex;justify-content:space-between;align-items:center}
+.status-title{font-size:11px;font-weight:600;color:#aaa}
+.status-sub{font-size:9px;color:#666;margin-top:5px}
+.status-indicator{font-size:10px;color:#777;display:flex;align-items:center;gap:7px}
+.progress{height:3px;background:#252525;margin-top:16px}
+.progress-inner{height:100%;width:0;background:#777}
+.activity{display:flex;gap:12px;padding:13px 0;border-top:1px solid #202020}
+.activity-marker{width:6px;height:6px;background:#777;border-radius:50%;margin-top:4px}
+.activity-text{font-size:10px;color:#aaa}.activity-time{font-size:9px;color:#626262;margin-top:5px}
+
+/* CONFIGURATION UI */
+.config-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.config-toolbar-left{display:flex;align-items:center;gap:8px}
+.config-toolbar-right{display:flex;gap:8px}
+.config-status{font-size:9px;color:#777}
+.config-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
+.config-section{display:flex;flex-direction:column;height:calc(100vh - 290px);min-height:360px;max-height:680px;padding:16px 8px 8px 16px}
+.config-section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-right:8px;flex-shrink:0}
+.config-section-title{font-size:12px;font-weight:600;color:#bdbdbd}
+.config-section-subtitle{font-size:10px;color:#656565;margin-top:5px}
+.config-scroll{flex:1;min-height:0;overflow-y:auto;padding-right:8px;scrollbar-width:thin;scrollbar-color:#333 transparent;overscroll-behavior:contain}
+.config-scroll::-webkit-scrollbar{width:5px}
+.config-scroll::-webkit-scrollbar-thumb{background:#303030;border-radius:4px}
+.config-scroll::-webkit-scrollbar-track{background:transparent}
+.config-subhead{font-size:8px;letter-spacing:1.6px;color:#555;font-weight:700;text-transform:uppercase;padding:16px 0 4px}
+.config-subhead:first-child{padding-top:4px}
+.config-field{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #1d1d1d}
+.config-subhead + .config-field{border-top:0}
+.config-label{font-size:10px;color:#aaa;min-width:0;word-break:break-word}
+.config-control{width:110px;flex-shrink:0}
+.config-field.bool .config-control{width:auto}
+.config-control input:not([type=checkbox]){width:100%;background:#101010;border:1px solid #303030;border-radius:4px;padding:7px 8px;color:#aaa;outline:none;font-size:10px;}
+.config-control input:focus{border-color:#666}
+input[type=checkbox]{appearance:none;-webkit-appearance:none;width:16px;height:16px;border:1px solid #4a4a4a;border-radius:3px;background:transparent;position:relative;cursor:pointer;flex-shrink:0;transition:.15s;display:block}
+input[type=checkbox]:hover{border-color:#777}
+input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
+.weapon-list{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.weapon{background:#0b0b0b;border:1px solid #232323;border-radius:5px;padding:10px}
+.weapon-name{font-size:10px;font-weight:600;color:#bbb;margin-bottom:9px}
+.weapon-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(68px,1fr));gap:8px}
+.weapon-field label{display:block;font-size:8px;letter-spacing:1px;color:#5f5f5f;text-transform:uppercase;margin-bottom:4px}
+.weapon-field input{width:100%;background:#101010;border:1px solid #2c2c2c;border-radius:4px;padding:6px 7px;color:#aaa;outline:none;font-size:10px}
+.weapon-field input:focus{border-color:#666}
+
+/* custom dropdown */
+.dd{position:relative}
+.dd-btn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;background:#101010;border:1px solid #303030;border-radius:4px;padding:7px 8px;color:#aaa;font-size:10px;text-align:left;transition:.15s}
+.dd-btn:hover{border-color:#464646}
+.dd.open .dd-btn{border-color:#666}
+.dd-val{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dd-arrow{width:8px;height:8px;flex-shrink:0;stroke:#777;fill:none;stroke-width:1.6;transition:.15s}
+.dd.open .dd-arrow{transform:rotate(180deg)}
+.dd-menu{position:fixed;display:none;z-index:60;background:#0f0f0f;border:1px solid #333;border-radius:5px;padding:4px;max-height:150px;overflow-y:auto;box-shadow:0 10px 30px #000a;scrollbar-width:thin;scrollbar-color:#3a3a3a transparent}
+.dd.open .dd-menu{display:block}
+.dd-menu::-webkit-scrollbar{width:4px}
+.dd-menu::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:4px}
+.dd-menu::-webkit-scrollbar-track{background:transparent}
+.dd-opt{padding:7px 8px;font-size:10px;color:#8a8a8a;border-radius:3px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+.dd-opt:hover{background:#1a1a1a;color:#ccc}
+.dd-opt.sel{color:#d0d0d0;background:#171717}
+.dd-opt.sel:after{content:"";width:5px;height:5px;background:#bdbdbd;border-radius:1px}
+.weapon-field .dd-btn{padding:6px 7px}
+.config-object{border:1px solid #242424;border-radius:5px;margin-top:12px;padding:12px;background:#0b0b0b}
+.config-object-title{font-size:10px;color:#aaa;font-weight:600;margin-bottom:4px}
+
+.toast{position:fixed;bottom:25px;right:25px;padding:13px 17px;background:#252525;border:1px solid #414141;color:#bbb;border-radius:4px;font-size:10px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;z-index:50}
+.toast.show{opacity:1;transform:none}
+.modal-overlay{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center;z-index:30;padding:20px}
+.modal-overlay.show{display:flex}
+.modal{width:390px;max-width:100%;background:#101010;border:1px solid #303030;border-radius:7px;padding:25px}
+.modal h2{font-size:17px;font-weight:600;margin-bottom:9px}
+.modal p{font-size:10px;color:#777;line-height:1.7;margin-bottom:20px}
+.modal input{width:100%;background:#090909;border:1px solid #303030;border-radius:4px;padding:12px;color:#bbb;outline:none;margin-bottom:15px;font-size:11px}
+.modal-actions{display:flex;justify-content:flex-end;gap:9px}
+.pair-code{text-align:center;background:#161616;border:1px solid #303030;padding:22px;border-radius:5px;margin:15px 0}
+.pair-code strong{display:block;font-size:25px;letter-spacing:7px;margin:12px 0}
+.pair-code small{font-size:9px;color:#777}
+
+/* login state + pairing screen */
+.login-state{background:#101010;border:1px solid #2a2a2a;color:#6a6a6a;border-radius:4px;padding:7px 11px;font-size:10px;font-family:ui-monospace,Menlo,Consolas,monospace;transition:.15s}
+.login-state:hover{border-color:#444}
+.login-state b{font-weight:600;color:#888}
+.login-state.on b{color:#d0d0d0}
+.auth{display:none;min-height:calc(100vh - 76px);align-items:center;justify-content:center;text-align:center;position:relative}
+.auth:before{content:"";position:absolute;width:560px;height:560px;max-width:100%;border-radius:50%;background:radial-gradient(circle,#ffffff0d 0%,transparent 65%);pointer-events:none}
+.auth-inner{position:relative;max-width:430px;width:100%;animation:fade .35s}
+.auth-logo{display:block;width:120px;max-width:60%;height:auto;margin:0 auto 4px;background:none;border:0;border-radius:0}
+.auth-brand{font-size:10px;letter-spacing:5px;color:#5c5c5c;font-weight:700;margin-bottom:14px}
+.auth h1{font-size:34px;letter-spacing:-1.2px}
+.auth-sub{font-size:11px;color:#6e6e6e;line-height:1.8;margin:14px auto 28px;max-width:340px}
+.auth-btn{padding:14px 30px;font-size:11px;border-radius:5px;letter-spacing:.3px}
+.auth-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:38px}
+.auth-step{border:1px solid #202020;background:#0d0d0d;border-radius:5px;padding:13px 8px}
+.auth-step b{display:block;font-size:9px;letter-spacing:1.5px;color:#555;margin-bottom:7px}
+.auth-step span{font-size:10px;color:#8a8a8a}
+.auth-foot{font-size:9px;color:#4f4f4f;margin-top:18px;letter-spacing:.5px}
+
+/* Paired / not-paired visibility */
+body:not(.paired) .sidebar,
+body:not(.paired) .topbar,
+body:not(.paired) .content > .page { display: none !important; }
+body:not(.paired) .main { margin-left: 0; }
+body:not(.paired) .auth { display: flex; }
+body:not(.paired) .content { padding: 0; }
+
+body.paired .auth { display: none; }
+body.paired .sidebar { display: flex; }
+body.paired .topbar { display: flex; }
+body.paired .main { margin-left: 230px; }
+body.paired .content > .page { display: none; }
+body.paired .content > .page.active { display: block; }
+
+@media(max-width:1000px){
+.grid-main{grid-template-columns:1fr}
+.config-columns{grid-template-columns:repeat(2,minmax(0,1fr))}
+.config-columns>.config-section:nth-child(3){grid-column:1/-1}
+}
+@media(max-width:650px){
+.sidebar{width:62px;padding:20px 8px}.brand{display:none}
+.brand-text,.nav-label,.nav-item span:not(.nav-icon),.account-details{display:none}
+.nav-item{justify-content:center;padding:12px 0}.account{display:none}
+.main{margin-left:62px}.content{padding:25px 15px}.topbar{padding:0 15px}
+.stats{grid-template-columns:1fr 1fr}.page-header{align-items:flex-start;flex-direction:column}
+.config-columns{gap:10px}
+.config-section{padding:12px 4px 6px 12px;height:calc(100vh - 250px);min-height:320px}
+.config-section-subtitle{display:none}
+.config-field:not(.bool){flex-direction:column;align-items:flex-start;gap:6px}
+.config-field:not(.bool) .config-control{width:100%}
+}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+    <div class="brand">
+        <div class="brand-text"><div class="brand-name">LIGHT</div><div class="brand-tag">CONNECT</div></div>
+    </div>
+
+    <div class="nav-label">WORKSPACE</div>
+    <div class="nav-item active" data-page="overview">
+        <span class="nav-icon"><img src="https://img.icons8.com/?size=100&id=11733&format=png&color=000000"></span><span>Overview</span>
+    </div>
+    <div class="nav-item" data-page="devices">
+        <span class="nav-icon"><img src="https://img.icons8.com/?size=100&id=gwCmus5W03wM&format=png&color=000000"></span><span>Devices</span>
+    </div>
+    <div class="nav-item" data-page="activity">
+        <span class="nav-icon"><img src="https://img.icons8.com/?size=100&id=IOdrUofMto8h&format=png&color=000000"></span><span>Activity</span>
+    </div>
+
+    <div class="nav-label">PREFERENCES</div>
+    <div class="nav-item" data-page="configurations">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></span><span>Configurations</span>
+    </div>
+
+    <div class="nav-bottom">
+        <div class="nav-label">ACCOUNT</div>
+        <div class="account"><div class="account-details"><div class="account-name" id="sidebarUsername">—</div><div class="account-sub">Light Connect</div></div></div>
+    </div>
+</aside>
+
+<main class="main">
+<header class="topbar">
+    <div class="breadcrumb">Light <span>/ <span id="breadcrumb">Overview</span></span></div>
+    <div class="top-right">
+        <button class="secondary-btn" onclick="unpairAll()" style="padding:6px 11px;font-size:10px">Unpair all</button>
+        <button class="login-state" id="loginState" title="Pairing status">
+            paired = <b id="loginVal">false</b>
+        </button>
+    </div>
+</header>
+
+<div class="content">
+
+<div class="auth" id="auth">
+    <div class="auth-inner">
+        <img class="auth-logo" src="https://res.cloudinary.com/dtz0urit6/image/upload/q_auto:best,f_png/cloudinary-tools-uploads/uujeuyzvsg4qtpveucjh" alt="Light">
+        <div class="auth-brand">LIGHT</div>
+        <h1>Pair your account.</h1>
+        <p class="auth-sub">Enter the 6-digit pair code from your Light client's Settings page to link this browser account to your client.</p>
+        <button class="primary-btn auth-btn" onclick="startPairing()">Enter pair code</button>
+        <div class="auth-steps">
+            <div class="auth-step"><b>01</b><span>Open client</span></div>
+            <div class="auth-step"><b>02</b><span>Generate code</span></div>
+            <div class="auth-step"><b>03</b><span>Enter here</span></div>
+        </div>
+        <div class="auth-foot">Codes expire after 5 minutes</div>
+    </div>
+</div>
+
+<section class="page active" id="overview">
+    <div class="page-header">
+        <div><div class="eyebrow">CONNECT / OVERVIEW</div><h1>Welcome back, <span id="welcomeName">user</span>.</h1><div class="subtitle">Light Connect dashboard</div></div>
+    </div>
+    <div class="stats">
+        <div class="card"><div class="stat-top">Paired clients<img class="icon-img" src="https://img.icons8.com/?size=100&id=gwCmus5W03wM&format=png&color=000000"></div><div class="stat-value" id="deviceCount">0</div><div class="stat-foot">Active pairings</div></div>
+        <div class="card"><div class="stat-top">Status<img class="icon-img" src="https://img.icons8.com/?size=100&id=hSBuomv1RRIu&format=png&color=000000"></div><div class="stat-value" style="font-size:20px" id="statusValue">—</div><div class="stat-foot">Light services</div></div>
+        <div class="card"><div class="stat-top">Last activity<img class="icon-img" src="https://img.icons8.com/?size=100&id=IOdrUofMto8h&format=png&color=000000"></div><div class="stat-value" style="font-size:19px" id="lastActivity">—</div><div class="stat-foot">Connect activity</div></div>
+    </div>
+    <div class="grid-main">
+        <div class="card">
+            <div class="card-heading"><div><div class="card-title">Paired clients</div><div class="card-description">Clients linked to this browser account</div></div><button class="secondary-btn" onclick="navigate('devices')">Manage</button></div>
+            <div id="deviceList"></div>
+        </div>
+        <div class="card">
+            <div class="card-heading"><div><div class="card-title">System status</div><div class="card-description">Current connection availability</div></div><span class="tag">STATUS</span></div>
+            <div class="status-box">
+                <div class="status-row"><div><div class="status-title">Light services</div></div></div>
+                <div class="progress"><div class="progress-inner" style="width:100%"></div></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="page" id="devices">
+    <div class="page-header"><div><div class="eyebrow">MANAGEMENT / DEVICES</div><h1>Your clients.</h1><div class="subtitle">Clients paired to this browser account.</div></div></div>
+    <div class="card"><div class="card-heading"><div class="card-title">Paired clients</div><span class="tag" id="deviceTag">0 CLIENTS</span></div><div id="fullDeviceList"></div></div>
+</section>
+
+<section class="page" id="activity">
+    <div class="page-header"><div><div class="eyebrow">CONNECT / HISTORY</div><h1>Activity.</h1><div class="subtitle">A timeline of your Light events.</div></div></div>
+    <div class="card"><div class="card-heading"><div class="card-title">Event history</div><span class="tag">RECENT</span></div><div id="fullActivityList"></div></div>
+</section>
+
+<section class="page" id="configurations">
+    <div class="page-header">
+        <div><div class="eyebrow">PREFERENCES / CONFIGURATIONS</div><h1>Configurations.</h1><div class="subtitle">Customize and manage your local configuration.</div></div>
+        <span class="tag" id="configState">UNSAVED CHANGES</span>
+    </div>
+
+    <div class="config-toolbar">
+        <div class="config-toolbar-left">
+            <span class="config-status">Default configuration</span>
+        </div>
+        <div class="config-toolbar-right">
+            <button class="secondary-btn" onclick="resetConfig()">Reset defaults</button>
+            <button class="primary-btn" onclick="saveConfig()">Save configuration</button>
+        </div>
+    </div>
+
+    <div id="configEditor"></div>
+</section>
+
+</div>
+</main>
+</div>
+
+<div class="modal-overlay" id="pairModal">
+    <div class="modal">
+        <div class="eyebrow">LIGHT CONNECT / PAIR</div>
+        <h2>Enter your pair code.</h2>
+        <p>Open your Light client → Settings → "Pair to Browser", generate a 6-digit code, and paste it below.</p>
+        <input id="pairCodeInput" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="off" style="text-align:center;font-size:22px;letter-spacing:10px;font-family:ui-monospace,Menlo,Consolas,monospace">
+        <div class="modal-actions">
+            <button class="secondary-btn" onclick="closeModal()">Cancel</button>
+            <button class="primary-btn" id="pairSubmitBtn" onclick="submitPairCode()">Pair</button>
+        </div>
+    </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   DEFAULT CONFIG (only used by the local config editor below)
+   ============================================================ */
+const DEFAULT_CONFIG = {
+    "Enabled":true,"Keybind":"Q","KeybindMode":"toggle","WebviewKeybind":"F8",
+    "PredictTarget":true,"PredictionX":0.10,"PredictionY":0.10,"ClosestPoint":true,
+    "FixedPart":"Head","Smoothness":0.35,"MaxStudsCheck":true,"MaxStuds":500,
+    "UnlockOnDeath":true,"SelfDeathCheck":true,"StickyMode":true,
+    "StabilizerDeadzone":3.0,"ReactionDelay":0.12,"Streamproof":false,
+    "triggerbot":{
+        "Enabled":false,"Keybind":"E","KeybindMode":"hold","RequireCamlock":true,
+        "AimPart":"Head","Radius":12.0,"Delay":0.12,"StudCheck":true,"MaxStuds":500,
+        "DeathCheck":true,"SelfDeathCheck":true,"WeaponSpecific":false,
+        "WeaponConfigs":{
+            "Double-Barrel SG":{"AimPart":"Head","Radius":12.0,"Delay":0.08},
+            "Revolver":{"AimPart":"Head","Radius":10.0,"Delay":0.15},
+            "TacticalShotgun":{"AimPart":"Head","Radius":14.0,"Delay":0.10}
+        },
+        "TargetMode":"automatic","SelectedTarget":null,"SelectTargetKey":"T"
+    },
+    "macro":{
+        "Enabled":false,"Keybind":"F","KeybindMode":"toggle","OutputMode":"keyboard",
+        "Delay":0.05,"SelfDeathCheck":true
+    }
+};
+
+const OPTIONS = {
+    KeybindMode:["toggle","hold"],
+    FixedPart:["Head","UpperTorso","LowerTorso","HumanoidRootPart"],
+    AimPart:["Head","UpperTorso","LowerTorso","HumanoidRootPart"],
+    TargetMode:["automatic","manual"],
+    OutputMode:["keyboard","mouse"]
+};
+
+const SECTION_HEADS = {
+    "Enabled":"General","PredictTarget":"Prediction","ClosestPoint":"Targeting","MaxStudsCheck":"Limits",
+    "UnlockOnDeath":"Behavior","StabilizerDeadzone":"Timing",
+    "triggerbot.Enabled":"General","triggerbot.AimPart":"Aiming","triggerbot.StudCheck":"Checks",
+    "triggerbot.WeaponSpecific":"Weapons","triggerbot.TargetMode":"Targeting",
+    "macro.Enabled":"General","macro.OutputMode":"Output"
+};
+
+const STORAGE_KEY = "vital_configuration_v1";
+
+let config = loadConfig();
+
+/* ============================================================
+   STATE — driven by backend, NOT localStorage
+   ============================================================ */
+
+let paired = false;
+let devices = [];
+let activities = [];
+let currentUsername = "";
+let pendingRefresh = null;
+
+const DEVICE_ICON = "https://img.icons8.com/?size=100&id=gwCmus5W03wM&format=png&color=000000";
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+
+function notify(message){
+    const toast = document.getElementById("toast");
+    toast.textContent = message;
+    toast.classList.add("show");
+    clearTimeout(notify._t);
+    notify._t = setTimeout(()=>toast.classList.remove("show"), 2500);
+}
+function escapeHTML(value){
+    return String(value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+/* ============================================================
+   PAIR STATE (BACKEND)
+   ============================================================ */
+
+async function boot(){
+    try {
+        // 1. Are we logged in?
+        const meRes = await fetch('/api/me', { credentials: 'include' });
+        if (!meRes.ok) { window.location.href = '/'; return; }
+        const me = await meRes.json();
+        if (!me.authenticated) { window.location.href = '/'; return; }
+
+        currentUsername = me.username || "user";
+        document.getElementById("sidebarUsername").textContent = currentUsername;
+        document.getElementById("welcomeName").textContent = currentUsername;
+
+        // 2. Are we paired?
+        await refreshPairStatus();
+    } catch (e) {
+        console.error("boot failed", e);
+        window.location.href = '/';
+    }
+}
+
+async function refreshPairStatus(){
+    try {
+        const r = await fetch('/api/pair/status', { credentials: 'include' });
+        if (!r.ok) { applyPairedState(false); return; }
+        const d = await r.json();
+
+        paired = d.paired === true;
+        devices = (d.devices || []).map(dev => ({
+            name: dev.name,
+            type: dev.type || "Light client",
+            online: dev.online === true
+        }));
+
+        // Build a small activity log from the pairing data
+        activities = (d.pairs || []).map(p => `${p.client_username} paired`);
+        if (activities.length === 0) activities = ["No activity yet"];
+
+        applyPairedState(paired);
+
+        if (paired) {
+            updateUI();
+            if (document.getElementById("devices").classList.contains("active")) renderDevices();
+            if (document.getElementById("activity").classList.contains("active")) renderActivity();
+        }
+    } catch (e) {
+        console.error("refreshPairStatus failed", e);
+        applyPairedState(false);
+    }
+}
+
+function applyPairedState(isPaired){
+    document.body.classList.toggle("paired", isPaired);
+    document.getElementById("loginVal").textContent = String(isPaired);
+    document.getElementById("loginState").classList.toggle("on", isPaired);
+    if (isPaired) {
+        // If a page is already active, keep it. Otherwise go to overview.
+        if (!document.querySelector(".page.active")) navigate("overview");
+    } else {
+        document.getElementById("breadcrumb").textContent = "Pairing";
+    }
+}
+
+/* ============================================================
+   PAIRING MODAL
+   ============================================================ */
+
+function startPairing(){
+    document.getElementById("pairModal").classList.add("show");
+    const input = document.getElementById("pairCodeInput");
+    input.value = "";
+    setTimeout(() => input.focus(), 50);
+}
+function closeModal(){
+    document.getElementById("pairModal").classList.remove("show");
+}
+async function submitPairCode(){
+    const input = document.getElementById("pairCodeInput");
+    const btn = document.getElementById("pairSubmitBtn");
+    const code = input.value.trim();
+    if (code.length !== 6 || !/^\d{6}$/.test(code)) {
+        notify("Enter a 6-digit code.");
+        return;
+    }
+    btn.disabled = true;
+    btn.textContent = "Pairing…";
+    try {
+        const r = await fetch('/api/pair/redeem', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
+        });
+        const d = await r.json();
+        if (!r.ok) {
+            let msg = d.detail || 'Could not redeem';
+            if (r.status === 409) msg = 'That code has already been used.';
+            else if (r.status === 410) msg = 'That code has expired.';
+            else if (r.status === 404) msg = 'Code not found.';
+            else if (r.status === 400) msg = "You can't pair to yourself.";
+            notify(msg);
+            btn.disabled = false;
+            btn.textContent = "Pair";
+            return;
+        }
+        notify("Paired to " + d.paired_with + ".");
+        closeModal();
+        await refreshPairStatus();
+        if (paired) navigate("overview");
+    } catch (e) {
+        notify("Connection error.");
+        btn.disabled = false;
+        btn.textContent = "Pair";
+    }
+}
+async function unpairAll(){
+    if (!confirm("Unpair all clients from this browser account?")) return;
+    try {
+        const r = await fetch('/api/pair/unpair', {
+            method: 'POST',
+            credentials: 'include'
+        });
+        if (!r.ok) {
+            notify("Unpair failed.");
+            return;
+        }
+        notify("Unpaired.");
+        paired = false;
+        devices = [];
+        activities = [];
+        applyPairedState(false);
+    } catch (e) {
+        notify("Connection error.");
+    }
+}
+window.submitPairCode = submitPairCode;
+window.unpairAll = unpairAll;
+window.startPairing = startPairing;
+window.closeModal = closeModal;
+
+/* ============================================================
+   DEVICE + ACTIVITY RENDER
+   ============================================================ */
+
+function renderDevices(){
+    const html = devices.map(d => `
+    <div class="device">
+        <div class="device-icon"><img src="${DEVICE_ICON}"></div>
+        <div class="device-info"><div class="device-name">${escapeHTML(d.name)}</div><div class="device-type">${escapeHTML(d.type)}</div></div>
+        <span class="device-status ${d.online?"":"offline"}">${d.online?"Online":"Offline"}</span>
+    </div>`).join("");
+    document.getElementById("fullDeviceList").innerHTML = html || '<div style="padding:30px;color:#666;text-align:center">No paired clients.</div>';
+    document.getElementById("deviceTag").textContent = devices.length + (devices.length===1 ? " CLIENT" : " CLIENTS");
+}
+
+function renderActivity(){
+    document.getElementById("fullActivityList").innerHTML = activities.map((a,i)=>`
+    <div class="activity"><div class="activity-marker"></div><div><div class="activity-text">${escapeHTML(a)}</div><div class="activity-time">${i===0?"Just now":"Earlier"}</div></div></div>`).join("");
+}
+
+function updateUI(){
+    document.getElementById("deviceCount").textContent = devices.length;
+    document.getElementById("deviceList").innerHTML = devices.slice(0,4).map(d=>`
+    <div class="device"><div class="device-icon"><img src="${DEVICE_ICON}"></div><div class="device-info"><div class="device-name">${escapeHTML(d.name)}</div><div class="device-type">${escapeHTML(d.type)}</div></div><div class="device-status ${d.online?"":"offline"}">${d.online?"Online":"Offline"}</div></div>`).join("") || '<div style="padding:25px 0;color:#666">No paired clients yet.</div>';
+
+    document.getElementById("statusValue").textContent = devices.length ? (devices.some(d=>d.online) ? "Online" : "Offline") : "No clients";
+    document.getElementById("lastActivity").textContent = devices.length ? "Today" : "—";
+
+    renderDevices();
+    renderActivity();
+}
+
+/* ============================================================
+   CONFIG EDITOR (local, unchanged from original)
+   ============================================================ */
+
+function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
+function loadConfig(){
+    try{
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if(saved){
+            const merged = mergeDefaults(clone(DEFAULT_CONFIG), JSON.parse(saved));
+            delete merged.CurveP1; delete merged.CurveP2;
+            if(merged.macro) delete merged.macro.Keys;
+            return merged;
+        }
+    }catch(e){}
+    return clone(DEFAULT_CONFIG);
+}
+function mergeDefaults(defaults,loaded){
+    for(const key in loaded){
+        if(loaded[key] && typeof loaded[key] === "object" && !Array.isArray(loaded[key]) && defaults[key] && typeof defaults[key] === "object"){
+            defaults[key] = mergeDefaults(defaults[key], loaded[key]);
+        }else defaults[key] = loaded[key];
+    }
+    return defaults;
+}
+function pathString(path){ return path.join("."); }
+function prettyLabel(key){
+    return key.replace(/([a-z])([A-Z])/g,"$1 $2").replace(/^./, s => s.toUpperCase());
+}
+function controlHTML(key, value, pathAttr){
+    if(typeof value === "boolean")
+        return `<input type="checkbox" data-config-path="${pathAttr}" ${value?"checked":""}>`;
+    if(OPTIONS[key] && typeof value === "string"){
+        const opts = OPTIONS[key].includes(value) ? OPTIONS[key] : [value, ...OPTIONS[key]];
+        return `<div class="dd"><input type="hidden" data-config-path="${pathAttr}" value="${escapeHTML(value)}"><button type="button" class="dd-btn"><span class="dd-val">${escapeHTML(value)}</span><svg class="dd-arrow" viewBox="0 0 10 10"><path d="M1 3l4 4 4-4"/></svg></button><div class="dd-menu">${opts.map(o=>`<div class="dd-opt ${o===value?"sel":""}" data-value="${escapeHTML(o)}">${escapeHTML(o)}</div>`).join("")}</div></div>`;
+    }
+    if(typeof value === "number")
+        return `<input type="number" step="any" data-config-path="${pathAttr}" value="${value}">`;
+    if(Array.isArray(value))
+        return `<input type="text" data-config-path="${pathAttr}" value="${escapeHTML(value.join(", "))}" title="Separate values with commas">`;
+    if(value === null)
+        return `<input type="text" data-config-path="${pathAttr}" value="" placeholder="None">`;
+    return `<input type="text" data-config-path="${pathAttr}" value="${escapeHTML(value)}">`;
+}
+function renderConfigFields(obj, path=[]){
+    let html = "";
+    for(const [key,value] of Object.entries(obj)){
+        const currentPath = [...path, key];
+        const full = pathString(currentPath);
+        const pathAttr = escapeHTML(full);
+
+        if(SECTION_HEADS[full]) html += `<div class="config-subhead">${SECTION_HEADS[full]}</div>`;
+
+        if(key === "WeaponConfigs" && value && typeof value === "object"){
+            html += `<div class="weapon-list">` + Object.entries(value).map(([weapon,w])=>`
+                <div class="weapon">
+                    <div class="weapon-name">${escapeHTML(weapon)}</div>
+                    <div class="weapon-fields">${Object.entries(w).map(([k,v])=>`
+                        <div class="weapon-field"><label>${escapeHTML(prettyLabel(k))}</label>${controlHTML(k,v,escapeHTML(pathString([...currentPath,weapon,k])))}</div>`).join("")}
+                    </div>
+                </div>`).join("") + `</div>`;
+            continue;
+        }
+        if(value && typeof value === "object" && !Array.isArray(value)){
+            html += `<div class="config-object"><div class="config-object-title">${escapeHTML(prettyLabel(key))}</div>${renderConfigFields(value,currentPath)}</div>`;
+            continue;
+        }
+        html += `<div class="config-field ${typeof value === "boolean"?"bool":""}">
+            <div class="config-label">${escapeHTML(prettyLabel(key))}</div>
+            <div class="config-control">${controlHTML(key,value,pathAttr)}</div>
+        </div>`;
+    }
+    return html;
+}
+function renderConfig(){
+    const groups = [
+        {title:"Aim Assist",subtitle:"Main settings",data:Object.fromEntries(Object.entries(config).filter(([k])=>!["triggerbot","macro"].includes(k))),path:[]},
+        {title:"Triggerbot",subtitle:"Triggerbot settings",data:config.triggerbot,path:["triggerbot"]},
+        {title:"Macro",subtitle:"Macro settings",data:config.macro,path:["macro"]}
+    ];
+
+    document.getElementById("configEditor").innerHTML = `<div class="config-columns">` + groups.map(group=>`
+        <div class="card config-section">
+            <div class="config-section-header">
+                <div><div class="config-section-title">${group.title}</div><div class="config-section-subtitle">${group.subtitle}</div></div>
+            </div>
+            <div class="config-scroll">${renderConfigFields(group.data,group.path)}</div>
+        </div>
+    `).join("") + `</div>`;
+
+    document.querySelectorAll("[data-config-path]").forEach(input=>{
+        input.addEventListener("input",markConfigChanged);
+        input.addEventListener("change",markConfigChanged);
+    });
+}
+function setPath(obj,path,value){
+    const parts = Array.isArray(path) ? path : path.split(".");
+    let target = obj;
+    for(let i = 0; i < parts.length-1; i++){
+        if(!target[parts[i]]) target[parts[i]] = {};
+        target = target[parts[i]];
+    }
+    target[parts[parts.length-1]] = value;
+}
+function getCurrentEditorConfig(){
+    const result = clone(config);
+    document.querySelectorAll("[data-config-path]").forEach(input=>{
+        const path = input.dataset.configPath.split(".");
+        const oldValue = path.reduce((o,k)=>o?.[k],config);
+        let value;
+
+        if(input.type === "checkbox") value = input.checked;
+        else if(typeof oldValue === "number"){
+            value = input.value.trim() === "" ? 0 : Number(input.value);
+            if(!Number.isFinite(value)) value = oldValue;
+        }else if(Array.isArray(oldValue)){
+            value = input.value.split(",").map(v=>v.trim()).filter(Boolean);
+        }else if(oldValue === null){
+            value = input.value.trim() === "" ? null : input.value;
+        }else value = input.value;
+
+        setPath(result,path,value);
+    });
+    return result;
+}
+function markConfigChanged(){
+    document.getElementById("configState").textContent = "UNSAVED CHANGES";
+}
+function saveConfig(){
+    config = getCurrentEditorConfig();
+    try{
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(config,null,2));
+        document.getElementById("configState").textContent = "SAVED";
+        notify("Configuration saved locally.");
+    }catch(e){
+        notify("Could not save configuration.");
+    }
+}
+function resetConfig(){
+    if(!confirm("Reset all configuration values to their defaults?")) return;
+    config = clone(DEFAULT_CONFIG);
+    renderConfig();
+    markConfigChanged();
+    notify("Default values restored. Save to keep them.");
+}
+
+/* ============================================================
+   NAV
+   ============================================================ */
+
+const pages = document.querySelectorAll(".page");
+const navItems = document.querySelectorAll(".nav-item");
+function navigate(page){
+    pages.forEach(p=>p.classList.remove("active"));
+    navItems.forEach(n=>n.classList.remove("active"));
+    const targetPage = document.getElementById(page);
+    if (targetPage) targetPage.classList.add("active");
+    const nav = document.querySelector(`[data-page="${page}"]`);
+    if(nav) nav.classList.add("active");
+    document.getElementById("breadcrumb").textContent =
+        page === "configurations" ? "Configurations" : page.charAt(0).toUpperCase() + page.slice(1);
+    if(page === "devices") renderDevices();
+    if(page === "activity") renderActivity();
+    if(page === "configurations") renderConfig();
+}
+navItems.forEach(item=>item.addEventListener("click",()=>navigate(item.dataset.page)));
+
+/* ============================================================
+   CUSTOM DROPDOWNS
+   ============================================================ */
+
+function closeDD(){ document.querySelectorAll(".dd.open").forEach(d=>d.classList.remove("open")); }
+function openDD(dd){
+    dd.classList.add("open");
+    const btn = dd.querySelector(".dd-btn"), menu = dd.querySelector(".dd-menu"), r = btn.getBoundingClientRect();
+    const w = Math.max(r.width,110);
+    menu.style.width = w + "px";
+    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+    const h = menu.offsetHeight;
+    menu.style.top = (r.bottom + 4 + h > window.innerHeight - 8 ? Math.max(8, r.top - 4 - h) : r.bottom + 4) + "px";
+    const sel = menu.querySelector(".sel");
+    if(sel) menu.scrollTop = sel.offsetTop - 40;
+}
+document.addEventListener("click",e=>{
+    const opt = e.target.closest(".dd-opt");
+    if(opt){
+        const dd = opt.closest(".dd"), input = dd.querySelector("input");
+        input.value = opt.dataset.value;
+        dd.querySelector(".dd-val").textContent = opt.dataset.value;
+        dd.querySelectorAll(".dd-opt").forEach(o=>o.classList.toggle("sel", o === opt));
+        input.dispatchEvent(new Event("change",{bubbles:true}));
+        closeDD();
+        return;
+    }
+    const btn = e.target.closest(".dd-btn");
+    if(btn){
+        const dd = btn.closest(".dd"), was = dd.classList.contains("open");
+        closeDD();
+        if(!was) openDD(dd);
+        return;
+    }
+    closeDD();
+});
+window.addEventListener("scroll",e=>{
+    if(e.target.nodeType === 1 && e.target.closest(".dd-menu")) return;
+    closeDD();
+},true);
+window.addEventListener("resize",closeDD);
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+
+renderConfig();     // config editor
+boot();             // auth + pair status
+setInterval(()=>{ if (paired) refreshPairStatus(); }, 15000);  // keep devices fresh
+</script>
+</body>
+</html>
