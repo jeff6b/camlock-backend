@@ -842,7 +842,7 @@ async def save_community_to_mine(request: Request, data: dict):
 
 
 # ---------------------------------------------------------------------------
-# Pairing (dashboard <-> light-connect)
+# Pairing
 # ---------------------------------------------------------------------------
 
 @app.post("/api/pair/generate")
@@ -901,28 +901,36 @@ async def pair_generate(request: Request):
 
 @app.post("/api/pair/redeem")
 async def pair_redeem(request: Request, data: dict):
-    browser_username = request.cookies.get("username")
-    session_id = request.cookies.get("session_id")
-    if not browser_username or not session_id:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
+    """
+    Redeem a pair code from any browser, with or without an existing session.
+    - If the browser has no session, it creates one for the code owner.
+      This is what makes "pairing == login" work from a phone.
+    """
     code = (data.get("code") or "").strip()
     if len(code) != 6 or not code.isdigit():
         raise HTTPException(status_code=400, detail="Invalid code format")
 
+    browser_username = request.cookies.get("username")
+
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("""SELECT code, owner_username, expires_at, redeemed
-                       FROM pair_tokens WHERE code=%s""", (code,))
+        cur.execute(
+            """SELECT code, owner_username, expires_at, redeemed
+               FROM pair_tokens WHERE code=%s""",
+            (code,),
+        )
         row = cur.fetchone()
         if not row:
             db.close()
             raise HTTPException(status_code=404, detail="Code not found")
+
         _, owner_username, expires_at, redeemed = row
+
         if redeemed:
             db.close()
             raise HTTPException(status_code=409, detail="Code already redeemed")
+
         try:
             exp_dt = datetime.fromisoformat(expires_at)
             if datetime.now() > exp_dt:
@@ -932,22 +940,62 @@ async def pair_redeem(request: Request, data: dict):
             db.close()
             raise HTTPException(status_code=500, detail="Bad expiry in DB")
 
-        if owner_username == browser_username:
+        if browser_username and owner_username == browser_username:
             db.close()
             raise HTTPException(status_code=400, detail="Cannot pair to yourself")
 
         now_iso = datetime.now().isoformat()
-        cur.execute("UPDATE pair_tokens SET redeemed=1, redeemed_by=%s WHERE code=%s",
-                    (browser_username, code))
-        cur.execute("""INSERT INTO account_pairs (browser_username, client_username, paired_at)
-                       VALUES (%s, %s, %s)
-                       ON CONFLICT (browser_username, client_username) DO NOTHING""",
-                    (browser_username, owner_username, now_iso))
-        cur.execute("UPDATE user_accounts SET pair_token_generated=0 WHERE username=%s",
-                    (owner_username,))
+
+        cur.execute(
+            "UPDATE pair_tokens SET redeemed=1, redeemed_by=%s WHERE code=%s",
+            (browser_username or owner_username, code),
+        )
+
+        if browser_username:
+            cur.execute(
+                """INSERT INTO account_pairs (browser_username, client_username, paired_at)
+                   VALUES (%s, %s, %s)
+                   ON CONFLICT (browser_username, client_username) DO NOTHING""",
+                (browser_username, owner_username, now_iso),
+            )
+
+        cur.execute(
+            "UPDATE user_accounts SET pair_token_generated=0 WHERE username=%s",
+            (owner_username,),
+        )
+
+        # Create a session for this browser tied to the code owner.
+        # This makes pairing act as login for browsers that had no session.
+        session_id = secrets.token_hex(16)
+        exp = (datetime.now() + timedelta(days=30)).isoformat()
+        cur.execute(
+            """INSERT INTO login_sessions
+                (session_id, username, license_key, created_at, expires_at,
+                 ip_address, launched_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (session_id, owner_username, "", now_iso, exp,
+             request.client.host if request.client else None, now_iso),
+        )
+
+        cur.execute(
+            """INSERT INTO account_pairs (browser_username, client_username, paired_at)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (browser_username, client_username) DO NOTHING""",
+            (owner_username, owner_username, now_iso),
+        )
+
         db.commit()
         db.close()
-        return {"ok": True, "paired_with": owner_username}
+
+        resp = JSONResponse({
+            "ok": True,
+            "paired_with": owner_username,
+            "username": owner_username,
+        })
+        resp.set_cookie("session_id", session_id, httponly=True, max_age=2592000, samesite="lax")
+        resp.set_cookie("username", owner_username, httponly=True, max_age=2592000, samesite="lax")
+        return resp
+
     except HTTPException:
         raise
     except Exception as e:
@@ -960,7 +1008,7 @@ async def pair_redeem(request: Request, data: dict):
 async def pair_status(request: Request):
     browser_username = request.cookies.get("username")
     if not browser_username:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        return {"paired": False, "devices": [], "pairs": []}
     db = get_db()
     cur = db.cursor()
     try:
@@ -1264,21 +1312,38 @@ def keepalive():
 
 # ---------------------------------------------------------------------------
 # HTML routes
+#
+# Only /connect is publicly reachable. / only serves the launcher when
+# ?client=<id> is present, which is exactly what the local client sends.
+# Bare / returns 404 so random people can't find the login form.
 # ---------------------------------------------------------------------------
 
+_NOT_FOUND_HTML = (
+    "<!DOCTYPE html><html><body style='background:#0a0a0c;margin:0;"
+    "display:flex;align-items:center;justify-content:center;height:100vh;"
+    "font-family:sans-serif;color:#666'>"
+    "<div style='text-align:center'><h1 style='margin:0;font-size:28px'>404</h1>"
+    "<p style='margin:8px 0 0;font-size:13px'>Not found</p></div>"
+    "</body></html>"
+)
+
+
 @app.get("/", response_class=HTMLResponse)
-async def serve_root():
+async def serve_root(request: Request):
+    client = request.query_params.get("client")
+    if not client:
+        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
     return HTMLResponse(content=LAUNCHER_HTML)
 
 
 @app.get("/menu", response_class=HTMLResponse)
 async def serve_menu():
-    return HTMLResponse(content=LAUNCHER_HTML)
+    return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
 
 
 @app.get("/launcher", response_class=HTMLResponse)
 async def serve_launcher():
-    return HTMLResponse(content=LAUNCHER_HTML)
+    return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
 
 
 @app.get("/connect", response_class=HTMLResponse)
@@ -1291,7 +1356,7 @@ async def serve_dashboard(request: Request):
     username = request.cookies.get("username")
     session_id = request.cookies.get("session_id")
     if not username or not session_id:
-        return RedirectResponse(url="/")
+        return RedirectResponse(url="/connect")
     db = get_db()
     cur = db.cursor()
     try:
@@ -1300,13 +1365,13 @@ async def serve_dashboard(request: Request):
         result = cur.fetchone()
         db.close()
         if not result:
-            return RedirectResponse(url="/")
+            return RedirectResponse(url="/connect")
         if not result[1]:
-            return RedirectResponse(url="/")
+            return RedirectResponse(url="/connect")
         return HTMLResponse(content=DASHBOARD_HTML)
     except:
         db.close()
-        return RedirectResponse(url="/")
+        return RedirectResponse(url="/connect")
 
 
 if __name__ == "__main__":
