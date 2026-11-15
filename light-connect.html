@@ -19,7 +19,7 @@ button,input,select{font:inherit}
 button{cursor:pointer}
 .app{min-height:100vh;min-height:100dvh}
 
-/* SIDEBAR (desktop) */
+
 .sidebar{position:fixed;inset:0 auto 0 0;width:230px;background:#0b0b0b;border-right:1px solid var(--border);padding:25px 16px;display:flex;flex-direction:column;z-index:50}
 .brand{display:flex;align-items:center;gap:11px;padding:2px 9px 34px}
 .brand-name{font-weight:800;font-size:17px;letter-spacing:3px}
@@ -36,7 +36,7 @@ button{cursor:pointer}
 .account-name{font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .account-sub{font-size:10px;color:#626262;margin-top:4px}
 
-/* MAIN */
+
 .main{margin-left:230px;min-height:100vh;min-height:100dvh}
 .topbar{height:65px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 35px;background:#0b0b0b}
 .breadcrumb{color:#666;font-size:11px}.breadcrumb span{color:#aaa}
@@ -80,7 +80,6 @@ h1{font-size:26px;letter-spacing:-.8px;font-weight:600}
 .activity-text{font-size:10px;color:#aaa;overflow-wrap:anywhere}
 .activity-time{font-size:9px;color:#626262;margin-top:5px}
 
-/* CONFIG */
 .config-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
 .config-toolbar-left{display:flex;align-items:center;gap:8px}
 .config-toolbar-right{display:flex;gap:8px;flex-wrap:wrap}
@@ -122,7 +121,7 @@ input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
 .config-object{border:1px solid #242424;border-radius:5px;margin-top:12px;padding:12px;background:#0b0b0b}
 .config-object-title{font-size:10px;color:#aaa;font-weight:600;margin-bottom:4px}
 
-/* TOAST + MODAL */
+
 .toast{position:fixed;bottom:25px;right:25px;padding:13px 17px;background:#252525;border:1px solid #414141;color:#bbb;border-radius:4px;font-size:10px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;z-index:60;max-width:calc(100vw - 40px)}
 .toast.show{opacity:1;transform:none}
 .modal-overlay{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
@@ -133,7 +132,7 @@ input[type=checkbox]:checked{background:#bdbdbd;border-color:#bdbdbd}
 .modal input{width:100%;background:#090909;border:1px solid #303030;border-radius:4px;padding:12px;color:#bbb;outline:none;margin-bottom:15px;font-size:11px}
 .modal-actions{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap}
 
-/* AUTH */
+
 .auth{display:none;min-height:calc(100vh - 76px);align-items:center;justify-content:center;text-align:center;position:relative;padding:20px}
 .auth:before{content:"";position:absolute;width:560px;height:560px;max-width:100%;border-radius:50%;background:radial-gradient(circle,#ffffff0d 0%,transparent 65%);pointer-events:none}
 .auth-inner{position:relative;max-width:430px;width:100%;animation:fade .35s}
@@ -159,11 +158,8 @@ body.paired .main { margin-left: 230px; }
 body.paired .content > .page { display: none; }
 body.paired .content > .page.active { display: block; }
 
-/* ============================================================
-   MOBILE OPTIMIZATION (phones)
-   ============================================================ */
+
 @media(max-width:768px){
-  /* Turn sidebar into a bottom navigation bar */
   .sidebar{
     position:fixed; top:auto; bottom:0; left:0; right:0; width:100%; height:auto;
     flex-direction:row; justify-content:space-around; align-items:center;
@@ -177,22 +173,22 @@ body.paired .content > .page.active { display: block; }
     padding: 4px 0; margin: 0; height: 100%; border-radius: 0;
     background: none !important; border: none !important;
   }
-  .nav-item span:not(.nav-icon) { display:none; } /* Hide text, show only icons */
+  .nav-item span:not(.nav-icon) { display:none; } 
   .nav-icon { width: 24px; height: 24px; }
   .nav-icon img { width: 24px; height: 24px; }
 
-  /* Main content fills the screen */
+  
   .main { margin-left: 0 !important; padding-bottom: 80px; }
-  .topbar { display:none !important; } /* Hide topbar on mobile to save space */
+  .topbar { display:none !important; } 
   .content { padding: 24px 16px; }
 
-  /* Header adjustments */
+ 
   .page-header { margin-bottom: 20px; align-items:flex-start; flex-direction:column; gap: 10px; }
   h1 { font-size: 22px; }
   .stats { grid-template-columns: 1fr 1fr; gap:10px; }
   .grid-main { grid-template-columns: 1fr; }
 
-  /* Config stacks vertically */
+
   .config-columns { grid-template-columns: 1fr; gap: 12px; }
   .config-section { height: auto; min-height: 250px; max-height: 450px; padding: 16px 12px; }
   .config-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
@@ -202,11 +198,10 @@ body.paired .content > .page.active { display: block; }
   .config-field:not(.bool) { flex-direction: column; align-items: flex-start; gap: 6px; }
   .config-field:not(.bool) .config-control { width: 100%; }
 
-  /* Modal adjustments */
+
   .modal { padding: 20px; width: 100%; border-radius: 10px; }
   .modal-actions button { flex: 1; }
 
-  /* Toast above bottom nav */
   .toast { bottom: 100px; right: 16px; left: 16px; text-align:center; max-width: 100%; }
 }
 </style>
@@ -280,7 +275,7 @@ body.paired .content > .page.active { display: block; }
         <div class="card">
             <div class="card-heading"><div><div class="card-title">System status</div><div class="card-description">Current connection availability</div></div><span class="tag">STATUS</span></div>
             <div class="status-box">
-                <div class="status-row"><div><div class="status-title">Light services</div></div></div>
+                <div class="status-row"><div><div class="status-title">not done mijo</div></div></div>
                 <div class="progress"><div class="progress-inner" style="width:100%"></div></div>
             </div>
         </div>
