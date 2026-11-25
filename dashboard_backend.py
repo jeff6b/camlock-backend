@@ -1,8 +1,7 @@
 # dashboard_backend.py — Vile dashboard backend (standalone)
 # Serves dashboard.html at / + login/config/saved/community/activity/stats.
-# Also exposes client-facing /api/client/config endpoints so the Python client
-# can pull/push configs live using client_id + session_token (no cookie needed).
-# Same Postgres schema as main.py, plus one extra `activity` table.
+# Client-facing config + command endpoints use client_id + session_token (no cookie).
+# Same Postgres schema as main.py, plus `activity` and `commands` tables.
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -110,10 +109,10 @@ def _validate_client(cur, client_id: str, session_token: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Ensure activity table exists
+# Ensure activity + commands tables exist
 # ---------------------------------------------------------------------------
 
-def _ensure_activity_table():
+def _ensure_tables():
     try:
         db = get_db()
         cur = db.cursor()
@@ -124,13 +123,21 @@ def _ensure_activity_table():
             detail TEXT,
             created_at TEXT NOT NULL)""")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_activity_license ON activity(license_key, created_at DESC)")
+        cur.execute("""CREATE TABLE IF NOT EXISTS commands (
+            id SERIAL PRIMARY KEY,
+            license_key TEXT NOT NULL,
+            action TEXT NOT NULL,
+            detail TEXT,
+            created_at TEXT NOT NULL,
+            consumed INTEGER DEFAULT 0)""")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_commands_pending ON commands(license_key, consumed, id)")
         db.commit()
         db.close()
     except Exception:
         pass
 
 
-_ensure_activity_table()
+_ensure_tables()
 
 
 # ---------------------------------------------------------------------------
@@ -146,12 +153,19 @@ class ActivityBody(BaseModel):
     action: str
     detail: Optional[str] = None
 
+class CommandBody(BaseModel):
+    action: str
+    detail: Optional[str] = None
+
 class ClientCfgReq(BaseModel):
     client_id: str
     session_token: str
 
 class ClientCfgSave(ClientCfgReq):
     config: dict
+
+class ClientLoadCfg(ClientCfgReq):
+    config_name: str
 
 
 # ---------------------------------------------------------------------------
@@ -299,8 +313,6 @@ async def logout(request: Request):
 
 # ---------------------------------------------------------------------------
 # Client-facing config (client_id + session_token, no cookie)
-# Python client uses these to pull/push configs live.
-# Reads/writes the SAME `settings` row the dashboard edits.
 # ---------------------------------------------------------------------------
 
 @app.post("/api/client/config")
@@ -346,6 +358,137 @@ async def client_save_config(data: ClientCfgSave):
         db.commit()
         db.close()
         return {"success": True}
+    except HTTPException:
+        try: db.close()
+        except: pass
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# List this license's saved configs (client)
+@app.post("/api/client/configs")
+async def client_list_configs(data: ClientCfgReq):
+    db = get_db()
+    cur = db.cursor()
+    try:
+        key = _validate_client(cur, (data.client_id or "").strip(), (data.session_token or "").strip())
+        cur.execute(
+            """SELECT id, config_name, visibility, created_at
+               FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC""",
+            (key,),
+        )
+        rows = cur.fetchall()
+        db.close()
+        return {"configs": [
+            {"id": r[0], "name": r[1], "visibility": r[2] or "private", "created_at": r[3]}
+            for r in rows
+        ]}
+    except HTTPException:
+        try: db.close()
+        except: pass
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Load a saved config into the live settings row (client)
+@app.post("/api/client/configs/load")
+async def client_load_config(data: ClientLoadCfg):
+    db = get_db()
+    cur = db.cursor()
+    try:
+        key = _validate_client(cur, (data.client_id or "").strip(), (data.session_token or "").strip())
+        cur.execute(
+            "SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s",
+            (key, data.config_name.strip()),
+        )
+        row = cur.fetchone()
+        if not row:
+            db.close()
+            raise HTTPException(status_code=404, detail="Saved config not found")
+        cfg_json = row[0]
+        cur.execute(
+            """INSERT INTO settings (key, config) VALUES (%s, %s)
+               ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
+            (key, cfg_json),
+        )
+        cur.execute(
+            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
+            (key, "config_loaded", data.config_name[:60], _now()),
+        )
+        db.commit()
+        db.close()
+        try:
+            return json.loads(cfg_json)
+        except Exception:
+            return {}
+    except HTTPException:
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Shortcut command queue
+# ---------------------------------------------------------------------------
+
+@app.post("/api/command")
+async def enqueue_command(request: Request, data: CommandBody):
+    """Browser enqueues a shortcut (inject/panic/etc) for the logged-in license."""
+    if not data.action:
+        raise HTTPException(status_code=400, detail="action required")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        lic_key = _require_license(cur, request)
+        cur.execute(
+            """INSERT INTO commands (license_key, action, detail, created_at, consumed)
+               VALUES (%s, %s, %s, %s, 0)""",
+            (lic_key, data.action[:40], (data.detail or "")[:120] or None, _now()),
+        )
+        cur.execute(
+            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
+            (lic_key, data.action[:40], (data.detail or "")[:120] or None, _now()),
+        )
+        db.commit()
+        db.close()
+        return {"success": True}
+    except HTTPException:
+        try: db.close()
+        except: pass
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/client/commands")
+async def client_pull_commands(data: ClientCfgReq):
+    """Client pulls + consumes pending commands for its license."""
+    db = get_db()
+    cur = db.cursor()
+    try:
+        key = _validate_client(cur, (data.client_id or "").strip(), (data.session_token or "").strip())
+        cur.execute(
+            """SELECT id, action, detail FROM commands
+               WHERE license_key=%s AND consumed=0 ORDER BY id ASC LIMIT 50""",
+            (key,),
+        )
+        rows = cur.fetchall()
+        if rows:
+            ids = [r[0] for r in rows]
+            cur.execute("UPDATE commands SET consumed=1 WHERE id = ANY(%s)", (ids,))
+            db.commit()
+        db.close()
+        return {"commands": [{"id": r[0], "action": r[1], "detail": r[2]} for r in rows]}
     except HTTPException:
         try: db.close()
         except: pass
@@ -537,7 +680,7 @@ async def set_config(request: Request, data: dict):
 
 
 # ---------------------------------------------------------------------------
-# Saved configs
+# Saved configs (browser)
 # ---------------------------------------------------------------------------
 
 @app.get("/api/configs")
