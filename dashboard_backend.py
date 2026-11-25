@@ -1,5 +1,7 @@
 # dashboard_backend.py — Vile dashboard backend (standalone)
 # Serves dashboard.html at / + login/config/saved/community/activity/stats.
+# Also exposes client-facing /api/client/config endpoints so the Python client
+# can pull/push configs live using license_key + token (no cookie needed).
 # Same Postgres schema as main.py, plus one extra `activity` table.
 
 from fastapi import FastAPI, HTTPException, Request
@@ -37,10 +39,6 @@ def get_db():
 
 def _now() -> str:
     return datetime.now().isoformat()
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _expired(exp_iso: Optional[str]) -> bool:
@@ -83,6 +81,25 @@ def _require_license(cur, request: Request) -> str:
     return lic_key
 
 
+def _validate_key_token(cur, key: str, tok: str) -> str:
+    """Validates license_key + redeem token. Returns license_key."""
+    if not key or not tok:
+        raise HTTPException(status_code=400, detail="license_key and token required")
+    cur.execute("SELECT active, expires_at FROM licenses WHERE license_key=%s", (key,))
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid license key")
+    active, exp = row
+    if not active:
+        raise HTTPException(status_code=403, detail="License inactive")
+    if _expired(exp):
+        raise HTTPException(status_code=403, detail="License expired")
+    cur.execute("SELECT discord_id FROM redeem_tokens WHERE token=%s AND license_key=%s", (tok, key))
+    if not cur.fetchone():
+        raise HTTPException(status_code=401, detail="Invalid token for this license")
+    return key
+
+
 # ---------------------------------------------------------------------------
 # Ensure activity table exists
 # ---------------------------------------------------------------------------
@@ -119,6 +136,13 @@ class LicenseLogin(BaseModel):
 class ActivityBody(BaseModel):
     action: str
     detail: Optional[str] = None
+
+class ClientCfgReq(BaseModel):
+    license_key: str
+    token: str
+
+class ClientCfgSave(ClientCfgReq):
+    config: dict
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +289,66 @@ async def logout(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Stats + activity
+# Client-facing config (license_key + token, no cookie)
+# Python client uses these to pull/push configs live.
+# Reads/writes the SAME `settings` row the dashboard edits.
+# ---------------------------------------------------------------------------
+
+@app.post("/api/client/config")
+async def client_get_config(data: ClientCfgReq):
+    db = get_db()
+    cur = db.cursor()
+    try:
+        key = _validate_key_token(cur, (data.license_key or "").strip(), (data.token or "").strip())
+        cur.execute("SELECT config FROM settings WHERE key=%s", (key,))
+        row = cur.fetchone()
+        db.close()
+        if not row:
+            return {}
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return {}
+    except HTTPException:
+        try: db.close()
+        except: pass
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/client/config/save")
+async def client_save_config(data: ClientCfgSave):
+    db = get_db()
+    cur = db.cursor()
+    try:
+        key = _validate_key_token(cur, (data.license_key or "").strip(), (data.token or "").strip())
+        cur.execute(
+            """INSERT INTO settings (key, config) VALUES (%s, %s)
+               ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
+            (key, json.dumps(data.config)),
+        )
+        cur.execute(
+            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
+            (key, "client_config_saved", None, _now()),
+        )
+        db.commit()
+        db.close()
+        return {"success": True}
+    except HTTPException:
+        try: db.close()
+        except: pass
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Stats + activity (browser)
 # ---------------------------------------------------------------------------
 
 @app.get("/api/stats")
@@ -275,7 +358,6 @@ async def stats(request: Request):
     try:
         lic_key = _require_license(cur, request)
 
-        # All sessions for this license
         cur.execute(
             "SELECT created_at, expires_at FROM login_sessions WHERE license_key=%s ORDER BY created_at ASC",
             (lic_key,),
@@ -299,7 +381,6 @@ async def stats(request: Request):
                 expires = datetime.fromisoformat(expires_iso)
             except Exception:
                 expires = created
-            # Clamp to now (session may not have actually been used full 30 days)
             end = min(expires, now)
             if end <= created:
                 dur_min = 0.0
@@ -310,7 +391,6 @@ async def stats(request: Request):
                 total_minutes_month += dur_min
             active_days.add(created.date())
 
-        # Avg hours/day over the days where they had any session, capped at today
         if active_days:
             days_span = (now.date() - min(active_days)).days + 1
             days_span = max(1, days_span)
@@ -318,14 +398,12 @@ async def stats(request: Request):
         else:
             avg_hours_per_day = 0.0
 
-        # Streak = consecutive days ending today that have a session
         streak = 0
         d = now.date()
         while d in active_days:
             streak += 1
             d = d - timedelta(days=1)
 
-        # This-month usage in hours
         this_month_hours = total_minutes_month / 60.0
 
         db.close()
@@ -397,7 +475,7 @@ async def add_activity(request: Request, data: ActivityBody):
 
 
 # ---------------------------------------------------------------------------
-# Config
+# Config (browser)
 # ---------------------------------------------------------------------------
 
 @app.get("/api/config")
