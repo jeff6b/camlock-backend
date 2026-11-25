@@ -1,6 +1,7 @@
 # dashboard_backend.py — Vile dashboard backend (standalone)
 # Serves dashboard.html at / + login/config/saved/community/activity/stats.
 # Client-facing config + command endpoints use client_id + session_token (no cookie).
+# Quick-command endpoint for Siri uses a static SIRI_SECRET env var.
 # Same Postgres schema as main.py, plus `activity` and `commands` tables.
 
 from fastapi import FastAPI, HTTPException, Request
@@ -30,6 +31,8 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql://neondb_owner:npg_S7hoDMeaw2cQ@ep-wandering-dream-ah21egpt-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require",
 )
+
+SIRI_SECRET = os.environ.get("SIRI_SECRET", "")
 
 
 def get_db():
@@ -166,6 +169,11 @@ class ClientCfgSave(ClientCfgReq):
 
 class ClientLoadCfg(ClientCfgReq):
     config_name: str
+
+class QuickCmd(BaseModel):
+    license_key: str
+    action: str
+    secret: str
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +376,6 @@ async def client_save_config(data: ClientCfgSave):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# List this license's saved configs (client)
 @app.post("/api/client/configs")
 async def client_list_configs(data: ClientCfgReq):
     db = get_db()
@@ -396,7 +403,6 @@ async def client_list_configs(data: ClientCfgReq):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Load a saved config into the live settings row (client)
 @app.post("/api/client/configs/load")
 async def client_load_config(data: ClientLoadCfg):
     db = get_db()
@@ -492,6 +498,47 @@ async def client_pull_commands(data: ClientCfgReq):
     except HTTPException:
         try: db.close()
         except: pass
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Quick command (Siri / external trigger, static secret auth)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/quick-command")
+async def quick_command(data: QuickCmd):
+    if not SIRI_SECRET or (data.secret or "") != SIRI_SECRET:
+        raise HTTPException(status_code=401, detail="bad secret")
+    action = (data.action or "").strip().lower()
+    if action not in ("inject", "streamproof_on", "streamproof_off", "panic", "selfdestruct"):
+        raise HTTPException(status_code=400, detail="invalid action")
+    key = (data.license_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="license_key required")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT license_key FROM licenses WHERE license_key=%s", (key,))
+        if not cur.fetchone():
+            db.close()
+            raise HTTPException(status_code=404, detail="license not found")
+        cur.execute(
+            """INSERT INTO commands (license_key, action, detail, created_at, consumed)
+               VALUES (%s, %s, %s, %s, 0)""",
+            (key, action, None, _now()),
+        )
+        cur.execute(
+            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
+            (key, action, None, _now()),
+        )
+        db.commit()
+        db.close()
+        return {"success": True}
+    except HTTPException:
         raise
     except Exception as e:
         try: db.close()
