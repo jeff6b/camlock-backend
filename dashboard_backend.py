@@ -1,1081 +1,865 @@
-# dashboard_backend.py (patched)
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
-from typing import Optional
-import psycopg2
-import os
-import json
-import secrets
-import pathlib
-from datetime import datetime, timedelta, timezone
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+        <title>vile</title>
+        <style>
+            :root{--bg:#060607;--panel:#0d0d0e;--panel2:#131315;--line:#1a1a1c;--line2:#252527;--text:#d2d2d5;--dim:#76767b;--faint:#4a4a4f;--acc:#b2b2b7;--r:3px;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
+            html{scroll-padding-top:env(safe-area-inset-top,0px)}
+            *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+            html,body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding-bottom:env(safe-area-inset-bottom,0px)}
+            button{font:inherit;color:inherit}
+            .wrap{max-width:540px;margin:0 auto;padding:0 16px 32px}
+            .num{font-variant-numeric:tabular-nums}
+            .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);margin:0 -16px;padding:0 16px}
+            body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--bg);z-index:10}
+            .brand{display:flex;align-items:baseline;justify-content:space-between;padding:20px 0 14px}
+            .logo{font-size:38px;font-weight:700;letter-spacing:-.8px;color:#e2e2e4}
+            .logo i{font-style:normal;color:var(--faint)}
+            .ver{font-size:11px;color:var(--faint)}
+            .tabs{display:flex;gap:22px;border-bottom:1px solid var(--line)}
+            .tabs button{background:none;border:0;color:var(--dim);font-weight:500;padding:10px 0 11px;cursor:pointer;position:relative}
+            .tabs button.on{color:var(--text)}
+            .tabs button.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--acc);border-radius:1px}
+            .page{display:none;padding-top:18px}
+            .page.on{display:block}
+            .h{display:flex;justify-content:space-between;align-items:center;margin:26px 0 10px}
+            .h:first-child{margin-top:0}
+            .h span{font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:1.3px}
+            .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+            .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+            .mini{padding:13px 14px}
+            .mini small{color:var(--dim);font-size:11px}
+            .mini b{display:block;font-size:19px;font-weight:600;letter-spacing:-.6px;margin:3px 0 2px;color:#e0e0e2}
+            .mini span{font-size:11px;color:var(--faint)}
+            /* pair: both columns exactly same height, with spacing above and bounded height */
+            .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch;margin-top:18px}
+            .pair>div{display:flex;flex-direction:column;min-width:0;min-height:0}
+            .pair>div>.h{margin-top:0;flex:none;margin-bottom:10px}
+            .pair>div>.card{flex:1;min-height:0;display:flex;flex-direction:column;max-height:260px}
+            .pair.g{margin-top:12px}
+            .pair.g .gb{margin-top:0;padding:13px 11px 4px}
+            .pair .it{gap:8px}
+            .pair .it>span{min-width:0}
+            .pair .sel,.pair .key{min-width:0;max-width:82px;padding:5px 6px}
+            .bar{height:3px;background:var(--line2);border-radius:1px}
+            .bar i{display:block;height:100%;background:var(--acc);border-radius:1px}
+            .feed div{display:flex;flex-direction:column;gap:3px;padding:10px;border:1px solid var(--line);border-radius:var(--r)}
+            .feed span{font-weight:600;color:#e0e0e2}
+            .feed small,.feed em{color:var(--faint);font-size:11px;font-style:normal}
+            .seg{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+            .seg::-webkit-scrollbar{display:none}
+            .seg button{flex:1;white-space:nowrap;background:var(--panel);border:1px solid var(--line);color:var(--dim);font-size:12px;padding:8px 12px;border-radius:var(--r);cursor:pointer}
+            .seg button.on{background:var(--panel2);border-color:var(--line2);color:var(--text)}
+            .gb{position:relative;border:1px solid var(--line);border-radius:var(--r);background:var(--panel);margin:12px 0 0;padding:13px 14px 4px}
+            .gb>label{display:block;padding:0 0 10px;border-bottom:1px solid var(--line);font-size:10.5px;font-weight:600;color:var(--dim);letter-spacing:1.1px;text-transform:uppercase}
+            .it{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;min-height:40px}
+            .it+.it{border-top:1px solid var(--line)}
+            .tg{width:32px;height:17px;background:var(--panel2);border:1px solid var(--line2);border-radius:3px;position:relative;cursor:pointer;flex:none;transition:.15s}
+            .tg::after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;background:var(--faint);border-radius:2px;transition:.15s}
+            .tg.on{background:var(--acc);border-color:var(--acc)}
+            .tg.on::after{left:17px;background:#151516}
+            .sld{position:relative;height:26px;margin:0;border:1px solid var(--line2);border-radius:3px;overflow:hidden;background:var(--panel2);cursor:pointer;touch-action:none;outline:0;transition:border-color .15s;min-width:88px}
+            .sld .fl{position:absolute;left:0;top:0;height:100%;background:#ededf0;border-radius:0}
+            .sld .tx{position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding:0 9px;font-size:11px;color:#fff;mix-blend-mode:difference;pointer-events:none}
+            .sld:hover,.sld:focus-visible{border-color:var(--faint)}
+            .key,.sel{background:#0f0f11;border:1px solid var(--line2);color:var(--text);border-radius:var(--r);font-size:12px;padding:5px 10px;min-width:78px;cursor:pointer;text-align:center}
+            .key.wait{border-color:var(--acc);color:var(--dim)}
+            .sw{width:32px;height:17px;border-radius:3px;border:1px solid var(--line2);padding:0;cursor:pointer}
+            .cc{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;margin-bottom:10px;cursor:pointer;transition:border-color .15s}
+            .cc:hover{border-color:var(--line2)}
+            .cc b{display:block;font-weight:600;color:#e0e0e2}
+            .cc small{color:var(--dim);font-size:11px}
+            .empty{text-align:center;color:var(--faint);padding:36px 0}
+            .ov{position:fixed;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:20}
+            .ov.open{display:flex}
+            .sheet{width:calc(100% - 40px);max-width:310px;max-height:80vh;overflow:auto;background:var(--panel);border:1px solid var(--line2);border-radius:4px;padding:14px;animation:up .18s ease-out}
+            .num-in{background:#0f0f11;border:1px solid var(--line2);color:var(--text);border-radius:var(--r);font:inherit;font-size:12px;padding:5px 10px;width:88px;text-align:center;cursor:pointer;outline:0}
+            .num-in:focus{border-color:var(--acc);cursor:text}
+            ::selection{background:#26262a}
+            .page.on{animation:pg .38s cubic-bezier(.2,.7,.3,1)}
+            .page.out{opacity:0;filter:blur(8px);transition:opacity .13s ease,filter .13s ease}
+            .card,.gb{box-shadow:inset 0 1px 0 rgba(255,255,255,.02)}
+            .sb,.seg button,.tabs button,.key,.sel,.sw,.cq,.x,.btns button,.num-in,.do,.cc{transition:background .22s ease,border-color .22s ease,color .22s ease,transform .18s ease}
+            .sb:active,.btns button:active,.seg button:active,.key:active{transform:scale(.97)}
+            .cq:hover{transform:translateY(-2px)}
+            .cq.mkt{display:grid;place-content:center;justify-items:center;align-items:center;text-align:center;gap:4px;padding:13px}
+            .mkt i{font-style:normal;font-size:28px;line-height:1;color:var(--dim)}
+            .mkt span{font-size:12px;color:var(--text)}
+            .mkt small{color:var(--faint);font-size:11px}
+            .mkt:hover,.mkt:hover i{color:var(--text)}
+            .fi{width:100%;display:block;background:#0f0f11;border:1px solid var(--line2);border-radius:var(--r);color:var(--text);font:inherit;padding:9px 10px;outline:0;resize:none}
+            .fi:focus{border-color:var(--acc)}
+            .tg,.tg::after{transition:all .24s cubic-bezier(.4,0,.2,1)}
+            @keyframes up{from{transform:translateY(10px) scale(.98);opacity:0}}
+            @keyframes fade{from{opacity:0;transform:translateY(5px)}}
+            @keyframes pg{from{opacity:0;filter:blur(10px);transform:translateY(4px)}}
+            .mh{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+            .mh b{font-size:16px;color:#e4e4e6}
+            .mh small{display:block;color:var(--dim)}
+            .x{background:none;border:0;width:26px;height:26px;cursor:pointer;color:var(--dim);font-size:15px;padding:0}
+            .x:hover{color:#fff}
+            .sheet p{color:var(--dim);margin:0 0 14px}
+            .st{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:var(--r);margin-bottom:6px}
+            .st div{padding:9px 10px;border-left:1px solid var(--line)}
+            .st div:first-child{border-left:0}
+            .st small{display:block;color:var(--faint);font-size:10px;text-transform:uppercase;letter-spacing:.8px}
+            .btns{display:flex;gap:8px;margin-top:14px}
+            .btns button{flex:1;padding:10px;border-radius:var(--r);cursor:pointer;font-weight:600;border:1px solid var(--line2);background:var(--panel2);color:var(--text)}
+            .btns .p{background:var(--acc);border-color:var(--acc);color:#111}
+            .sv{position:relative;height:100px;border-radius:var(--r);cursor:crosshair;touch-action:none;border:1px solid var(--line2)}
+            .svk{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border:2px solid #ddd;border-radius:50%;box-shadow:0 0 0 1px #000,inset 0 0 0 1px #000;pointer-events:none}
+            .hue{position:relative;height:12px;margin:14px 0;border-radius:2px;cursor:pointer;touch-action:none;background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
+            .hk{position:absolute;top:-3px;width:8px;height:18px;margin-left:-4px;border:2px solid #ddd;border-radius:2px;box-shadow:0 0 0 1px #000;pointer-events:none}
+            .cr{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+            .prev{width:34px;height:34px;border-radius:var(--r);border:1px solid var(--line2);flex:none}
+            .hx{flex:1;background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r);color:var(--text);font:inherit;padding:8px 10px;text-transform:uppercase;min-width:0}
+            .ch{display:grid;grid-template-columns:14px 1fr;gap:10px;align-items:center;margin-bottom:8px}
+            .ch span{color:var(--dim);font-size:11px}
+            .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r);padding:8px 14px;opacity:0;pointer-events:none;transition:.2s;z-index:30}
+            .toast.on{opacity:1;transform:translate(-50%,0)}
+            .ac{padding:2px 16px}
+            .ar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 0;border-top:1px solid var(--line)}
+            .ar:first-child{border-top:0}
+            .ar small,.kl small{color:var(--dim);font-size:12px}
+            .ar b,.kl b{font-weight:500;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#e0e0e2}
+            .bl{filter:blur(5px);transition:filter .2s;cursor:pointer;user-select:none}
+            .bl.show{filter:none;user-select:text}
+            @media(hover:hover){.bl:hover{filter:none;user-select:text}}
+            .kl{padding:13px 0 16px;border-top:1px solid var(--line)}
+            .kl .t{display:flex;justify-content:space-between;margin-bottom:10px}
+            .sc{display:flex;flex-direction:column;gap:8px;padding:0}
+            .sb{background:none;border:1px solid var(--line);border-radius:var(--r);padding:10px;text-align:left;cursor:pointer;transition:border-color .15s}
+            .sb:hover{border-color:var(--faint)}
+            .sb b{display:block;font-weight:600;color:#e0e0e2}
+            .sb small{color:var(--faint);font-size:11px}
+            .card.sc{padding:10px}
+            /* Scrollable quick-actions column */
+            .sc.scrollable{overflow-y:auto;max-height:260px;scrollbar-width:thin;scrollbar-color:#ffffff transparent}
+            .sc.scrollable::-webkit-scrollbar{width:6px}
+            .sc.scrollable::-webkit-scrollbar-thumb{background:#ffffff;border-radius:3px}
+            .sc.scrollable::-webkit-scrollbar-track{background:transparent}
+            .cg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+            .cq{aspect-ratio:1;display:flex;flex-direction:column;justify-content:flex-start;padding:13px;cursor:pointer;transition:border-color .15s;background:linear-gradient(160deg,var(--panel2),var(--panel) 65%)}
+            .cq:hover{border-color:var(--faint)}
+            .qt{display:flex;justify-content:space-between;align-items:flex-start;gap:4px;flex-wrap:wrap;min-height:18px}
+            .tag{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.9px;line-height:18px}
+            .qm b{display:block;font-size:16px;font-weight:600;color:#e4e4e6;margin-bottom:6px;letter-spacing:-.3px}
+            .qm p{margin:0;color:var(--dim);font-size:11.5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+            .qm{margin-top:14px}
+            .qb{margin-top:auto;display:flex;justify-content:space-between;color:var(--faint);font-size:11px;border-top:1px solid var(--line);padding-top:8px}
+            .pk{margin-bottom:8px}
+            .pk.sel{border-color:var(--acc)}
+            .dd{position:relative}
+            .dd .sel{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:88px}
+            .dd .sel i{width:5px;height:5px;border-right:1.5px solid var(--dim);border-bottom:1.5px solid var(--dim);transform:rotate(45deg) translate(-1px,-1px);transition:transform .15s;flex:none}
+            .dd.open .sel i{transform:rotate(225deg) translate(-1px,-1px)}
+            .dm{display:none;position:absolute;right:0;top:calc(100% + 4px);min-width:100%;background:#0f0f11;border:1px solid var(--line2);border-radius:var(--r);padding:3px;z-index:8;box-shadow:0 8px 20px rgba(0,0,0,.5)}
+            .dd.open .dm{display:block}
+            .do{padding:7px 10px;border-radius:2px;cursor:pointer;white-space:nowrap;font-size:12px;color:var(--dim)}
+            .do:hover{background:var(--line)}
+            .do.on{color:var(--text)}
+            .lg{height:46px;display:block}
+            /* login — centered */
+            .loginWrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px 16px}
+            .login{width:100%;max-width:340px}
+            .login h1{font-size:32px;font-weight:700;letter-spacing:-.8px;margin:0 0 4px;color:#e2e2e4}
+            .login h1 i{font-style:normal;color:var(--faint)}
+            .login p{color:var(--dim);margin:0 0 22px;font-size:12px}
+            .login label{display:block;font-size:11px;color:var(--dim);margin:12px 0 5px;text-transform:uppercase;letter-spacing:1px}
+            .login input{width:100%;background:#0f0f11;border:1px solid var(--line2);border-radius:var(--r);color:var(--text);font:inherit;padding:10px 11px;outline:0}
+            .login input:focus{border-color:var(--acc)}
+            .login button{width:100%;margin-top:18px;padding:12px;background:var(--acc);border:0;border-radius:var(--r);font-weight:600;cursor:pointer;color:#111}
+            .login button:disabled{opacity:.5}
+            .login .err{color:#c98;margin-top:10px;font-size:12px;min-height:16px}
+            /* Siri request block */
+            .siri-block{padding:13px 0 4px;border-top:1px solid var(--line)}
+            .siri-field{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+            .siri-field:last-child{margin-bottom:0}
+            .siri-field label{font-size:10px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.9px;flex:none;width:52px}
+            .siri-val{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#e0e0e2;background:#0f0f11;border:1px solid var(--line2);border-radius:var(--r);padding:6px 9px;word-break:break-all;user-select:all;cursor:text;transition:filter .2s}
+            .siri-val.body{white-space:pre-wrap}
+            .siri-val.blur{filter:blur(5px);user-select:none;cursor:pointer}
+            .siri-val.blur:hover{filter:none;user-select:text;cursor:text}
+            .btn-sm{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r);padding:6px 10px;font-size:11px;color:var(--text);cursor:pointer;transition:background .2s,border-color .2s;flex:none}
+            .btn-sm:hover{border-color:var(--faint)}
+            .btn-sm.p{background:var(--acc);border-color:var(--acc);color:#111;font-weight:600}
+            .siri-actions{display:flex;gap:6px;margin-top:10px}
+            .siri-actions .btn-sm{flex:1;text-align:center}
+            .siri-empty{font-size:12px;color:var(--faint);padding:10px 0 4px;border-top:1px solid var(--line)}
+            .siri-body-row{display:flex;align-items:center;gap:8px}
+            .siri-body-row .siri-field{flex:1;margin-bottom:0}
+            /* Recent feed: bounded height + custom white scrollbar */
+            .feed{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#ffffff transparent}
+            .feed::-webkit-scrollbar{width:6px}
+            .feed::-webkit-scrollbar-thumb{background:#ffffff;border-radius:3px}
+            .feed::-webkit-scrollbar-track{background:transparent}
+        </style>
+    </head>
+    <body>
 
-app = FastAPI(title="Vile Dashboard")
+    <div class="loginWrap" id="loginView">
+        <div class="login">
+            <h1>vile<i>.</i></h1>
+            <p>Sign in with your license and token.</p>
+            <label for="liKey">License key</label>
+            <input id="liKey" autocomplete="off" spellcheck="false" placeholder="VILE-XXXX-XXXX-XXXX-XXXX">
+            <label for="liToken">Token</label>
+            <input id="liToken" autocomplete="off" spellcheck="false" placeholder="Your token from the bot">
+            <button id="liBtn">Sign in</button>
+            <div class="err" id="liErr"></div>
+        </div>
+    </div>
 
-BASE_DIR = pathlib.Path(__file__).parent
-DASHBOARD_HTML_PATH = BASE_DIR / "dashboard.html"
+    <div class="wrap" id="appView" style="display:none">
+        <div class="top">
+            <div class="brand">
+                <div class="logo"><img class="lg" src="https://cdn.corenexis.com/f/VtAo1Yxq.png" alt="vile"></div>
+            </div>
+            <div class="tabs">
+                <button class="on" data-p="stats">Statistics</button>
+                <button data-p="main">Main</button>
+                <button data-p="configs">Configs</button>
+            </div>
+        </div>
 
+        <section class="page on" id="p-stats">
+            <div class="h"><span>Account</span></div>
+            <div class="card ac">
+                <div class="ar"><small>License</small><b class="bl" id="accLicense">—</b></div>
+                <div class="ar"><small>HWID</small><b class="bl" id="accHwid">—</b></div>
+                <div class="kl">
+                    <div class="t"><small>Key time left</small><b id="accLeft">—</b></div>
+                    <div class="bar"><i id="accBar" style="width:0%"></i></div>
+                </div>
+            </div>
+            <div class="h"><span>Siri shortcut</span></div>
+            <div class="card ac">
+                <div id="siriBox">
+                    <div class="siri-empty" id="siriEmpty">Get a token to build your shortcut.</div>
+                </div>
+            </div>
+            <div class="h"><span>Summary</span></div>
+            <div class="grid">
+                <div class="card mini"><small>Average per day usage</small><b class="num" id="avg">0</b><span>hours active</span></div>
+                <div class="card mini"><small>Sessions</small><b class="num" id="sess">0</b><span>total logins</span></div>
+                <div class="card mini"><small>This month</small><b class="num" id="total">0</b><span>hours used</span></div>
+                <div class="card mini"><small>Streak</small><b class="num" id="streak">0</b><span>days in a row</span></div>
+            </div>
+            <div class="pair">
+                <div>
+                    <div class="h"><span>Shortcuts</span></div>
+                    <div class="card sc scrollable">
+                        <button class="sb" id="sLoad"><b>Load</b><small>Pick from library</small></button>
+                        <button class="sb" id="sInj"><b>Inject</b><small>Attach now</small></button>
+                        <button class="sb" id="sSp"><b>Streamproof</b><small id="spS">Off</small></button>
+                        <button class="sb" id="sPn"><b>Panic</b><small>Hide everything</small></button>
+                        <button class="sb" id="sDes"><b>Self destruct</b><small>Remove all traces</small></button>
+                    </div>
+                </div>
+                <div>
+                    <div class="h"><span>Recent</span></div>
+                    <div class="card sc feed" id="feed"></div>
+                </div>
+            </div>
+        </section>
 
-def load_dashboard() -> str:
-    if DASHBOARD_HTML_PATH.exists():
-        return DASHBOARD_HTML_PATH.read_text(encoding="utf-8")
-    return "<h1 style='color:#fff;background:#000;padding:40px'>Missing: dashboard.html</h1>"
+        <section class="page" id="p-main">
+            <div class="seg" id="seg"></div>
+            <div id="cfg"></div>
+        </section>
 
+        <section class="page" id="p-configs">
+            <div class="seg" id="cseg">
+                <button data-k="public">Public</button>
+                <button data-k="library" class="on">Library</button>
+            </div>
+            <div id="clist" style="margin-top:14px"></div>
+        </section>
+    </div>
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://neondb_owner:npg_S7hoDMeaw2cQ@ep-wandering-dream-ah21egpt-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require",
-)
+    <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
+    <div class="toast" id="toast"></div>
 
+    <script>
+        const $ = id => document.getElementById(id);
+        const API_BASE = '.';
+        const api = {
+            get: p => fetch(API_BASE + p, {credentials:'include'}).then(r => r.json()),
+            post: (p, b) => fetch(API_BASE + p, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(b)}).then(r => r.json()),
+            del: p => fetch(API_BASE + p, {method:'DELETE', credentials:'include'}).then(r => r.json()),
+        };
 
-def get_db():
-    return psycopg2.connect(DATABASE_URL)
+        // ---------- state ----------
+        let CONFIG = null;
+        let SAVED = [];
+        let PUBLIC = [];
+        let csub = 'library';
+        let SIRI_TOKEN = null;
 
+        const DEFAULTS = {
+            visuals: { enabled: true, fov_visible: true, fov_radius: 120, labels: { enabled: true, username: true, distance: true } },
+            bounding_box: { enabled: true, corners: false, corner_size: 5, corner_color: [255,255,255,255], fill: true, gradient: true, gradient_color: [255,255,255,255], fill_opacity: 40 },
+            camlock: { closest_part: true, smoothing: 0.12, fov_enabled: true, fov_unlock: false, max_distance: 500.0, keybind: 'q', mode: 'toggle' },
+            triggerbot: { enabled: true, keybind: 'x', delay: 0, hitchance: 100, switch_delay: 0.35, mode: 'Hold' },
+            checks: { unlockondeath: true, self_death: true },
+            streamproof: false,
+            indicator: { enabled: true, text: 'vile.cc', font_size: 12, color: [255,255,255,255] }
+        };
 
-def _now() -> str:
-    return datetime.now().isoformat()
-
-
-def _expired(exp_iso: Optional[str]) -> bool:
-    if not exp_iso or exp_iso == "never":
-        return False
-    try:
-        return datetime.now() > datetime.fromisoformat(exp_iso)
-    except Exception:
-        return False
-
-
-def _resolve_session(cur, session_id: Optional[str]):
-    if not session_id:
-        return None
-    cur.execute("SELECT license_key, expires_at FROM login_sessions WHERE session_id=%s", (session_id,))
-    row = cur.fetchone()
-    if not row:
-        return None
-    lic_key, exp = row
-    if _expired(exp):
-        cur.execute("DELETE FROM login_sessions WHERE session_id=%s", (session_id,))
-        return None
-    return lic_key
-
-
-def _require_license(cur, request: Request) -> str:
-    session_id = request.cookies.get("session_id")
-    lic_key = _resolve_session(cur, session_id)
-    if not lic_key:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    cur.execute("SELECT active, expires_at FROM licenses WHERE license_key=%s", (lic_key,))
-    row = cur.fetchone()
-    if not row:
-        raise HTTPException(status_code=401, detail="License no longer exists")
-    active, exp = row
-    if not active:
-        raise HTTPException(status_code=403, detail="License inactive")
-    if _expired(exp):
-        raise HTTPException(status_code=403, detail="License expired")
-    return lic_key
-
-
-def _validate_client(cur, client_id: str, session_token: str) -> str:
-    if not client_id or not session_token:
-        raise HTTPException(status_code=400, detail="client_id and session_token required")
-    cur.execute(
-        "SELECT authenticated, license_key FROM clients WHERE client_id=%s AND session_token=%s",
-        (client_id, session_token),
-    )
-    row = cur.fetchone()
-    if not row:
-        raise HTTPException(status_code=401, detail="Invalid client credentials")
-    authenticated, lic_key = row
-    if not authenticated or not lic_key:
-        raise HTTPException(status_code=401, detail="Client not authenticated")
-    cur.execute("SELECT active, expires_at FROM licenses WHERE license_key=%s", (lic_key,))
-    lrow = cur.fetchone()
-    if not lrow:
-        raise HTTPException(status_code=401, detail="License no longer exists")
-    active, exp = lrow
-    if not active:
-        raise HTTPException(status_code=403, detail="License inactive")
-    if _expired(exp):
-        raise HTTPException(status_code=403, detail="License expired")
-    return lic_key
-
-
-def _ensure_tables():
-    try:
-        db = get_db()
-        cur = db.cursor()
-        cur.execute("""CREATE TABLE IF NOT EXISTS activity (
-            id SERIAL PRIMARY KEY,
-            license_key TEXT NOT NULL,
-            action TEXT NOT NULL,
-            detail TEXT,
-            created_at TEXT NOT NULL)""")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_activity_license ON activity(license_key, created_at DESC)")
-        cur.execute("""CREATE TABLE IF NOT EXISTS commands (
-            id SERIAL PRIMARY KEY,
-            license_key TEXT NOT NULL,
-            action TEXT NOT NULL,
-            detail TEXT,
-            created_at TEXT NOT NULL,
-            consumed INTEGER DEFAULT 0)""")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_commands_pending ON commands(license_key, consumed, id)")
-        cur.execute("""CREATE TABLE IF NOT EXISTS quick_tokens (
-            id SERIAL PRIMARY KEY,
-            license_key TEXT NOT NULL,
-            token TEXT NOT NULL UNIQUE,
-            created_at TEXT NOT NULL,
-            last_used TEXT)""")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_quick_tokens_license ON quick_tokens(license_key)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_quick_tokens_token ON quick_tokens(token)")
-        db.commit()
-        db.close()
-    except Exception:
-        pass
-
-
-_ensure_tables()
-
-
-class LicenseLogin(BaseModel):
-    license_key: str
-    token: str
-
-class ActivityBody(BaseModel):
-    action: str
-    detail: Optional[str] = None
-
-class CommandBody(BaseModel):
-    action: str
-    detail: Optional[str] = None
-
-class ClientCfgReq(BaseModel):
-    client_id: str
-    session_token: str
-
-class ClientCfgSave(ClientCfgReq):
-    config: dict
-
-class ClientLoadCfg(ClientCfgReq):
-    config_name: str
-
-class QuickCmdToken(BaseModel):
-    token: str
-    action: str
-
-class QuickCmd(BaseModel):
-    license_key: str
-    action: str
-    secret: str
-
-
-@app.post("/api/login")
-async def login(request: Request, data: LicenseLogin):
-    key = (data.license_key or "").strip()
-    tok = (data.token or "").strip()
-    if not key or not tok:
-        raise HTTPException(status_code=400, detail="License key and token required")
-
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute(
-            "SELECT license_key, hwid, hwid_resets, active, expires_at, discord_id FROM licenses WHERE license_key=%s",
-            (key,),
-        )
-        row = cur.fetchone()
-        if not row:
-            db.close()
-            raise HTTPException(status_code=401, detail="Invalid license key")
-        lic_key, bound_hwid, hwid_resets, active, exp, lic_discord = row
-        if not active:
-            db.close()
-            raise HTTPException(status_code=403, detail="License inactive")
-        if _expired(exp):
-            db.close()
-            raise HTTPException(status_code=403, detail="License expired")
-
-        cur.execute("SELECT discord_id FROM redeem_tokens WHERE token=%s AND license_key=%s",
-                    (tok, lic_key))
-        trow = cur.fetchone()
-        if not trow:
-            db.close()
-            raise HTTPException(status_code=401, detail="Invalid token for this license")
-        tok_discord = trow[0]
-        if lic_discord and tok_discord and lic_discord != tok_discord:
-            db.close()
-            raise HTTPException(status_code=403, detail="Token does not belong to this license")
-
-        if not bound_hwid:
-            new_hwid = secrets.token_hex(16)
-            cur.execute("UPDATE licenses SET hwid=%s, last_login=%s WHERE license_key=%s",
-                        (new_hwid, _now(), lic_key))
-        else:
-            cur.execute("UPDATE licenses SET last_login=%s WHERE license_key=%s", (_now(), lic_key))
-
-        session_id = secrets.token_hex(16)
-        exp_iso = (datetime.now() + timedelta(days=30)).isoformat()
-        cur.execute(
-            """INSERT INTO login_sessions (session_id, license_key, created_at, expires_at, ip_address)
-               VALUES (%s, %s, %s, %s, %s)""",
-            (session_id, lic_key, _now(), exp_iso, request.client.host if request.client else None),
-        )
-        cur.execute(
-            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
-            (lic_key, "login", None, _now()),
-        )
-        db.commit()
-        db.close()
-
-        resp = JSONResponse({
-            "valid": True,
-            "license_key": lic_key,
-            "expires_at": exp,
-            "hwid_resets": hwid_resets or 0,
-        })
-        resp.set_cookie("session_id", session_id, httponly=True, max_age=2592000, samesite="lax")
-        resp.set_cookie("license_key", lic_key, httponly=True, max_age=2592000, samesite="lax")
-        return resp
-    except HTTPException:
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=f"login failed: {e}")
-
-
-@app.get("/api/me")
-async def me(request: Request):
-    session_id = request.cookies.get("session_id")
-    if not session_id:
-        return {"authenticated": False}
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _resolve_session(cur, session_id)
-        if not lic_key:
-            db.close()
-            return {"authenticated": False}
-        cur.execute(
-            "SELECT license_key, hwid, hwid_resets, active, expires_at, created_at FROM licenses WHERE license_key=%s",
-            (lic_key,),
-        )
-        row = cur.fetchone()
-        db.close()
-        if not row:
-            return {"authenticated": False}
-        lic_key, hwid, resets, active, exp, created = row
-        return {
-            "authenticated": True,
-            "license_key": lic_key,
-            "hwid": hwid,
-            "hwid_resets": resets or 0,
-            "expires_at": exp,
-            "created_at": created,
-            "active": active,
+        function deepMerge(a, b) {
+            const o = Array.isArray(a) ? [...a] : {...a};
+            for (const k in b) {
+                if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k])) o[k] = deepMerge(o[k] || {}, b[k]);
+                else o[k] = b[k];
+            }
+            return o;
         }
-    except Exception:
-        try: db.close()
-        except: pass
-        return {"authenticated": False}
+        function getPath(o, p) { return p.split('.').reduce((a,k)=>a?a[k]:undefined, o); }
+        function setPath(o, p, v) { const s = p.split('.'); let c = o; for (let i=0;i<s.length-1;i++){ if(!c[s[i]]||typeof c[s[i]]!=='object')c[s[i]]={}; c=c[s[i]]; } c[s[s.length-1]]=v; }
 
-
-@app.post("/api/logout")
-async def logout(request: Request):
-    session_id = request.cookies.get("session_id")
-    if session_id:
-        try:
-            db = get_db()
-            cur = db.cursor()
-            cur.execute("DELETE FROM login_sessions WHERE session_id=%s", (session_id,))
-            db.commit()
-            db.close()
-        except Exception:
-            pass
-    resp = JSONResponse({"success": True})
-    resp.delete_cookie("session_id")
-    resp.delete_cookie("license_key")
-    return resp
-
-
-@app.post("/api/client/config")
-async def client_get_config(data: ClientCfgReq):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        key = _validate_client(cur, (data.client_id or "").strip(), (data.session_token or "").strip())
-        cur.execute("SELECT config FROM settings WHERE key=%s", (key,))
-        row = cur.fetchone()
-        db.close()
-        if not row:
-            return {}
-        try:
-            return json.loads(row[0])
-        except Exception:
-            return {}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/client/config/save")
-async def client_save_config(data: ClientCfgSave):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        key = _validate_client(cur, (data.client_id or "").strip(), (data.session_token or "").strip())
-        cur.execute(
-            """INSERT INTO settings (key, config) VALUES (%s, %s)
-               ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
-            (key, json.dumps(data.config)),
-        )
-        cur.execute(
-            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
-            (key, "client_config_saved", None, _now()),
-        )
-        db.commit()
-        db.close()
-        return {"success": True}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/client/configs")
-async def client_list_configs(data: ClientCfgReq):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        key = _validate_client(cur, (data.client_id or "").strip(), (data.session_token or "").strip())
-        cur.execute(
-            """SELECT id, config_name, visibility, created_at
-               FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC""",
-            (key,),
-        )
-        rows = cur.fetchall()
-        db.close()
-        return {"configs": [
-            {"id": r[0], "name": r[1], "visibility": r[2] or "private", "created_at": r[3]}
-            for r in rows
-        ]}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/client/configs/load")
-async def client_load_config(data: ClientLoadCfg):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        key = _validate_client(cur, (data.client_id or "").strip(), (data.session_token or "").strip())
-        cur.execute(
-            "SELECT config_data FROM saved_configs WHERE license_key=%s AND config_name=%s",
-            (key, data.config_name.strip()),
-        )
-        row = cur.fetchone()
-        if not row:
-            db.close()
-            raise HTTPException(status_code=404, detail="Saved config not found")
-        cfg_json = row[0]
-        cur.execute(
-            """INSERT INTO settings (key, config) VALUES (%s, %s)
-               ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
-            (key, cfg_json),
-        )
-        cur.execute(
-            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
-            (key, "config_loaded", data.config_name[:60], _now()),
-        )
-        db.commit()
-        db.close()
-        try:
-            return json.loads(cfg_json)
-        except Exception:
-            return {}
-    except HTTPException:
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/command")
-async def enqueue_command(request: Request, data: CommandBody):
-    if not data.action:
-        raise HTTPException(status_code=400, detail="action required")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute(
-            """INSERT INTO commands (license_key, action, detail, created_at, consumed)
-               VALUES (%s, %s, %s, %s, 0)""",
-            (lic_key, data.action[:40], (data.detail or "")[:120] or None, _now()),
-        )
-        cur.execute(
-            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
-            (lic_key, data.action[:40], (data.detail or "")[:120] or None, _now()),
-        )
-        db.commit()
-        db.close()
-        return {"success": True}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/client/commands")
-async def client_pull_commands(data: ClientCfgReq):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        key = _validate_client(cur, (data.client_id or "").strip(), (data.session_token or "").strip())
-        cur.execute(
-            """SELECT id, action, detail FROM commands
-               WHERE license_key=%s AND consumed=0 ORDER BY id ASC LIMIT 50""",
-            (key,),
-        )
-        rows = cur.fetchall()
-        if rows:
-            ids = [r[0] for r in rows]
-            cur.execute("UPDATE commands SET consumed=1 WHERE id = ANY(%s)", (ids,))
-            db.commit()
-        db.close()
-        return {"commands": [{"id": r[0], "action": r[1], "detail": r[2]} for r in rows]}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-VALID_QUICK_ACTIONS = ("inject", "streamproof_on", "streamproof_off", "panic", "selfdestruct")
-
-
-def _enqueue_for_license(cur, lic_key: str, action: str):
-    cur.execute(
-        """INSERT INTO commands (license_key, action, detail, created_at, consumed)
-           VALUES (%s, %s, %s, %s, 0)""",
-        (lic_key, action, None, _now()),
-    )
-    cur.execute(
-        "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
-        (lic_key, action, None, _now()),
-    )
-
-
-@app.post("/api/quick/token")
-async def get_quick_token(request: Request):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute(
-            "SELECT token, created_at FROM quick_tokens WHERE license_key=%s ORDER BY id ASC LIMIT 1",
-            (lic_key,),
-        )
-        row = cur.fetchone()
-        if row:
-            token, created = row
-        else:
-            token = "vq_" + secrets.token_urlsafe(32)
-            created = _now()
-            cur.execute(
-                "INSERT INTO quick_tokens (license_key, token, created_at, last_used) VALUES (%s, %s, %s, %s)",
-                (lic_key, token, created, None),
-            )
-            cur.execute(
-                "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
-                (lic_key, "quick_token_created", None, _now()),
-            )
-        db.commit()
-        db.close()
-        return {"token": token, "created_at": created}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/quick/token/rotate")
-async def rotate_quick_token(request: Request):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute("DELETE FROM quick_tokens WHERE license_key=%s", (lic_key,))
-        token = "vq_" + secrets.token_urlsafe(32)
-        created = _now()
-        cur.execute(
-            "INSERT INTO quick_tokens (license_key, token, created_at, last_used) VALUES (%s, %s, %s, %s)",
-            (lic_key, token, created, None),
-        )
-        cur.execute(
-            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
-            (lic_key, "quick_token_rotated", None, _now()),
-        )
-        db.commit()
-        db.close()
-        return {"token": token, "created_at": created}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/quick/run")
-async def quick_run(data: QuickCmdToken):
-    action = (data.action or "").strip().lower()
-    if action not in VALID_QUICK_ACTIONS:
-        raise HTTPException(status_code=400, detail="invalid action")
-    tok = (data.token or "").strip()
-    if not tok:
-        raise HTTPException(status_code=400, detail="token required")
-
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute(
-            "SELECT license_key FROM quick_tokens WHERE token=%s",
-            (tok,),
-        )
-        row = cur.fetchone()
-        if not row:
-            db.close()
-            raise HTTPException(status_code=401, detail="invalid token")
-        lic_key = row[0]
-
-        cur.execute("SELECT active, expires_at FROM licenses WHERE license_key=%s", (lic_key,))
-        lrow = cur.fetchone()
-        if not lrow:
-            db.close()
-            raise HTTPException(status_code=401, detail="license no longer exists")
-        active, exp = lrow
-        if not active:
-            db.close()
-            raise HTTPException(status_code=403, detail="license inactive")
-        if _expired(exp):
-            db.close()
-            raise HTTPException(status_code=403, detail="license expired")
-
-        _enqueue_for_license(cur, lic_key, action)
-        cur.execute("UPDATE quick_tokens SET last_used=%s WHERE token=%s", (_now(), tok))
-        db.commit()
-        db.close()
-        return {"success": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-LEGACY_SIRI_SECRET = os.environ.get("SIRI_SECRET", "")
-
-@app.post("/api/quick-command")
-async def quick_command(data: QuickCmd):
-    if not LEGACY_SIRI_SECRET or (data.secret or "") != LEGACY_SIRI_SECRET:
-        raise HTTPException(status_code=401, detail="bad secret")
-    action = (data.action or "").strip().lower()
-    if action not in VALID_QUICK_ACTIONS:
-        raise HTTPException(status_code=400, detail="invalid action")
-    key = (data.license_key or "").strip()
-    if not key:
-        raise HTTPException(status_code=400, detail="license_key required")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("SELECT license_key FROM licenses WHERE license_key=%s", (key,))
-        if not cur.fetchone():
-            db.close()
-            raise HTTPException(status_code=404, detail="license not found")
-        _enqueue_for_license(cur, key, action)
-        db.commit()
-        db.close()
-        return {"success": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/stats")
-async def stats(request: Request):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-
-        cur.execute(
-            "SELECT created_at, expires_at FROM login_sessions WHERE license_key=%s ORDER BY created_at ASC",
-            (lic_key,),
-        )
-        rows = cur.fetchall()
-
-        now = datetime.now()
-        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-        sessions_total = len(rows)
-        total_minutes_all = 0.0
-        total_minutes_month = 0.0
-        active_days = set()
-
-        for created_iso, expires_iso in rows:
-            try:
-                created = datetime.fromisoformat(created_iso)
-            except Exception:
-                continue
-            try:
-                expires = datetime.fromisoformat(expires_iso)
-            except Exception:
-                expires = created
-            end = min(expires, now)
-            if end <= created:
-                dur_min = 0.0
-            else:
-                dur_min = (end - created).total_seconds() / 60.0
-            total_minutes_all += dur_min
-            if created >= month_start:
-                total_minutes_month += dur_min
-            active_days.add(created.date())
-
-        if active_days:
-            days_span = (now.date() - min(active_days)).days + 1
-            days_span = max(1, days_span)
-            avg_hours_per_day = (total_minutes_all / 60.0) / days_span
-        else:
-            avg_hours_per_day = 0.0
-
-        streak = 0
-        d = now.date()
-        while d in active_days:
-            streak += 1
-            d = d - timedelta(days=1)
-
-        this_month_hours = total_minutes_month / 60.0
-
-        db.close()
-        return {
-            "avg_hours_per_day": round(avg_hours_per_day, 2),
-            "sessions": sessions_total,
-            "this_month_hours": round(this_month_hours, 2),
-            "streak_days": streak,
+        // ---------- login ----------
+        async function trySession() {
+            const me = await api.get('/api/me');
+            if (me.authenticated) {
+                $('loginView').style.display = 'none';
+                $('appView').style.display = 'block';
+                $('accLicense').textContent = me.license_key || '—';
+                $('accHwid').textContent = (me.hwid || 'not bound').slice(0, 24);
+                renderExpiry(me.expires_at);
+                await boot();
+                return true;
+            }
+            return false;
         }
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        function renderExpiry(exp) {
+            if (!exp || exp === 'never') { $('accLeft').textContent='never'; $('accBar').style.width='100%'; return; }
+            const t = new Date(exp).getTime();
+            const left = t - Date.now();
+            if (left <= 0) { $('accLeft').textContent='expired'; $('accBar').style.width='0%'; return; }
+            const d = Math.floor(left/86400000), h = Math.floor((left%86400000)/3600000);
+            $('accLeft').textContent = `${d}d ${h}h`;
+            $('accBar').style.width = Math.min(100, (left/(30*86400000))*100) + '%';
+        }
+        $('liBtn').onclick = async () => {
+            const key = $('liKey').value.trim();
+            const tok = $('liToken').value.trim();
+            if (!key || !tok) { $('liErr').textContent='Enter both.'; return; }
+            $('liBtn').disabled = true; $('liErr').textContent = '';
+            const r = await api.post('/api/login', {license_key:key, token:tok});
+            if (!r || r.detail) {
+                $('liErr').textContent = (r && r.detail) || 'Login failed';
+                $('liBtn').disabled = false;
+                return;
+            }
+            await trySession();
+        };
 
+        // ---------- tabs ----------
+        document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+            document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+            const cur = document.querySelector('.page.on'), nx = $('p-' + b.dataset.p);
+            if (cur === nx) return;
+            cur.classList.add('out');
+            setTimeout(() => { cur.classList.remove('out','on'); nx.classList.add('on'); scrollTo(0,0); }, 130);
+            if (b.dataset.p === 'stats') { loadStats(); loadActivity(); }
+        });
 
-@app.get("/api/activity")
-async def get_activity(request: Request):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute(
-            "SELECT action, detail, created_at FROM activity WHERE license_key=%s ORDER BY created_at DESC LIMIT 20",
-            (lic_key,),
-        )
-        rows = cur.fetchall()
-        db.close()
-        out = []
-        for action, detail, created in rows:
-            out.append({"action": action, "detail": detail, "created_at": created})
-        return {"activity": out}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        // ---------- helpers ----------
+        function drag(el, fn) {
+            const f = e => {
+                const r = el.getBoundingClientRect();
+                fn(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)));
+            };
+            el.onpointerdown = e => { el.setPointerCapture(e.pointerId); el._d = 1; el.classList.add('d'); f(e); };
+            el.onpointermove = e => { if (el._d) f(e); };
+            el.onpointerup = el.onpointercancel = () => { el._d = 0; el.classList.remove('d'); };
+        }
+        function mkSlider(min, max, v, cb, step=1, u='') {
+            const el = document.createElement('input');
+            el.className = 'num-in num'; el.type = 'text'; el.inputMode = 'numeric'; el.autocomplete = 'off';
+            const api = { el, set(x) { x = Math.max(min, Math.min(max, Math.round(x/step)*step)); if (isNaN(x)) x = min; api.v = x; el.value = x + u; } };
+            el.onfocus = () => { el.value = api.v; el.select(); };
+            el.onblur = () => { const n = parseFloat(el.value); api.set(isNaN(n) ? api.v : n); cb(api.v); };
+            el.onkeydown = e => { if (e.key === 'Enter') el.blur(); else if (e.key === 'Escape') { el.value = api.v; el.blur(); } };
+            api.set(v);
+            return api;
+        }
+        function toast(t) {
+            const e = $('toast'); e.textContent = t; e.classList.add('on');
+            clearTimeout(e._t); e._t = setTimeout(() => e.classList.remove('on'), 1600);
+        }
+        const ov = $('ov'), sheet = $('sheet');
+        const openM = h => { sheet.innerHTML = h; ov.classList.add('open'); };
+        const closeM = () => ov.classList.remove('open');
+        ov.onmousedown = e => { if (e.target === ov) closeM(); };
 
+        // ---------- stats + activity ----------
+        function relTime(iso) {
+            try {
+                const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+                if (s < 60) return 'just now';
+                if (s < 3600) return Math.floor(s / 60) + 'm ago';
+                if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+                return Math.floor(s / 86400) + 'd ago';
+            } catch { return ''; }
+        }
+        async function loadStats() {
+            const s = await api.get('/api/stats');
+            if (!s || s.detail) return;
+            $('avg').textContent = s.avg_hours_per_day ?? 0;
+            $('sess').textContent = s.sessions ?? 0;
+            $('total').textContent = s.this_month_hours ?? 0;
+            $('streak').textContent = s.streak_days ?? 0;
+        }
+        async function loadActivity() {
+            const r = await api.get('/api/activity');
+            const feed = $('feed');
+            if (!r || !r.activity || !r.activity.length) {
+                feed.innerHTML = '<div><span>No activity yet</span><em></em></div>';
+                return;
+            }
+            feed.innerHTML = r.activity.map(a => {
+                const label = (a.action || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                const detail = a.detail ? `<small>${esc(a.detail)}</small>` : '';
+                return `<div><span>${esc(label)}<br>${detail}</span><em>${relTime(a.created_at)}</em></div>`;
+            }).join('');
+        }
+        async function logActivity(action, detail) {
+            try { await api.post('/api/activity', {action, detail: detail || null}); } catch {}
+            await loadActivity();
+            await loadStats();
+        }
 
-@app.post("/api/activity")
-async def add_activity(request: Request, data: ActivityBody):
-    if not data.action:
-        raise HTTPException(status_code=400, detail="action required")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute(
-            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
-            (lic_key, data.action[:40], (data.detail or "")[:120] or None, _now()),
-        )
-        db.commit()
-        db.close()
-        return {"success": True}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        // ---------- Siri request ----------
+        function escAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+        function siriRequest() {
+            const url = location.origin + '/api/quick/run';
+            const body = JSON.stringify({token: SIRI_TOKEN, action: "inject"});
+            return {url, body};
+        }
+        function renderSiri() {
+            const box = $('siriBox');
+            if (!SIRI_TOKEN) {
+                box.innerHTML = `<div class="siri-empty" id="siriEmpty">Get a token to build your shortcut.</div>
+                    <div class="siri-actions"><button class="btn-sm p" id="siriGet">Get my token</button></div>`;
+                $('siriGet').onclick = () => fetchSiriToken(false);
+                return;
+            }
+            const {body} = siriRequest();
+            box.innerHTML = `
+                <div class="siri-block">
+                    <div class="siri-body-row">
+                        <div class="siri-field"><label>Body</label><div class="siri-val body blur" id="svBody">${escAttr(body)}</div></div>
+                    </div>
+                </div>
+                <div class="siri-actions">
+                    <button class="btn-sm p" id="siriCopy">Copy request</button>
+                    <button class="btn-sm" id="siriRotate">Rotate</button>
+                </div>`;
+            $('svBody').onclick = () => $('svBody').classList.toggle('blur');
+            $('siriCopy').onclick = async () => {
+                const text = `URL: ${location.origin + '/api/quick/run'}\nMethod: POST\nHeaders: Content-Type: application/json\nBody: ${body}`;
+                try { await navigator.clipboard.writeText(text); toast('Copied'); }
+                catch { toast('Copy failed'); }
+            };
+            $('siriRotate').onclick = () => {
+                openM(`<div class="mh"><div><b>Rotate token</b><small>Invalidates the current one</small></div><button class="x" id="cx">✕</button></div>
+                    <p>Any shortcut using the old token will stop working. You'll get a new one to paste in.</p>
+                    <div class="btns"><button id="no">Cancel</button><button class="p" id="rot">Rotate</button></div>`);
+                $('cx').onclick = $('no').onclick = closeM;
+                $('rot').onclick = async () => { closeM(); await fetchSiriToken(true); };
+            };
+        }
+        async function loadExistingSiriToken() {
+            const r = await api.post('/api/quick/token', {});
+            if (r && r.token) {
+                SIRI_TOKEN = r.token;
+                renderSiri();
+            } else {
+                renderSiri();
+            }
+        }
+        async function fetchSiriToken(rotate) {
+            const endpoint = rotate ? '/api/quick/token/rotate' : '/api/quick/token';
+            const r = await api.post(endpoint, {});
+            if (!r || r.detail) { toast(r && r.detail ? r.detail : 'Token fetch failed'); return; }
+            SIRI_TOKEN = r.token;
+            renderSiri();
+            toast(rotate ? 'Token rotated' : 'Token ready');
+        }
 
+        // ---------- color picker ----------
+        const h2r = (h,s,v) => { const f=n=>{const k=(n+h/60)%6;return v-v*s*Math.max(0,Math.min(k,4-k,1));}; return [f(5),f(3),f(1)].map(x=>Math.round(x*255)); };
+        const r2h = (r,g,b) => { r/=255; g/=255; b/=255; const m=Math.max(r,g,b), d=m-Math.min(r,g,b); let h=0; if(d){h=m===r?((g-b)/d)%6:m===g?(b-r)/d+2:(r-g)/d+4;h*=60;if(h<0)h+=360;} return [h, m?d/m:0, m]; };
+        const hex = a => '#' + a.map(x => x.toString(16).padStart(2, '0')).join('');
+        const parse = s => { s = s.replace('#', ''); if (s.length === 3) s = [...s].map(c => c + c).join(''); return /^[0-9a-f]{6}$/i.test(s) ? [0, 2, 4].map(i => parseInt(s.substr(i, 2), 16)) : null; };
 
-@app.get("/api/config")
-async def get_config(request: Request):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute("SELECT config FROM settings WHERE key=%s", (lic_key,))
-        row = cur.fetchone()
-        db.close()
-        if not row:
-            return {}
-        try:
-            return json.loads(row[0])
-        except Exception:
-            return {}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception:
-        try: db.close()
-        except: pass
-        return {}
+        function openColor(path, label, arr, sw) {
+            let [h,s,v] = r2h(arr[0], arr[1], arr[2]);
+            openM(`<div class="mh"><div><b>${label}</b><small>Custom color</small></div><button class="x" id="cx">✕</button></div>
+                <div class="sv" id="sv"><i class="svk" id="svk"></i></div><div class="hue" id="hue"><i class="hk" id="hk"></i></div>
+                <div class="cr"><div class="prev" id="pv"></div><input class="hx" id="hx" maxlength="7" spellcheck="false"></div>
+                <div class="btns"><button id="cc">Cancel</button><button class="p" id="ca">Apply</button></div>`);
+            function upd() {
+                const rgb = h2r(h,s,v), hx = hex(rgb);
+                $('sv').style.background = `linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,hsl(${h} 100% 50%))`;
+                $('svk').style.left = s*100+'%'; $('svk').style.top = (1-v)*100+'%';
+                $('hk').style.left = h/360*100+'%';
+                $('pv').style.background = hx;
+                if (document.activeElement !== $('hx')) $('hx').value = hx;
+            }
+            const sv = $('sv');
+            sv.onpointerdown = e => { sv.setPointerCapture(e.pointerId); sv._d = 1; doSv(e); };
+            sv.onpointermove = e => { if (sv._d) doSv(e); };
+            sv.onpointerup = sv.onpointercancel = () => { sv._d = 0; };
+            function doSv(e) {
+                const r = sv.getBoundingClientRect();
+                s = Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
+                v = 1 - Math.min(1,Math.max(0,(e.clientY-r.top)/r.height));
+                upd();
+            }
+            drag($('hue'), x => { h = x*359.9; upd(); });
+            $('hx').oninput = e => { const p = parse(e.target.value); if (p) { [h,s,v] = r2h(...p); upd(); } };
+            $('cx').onclick = $('cc').onclick = closeM;
+            $('ca').onclick = () => {
+                const rgb = h2r(h,s,v);
+                setPath(CONFIG, path, [rgb[0],rgb[1],rgb[2], arr[3] ?? 255]);
+                save();
+                sw.style.background = hex(rgb);
+                closeM();
+            };
+            upd();
+        }
 
+        // ---------- main tab ----------
+        const SECTIONS = {
+            visuals: [
+                ['Bounding box', [
+                    ['bounding_box.enabled','tg','Enabled'],
+                    ['bounding_box.corners','tg','Corners'],
+                    ['bounding_box.corner_size','sl','Corner size',1,20,1,''],
+                    ['bounding_box.fill','tg','Fill'],
+                    ['bounding_box.fill_opacity','sl','Fill opacity',0,100,1,'%'],
+                    ['bounding_box.gradient','tg','Gradient'],
+                    ['bounding_box.corner_color','col','Corner color'],
+                    ['bounding_box.gradient_color','col','Gradient color'],
+                ]],
+                ['Labels', [
+                    ['visuals.labels.enabled','tg','Labels'],
+                    ['visuals.labels.username','tg','Username'],
+                    ['visuals.labels.distance','tg','Distance'],
+                ]],
+                ['FOV', [
+                    ['visuals.enabled','tg','Visuals'],
+                    ['visuals.fov_visible','tg','FOV circle'],
+                    ['visuals.fov_radius','sl','FOV radius',10,360,1,'°'],
+                ]],
+                ['Indicator', [
+                    ['indicator.enabled','tg','Enabled'],
+                    ['indicator.text','txt','Text'],
+                    ['indicator.font_size','sl','Font size',8,24,1,'px'],
+                    ['indicator.color','col','Color'],
+                ]],
+                ['Session', [
+                    ['streamproof','tg','Streamproof'],
+                ]],
+            ],
+            triggerbot: [
+                ['General', [
+                    ['triggerbot.enabled','tg','Enabled'],
+                    ['triggerbot.keybind','key','Keybind'],
+                    ['triggerbot.mode','sel','Mode',['Hold','Toggle','Always']],
+                ]],
+                ['Timing', [
+                    ['triggerbot.delay','sl','Delay',0,300,1,'ms'],
+                    ['triggerbot.hitchance','sl','Hitchance',0,100,1,'%'],
+                    ['triggerbot.switch_delay','sl','Switch delay',0,2,0.01,'s'],
+                ]],
+                ['Checks', [
+                    ['checks.unlockondeath','tg','Unlock on death'],
+                    ['checks.self_death','tg','Self death check'],
+                ]],
+            ],
+            camlock: [
+                ['General', [
+                    ['camlock.closest_part','tg','Closest part'],
+                    ['camlock.keybind','key','Keybind'],
+                    ['camlock.mode','sel','Mode',['toggle','hold']],
+                ]],
+                ['Aim', [
+                    ['camlock.smoothing','sl','Smoothing',0,100,1,'%'],
+                    ['camlock.fov_enabled','tg','FOV enabled'],
+                    ['camlock.fov_unlock','tg','FOV unlock'],
+                    ['camlock.max_distance','sl','Max distance',10,2000,10,'m'],
+                ]],
+            ],
+        };
+        const NAMES = { visuals: 'Visuals', triggerbot: 'Triggerbot', camlock: 'Camlock' };
 
-@app.post("/api/config")
-async def set_config(request: Request, data: dict):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute(
-            """INSERT INTO settings (key, config) VALUES (%s, %s)
-               ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
-            (lic_key, json.dumps(data)),
-        )
-        db.commit()
-        db.close()
-        return {"status": "ok"}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        let cur = 'visuals', listening = null, saveTimer = null;
+        function save() {
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => api.post('/api/config', CONFIG), 400);
+        }
 
+        const seg = $('seg'), box = $('cfg');
+        function buildSeg() {
+            seg.innerHTML = Object.keys(NAMES).map(k => `<button data-k="${k}">${NAMES[k]}</button>`).join('');
+            seg.onclick = e => { if (e.target.dataset.k) { cur = e.target.dataset.k; render(); } };
+        }
 
-@app.get("/api/configs")
-async def list_saved(request: Request):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute(
-            """SELECT id, config_name, config_data, visibility, created_at
-               FROM saved_configs WHERE license_key=%s ORDER BY created_at DESC""",
-            (lic_key,),
-        )
-        rows = cur.fetchall()
-        db.close()
-        out = []
-        for row in rows:
-            cid, name, data_json, vis, created = row
-            try: data = json.loads(data_json) if data_json else {}
-            except Exception: data = {}
-            out.append({"id": cid, "name": name, "data": data,
-                        "visibility": vis or "private", "created_at": created})
-        return {"configs": out}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        function render() {
+            [...seg.children].forEach(b => b.classList.toggle('on', b.dataset.k === cur));
+            box.innerHTML = '';
+            let pr = null;
+            SECTIONS[cur].forEach(([title, items], i) => {
+                const g = document.createElement('div');
+                g.className = 'gb';
+                g.innerHTML = `<label>${title}</label>`;
+                items.forEach(it => g.appendChild(row(it)));
+                if (i === 0) box.appendChild(g);
+                else {
+                    if (!pr) { pr = document.createElement('div'); pr.className='pair g'; box.appendChild(pr); }
+                    pr.appendChild(g);
+                }
+            });
+        }
 
+        function row(it) {
+            const r = document.createElement('div');
+            r.className = 'it';
+            const [path, type, label, ...args] = it;
+            const val = getPath(CONFIG, path);
+            if (type === 'tg') {
+                r.innerHTML = `<span>${label}</span><div class="tg ${val?'on':''}"></div>`;
+                r.style.cursor = 'pointer';
+                r.onclick = () => {
+                    const v = !getPath(CONFIG, path);
+                    setPath(CONFIG, path, v);
+                    r.lastChild.classList.toggle('on', v);
+                    save();
+                };
+            } else if (type === 'sl') {
+                const [min,max,step,unit] = args;
+                r.innerHTML = `<span>${label}</span>`;
+                r.appendChild(mkSlider(min, max, val ?? min, v => { setPath(CONFIG, path, v); save(); }, step, unit).el);
+            } else if (type === 'key') {
+                r.innerHTML = `<span>${label}</span><button class="key">${val || '—'}</button>`;
+                const b = r.querySelector('button');
+                b.onclick = e => {
+                    e.stopPropagation();
+                    if (listening) { listening.el.classList.remove('wait'); listening.el.textContent = listening.v; }
+                    listening = {el: b, v: b.textContent, path};
+                    b.classList.add('wait'); b.textContent = 'press a key…';
+                    document.addEventListener('keydown', onKeyCap, {once:true});
+                    document.addEventListener('mousedown', onMBCap, {once:true});
+                };
+                function onKeyCap(ev) {
+                    ev.preventDefault();
+                    let k = ev.key.length === 1 ? ev.key.toUpperCase() : ev.key;
+                    if (k === 'Escape') k = null;
+                    if (k) { setPath(CONFIG, path, k.toLowerCase()); save(); }
+                    b.textContent = k || (getPath(CONFIG, path) || '—');
+                    b.classList.remove('wait');
+                    document.removeEventListener('mousedown', onMBCap);
+                    listening = null;
+                }
+                function onMBCap(ev) {
+                    ev.preventDefault();
+                    const map = ['','MouseMiddle','MouseRight','MouseButton4','MouseButton5'];
+                    const k = map[ev.button] || 'Mouse'+ev.button;
+                    setPath(CONFIG, path, k.toLowerCase()); save();
+                    b.textContent = k; b.classList.remove('wait');
+                    document.removeEventListener('keydown', onKeyCap);
+                    listening = null;
+                }
+            } else if (type === 'sel') {
+                const opts = args[0];
+                r.innerHTML = `<span>${label}</span><div class="dd"><button class="sel"><span>${val || opts[0]}</span><i></i></button><div class="dm">${opts.map(o=>`<div class="do${o===val?' on':''}">${o}</div>`).join('')}</div></div>`;
+                const dd = r.querySelector('.dd'), bt = dd.firstChild, m = dd.lastChild;
+                bt.onclick = e => {
+                    e.stopPropagation();
+                    const w = dd.classList.contains('open');
+                    document.querySelectorAll('.dd.open').forEach(d=>d.classList.remove('open'));
+                    if (!w) dd.classList.add('open');
+                };
+                m.onclick = e => {
+                    const o = e.target.closest('.do'); if (!o) return;
+                    setPath(CONFIG, path, o.textContent); save();
+                    bt.firstChild.textContent = o.textContent;
+                    m.querySelectorAll('.do').forEach(x=>x.classList.toggle('on', x===o));
+                    dd.classList.remove('open');
+                };
+            } else if (type === 'col') {
+                const arr = val || [255,255,255,255];
+                const hx = '#' + arr.slice(0,3).map(x=>x.toString(16).padStart(2,'0')).join('');
+                r.innerHTML = `<span>${label}</span><button class="sw" style="background:${hx}"></button>`;
+                const b = r.querySelector('button');
+                b.onclick = () => openColor(path, label, arr, b);
+            } else if (type === 'txt') {
+                r.innerHTML = `<span>${label}</span><input class="num-in" style="width:130px" value="${(val||'').replace(/"/g,'&quot;')}">`;
+                const inp = r.querySelector('input');
+                inp.oninput = () => { setPath(CONFIG, path, inp.value); save(); };
+            }
+            return r;
+        }
 
-@app.post("/api/configs")
-async def create_saved(request: Request, data: dict):
-    name = (data.get("name") or "").strip()
-    cfg = data.get("data")
-    vis = (data.get("visibility") or "private").strip().lower()
-    if vis not in ("private", "public"): vis = "private"
-    if not name:
-        raise HTTPException(status_code=400, detail="Name required")
-    if not isinstance(cfg, dict):
-        raise HTTPException(status_code=400, detail="Config required")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute(
-            """INSERT INTO saved_configs (license_key, config_name, config_data, visibility, created_at)
-               VALUES (%s, %s, %s, %s, %s)
-               ON CONFLICT (license_key, config_name) DO UPDATE
-                 SET config_data = EXCLUDED.config_data,
-                     visibility = EXCLUDED.visibility
-               RETURNING id""",
-            (lic_key, name[:60], json.dumps(cfg), vis, _now()),
-        )
-        new_id = cur.fetchone()[0]
-        cur.execute(
-            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
-            (lic_key, "config_saved", name[:60], _now()),
-        )
-        db.commit()
-        db.close()
-        return {"success": True, "id": new_id}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        // ---------- configs tab ----------
+        const cseg = $('cseg');
+        cseg.onclick = e => {
+            if (e.target.dataset.k) {
+                csub = e.target.dataset.k;
+                [...cseg.children].forEach(b => b.classList.toggle('on', b === e.target));
+                clist();
+            }
+        };
 
+        async function loadSaved() {
+            const r = await api.get('/api/configs');
+            if (r && r.configs) SAVED = r.configs;
+        }
+        async function loadPublic() {
+            const r = await api.get('/api/community/configs');
+            if (r && r.configs) PUBLIC = r.configs;
+        }
 
-@app.delete("/api/configs/{config_id}")
-async def delete_saved(request: Request, config_id: int):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute("DELETE FROM saved_configs WHERE id=%s AND license_key=%s", (config_id, lic_key))
-        db.commit()
-        db.close()
-        return {"success": True}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
+        function clist() {
+            const el = $('clist');
+            const list = csub === 'public' ? PUBLIC : SAVED;
+            let inner = '';
+            if (!list.length) {
+                inner = `<div class="empty">${csub === 'public' ? 'No public configs yet.' : 'Your library is empty.'}</div>`;
+            } else {
+                inner = '<div class="cg">' + list.map(c => {
+                    const tag = c.visibility === 'public' ? 'Public' : 'Private';
+                    return `<div class="card cq" data-id="${c.id}">
+                        <div class="qt"><span class="tag">${tag}</span></div>
+                        <div class="qm"><b>${esc(c.name)}</b><p>${esc(c.description || 'Saved config')}</p></div>
+                        <div class="qb"><span>${csub === 'public' ? 'by ' + esc(c.author || '—') : 'local'}</span><span>${c.likes ?? ''}</span></div>
+                    </div>`;
+                }).join('') + '<div class="cq mkt" id="mkCfg"><i>+</i><span>Create config</span><small>or else bud</small></div></div>';
+            }
+            el.innerHTML = inner;
+            el.querySelectorAll('.cq[data-id]').forEach(card => card.onclick = () => cmodal(+card.dataset.id));
+            const mk = $('mkCfg'); if (mk) mk.onclick = createCfg;
+        }
 
-@app.post("/api/configs/{config_id}/visibility")
-async def set_visibility(request: Request, config_id: int, data: dict):
-    vis = (data.get("visibility") or "private").strip().lower()
-    if vis not in ("private", "public"):
-        raise HTTPException(status_code=400, detail="Invalid visibility")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute("UPDATE saved_configs SET visibility=%s WHERE id=%s AND license_key=%s",
-                    (vis, config_id, lic_key))
-        db.commit()
-        db.close()
-        return {"success": True}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        function cmodal(id) {
+            const list = csub === 'public' ? PUBLIC : SAVED;
+            const c = list.find(x => x.id === id);
+            if (!c) return;
+            const isPub = csub === 'public';
+            openM(`<div class="mh"><div><b>${esc(c.name)}</b><small>${isPub ? 'by ' + esc(c.author||'—') : 'private'}</small></div><button class="x" id="cx">✕</button></div>
+                <p>${esc(c.description || 'Saved config')}</p>
+                <div class="btns">
+                    <button id="ld">Load</button>
+                    ${isPub ? `<button class="p" id="sv">Save to library</button>` : `<button class="p" id="exp">${c.visibility === 'public' ? 'Make private' : 'Make public'}</button>`}
+                    ${!isPub ? `<button id="rm" style="color:#c98">Delete</button>` : ''}
+                </div>`);
+            $('cx').onclick = closeM;
+            $('ld').onclick = async () => {
+                const data = isPub ? c.config_data : c.data;
+                CONFIG = deepMerge(DEFAULTS, data || {});
+                save(); render(); closeM(); toast(c.name + ' loaded');
+                await logActivity('config_loaded', c.name);
+            };
+            if (isPub) {
+                $('sv').onclick = async () => {
+                    await api.post('/api/community/configs/save-mine', {community_config_id: c.id});
+                    await loadSaved(); closeM(); toast('Saved to library');
+                    if (csub === 'library') clist();
+                };
+            } else {
+                $('exp').onclick = async () => {
+                    const vis = c.visibility === 'public' ? 'private' : 'public';
+                    await api.post(`/api/configs/${c.id}/visibility`, {visibility: vis});
+                    await loadSaved(); closeM(); clist();
+                    toast(vis === 'public' ? 'Made public' : 'Made private');
+                };
+                $('rm').onclick = async () => {
+                    if (!confirm('Delete this config?')) return;
+                    await api.del(`/api/configs/${c.id}`);
+                    await loadSaved(); closeM(); clist();
+                };
+            }
+        }
 
+        function createCfg() {
+            openM(`<div class="mh"><div><b>Create config</b><small>Saves current settings</small></div><button class="x" id="cx">✕</button></div>
+                <input class="fi" id="cn" maxlength="40" placeholder="Name" autocomplete="off">
+                <textarea class="fi" id="cd" rows="3" maxlength="200" placeholder="Description (optional)" style="margin-top:8px"></textarea>
+                <div class="btns"><button id="no">Cancel</button><button class="p" id="yes">Create</button></div>`);
+            $('cx').onclick = $('no').onclick = closeM;
+            $('yes').onclick = async () => {
+                const name = $('cn').value.trim();
+                if (!name) { $('cn').focus(); return; }
+                await api.post('/api/configs', {name, data: CONFIG, visibility: 'private'});
+                await loadSaved(); closeM();
+                csub = 'library';
+                [...cseg.children].forEach(b => b.classList.toggle('on', b.dataset.k === 'library'));
+                clist();
+                toast('Config created');
+            };
+        }
 
-@app.get("/api/community/configs")
-async def list_community(request: Request):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute(
-            """SELECT id, author, name, description, config_data, likes, created_at
-               FROM community_configs ORDER BY created_at DESC""",
-        )
-        rows = cur.fetchall()
-        cur.execute("SELECT config_id FROM community_likes WHERE author_license=%s", (lic_key,))
-        liked = [r[0] for r in cur.fetchall()]
-        db.close()
-        out = []
-        for row in rows:
-            cid, author, name, desc, cfg_json, likes, created = row
-            try: cfg = json.loads(cfg_json) if cfg_json else {}
-            except Exception: cfg = {}
-            out.append({"id": cid, "author": author, "name": name,
-                        "description": desc or "", "config_data": cfg,
-                        "likes": likes or 0, "created_at": created})
-        return {"configs": out, "liked_ids": liked}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        // ---------- shortcuts ----------
+        function confirmM(t, d, label, fn) {
+            openM(`<div class="mh"><div><b>${t}</b><small>Are you sure?</small></div><button class="x" id="cx">✕</button></div><p>${d}</p>
+                <div class="btns"><button id="no">Cancel</button><button class="p" id="yes">${label}</button></div>`);
+            $('cx').onclick = $('no').onclick = closeM;
+            $('yes').onclick = () => { closeM(); fn(); };
+        }
+        $('sLoad').onclick = async () => {
+            await loadSaved();
+            csub = 'library';
+            document.querySelector('.tabs button[data-p="configs"]').click();
+            clist();
+        };
+        $('sInj').onclick = () => confirmM('Inject','Inject into target now.','Inject', async () => {
+            toast('Injected');
+            await api.post('/api/command', {action: 'inject'});
+        });
+        $('sDes').onclick = () => confirmM('Self destruct','Remove all traces.','Self destruct', async () => {
+            toast('Complete');
+            await api.post('/api/command', {action: 'selfdestruct'});
+        });
+        let sp = false;
+        $('sSp').onclick = async () => {
+            sp = !sp;
+            $('sSp').classList.toggle('on', sp);
+            $('spS').textContent = sp ? 'On' : 'Off';
+            if (CONFIG) { CONFIG.streamproof = sp; save(); }
+            await api.post('/api/command', {action: sp ? 'streamproof_on' : 'streamproof_off'});
+        };
+        $('sPn').onclick = async () => {
+            toast('Panic');
+            await api.post('/api/command', {action: 'panic'});
+        };
 
+        // ---------- boot ----------
+        async function boot() {
+            CONFIG = deepMerge(DEFAULTS, await api.get('/api/config') || {});
+            sp = !!CONFIG.streamproof;
+            $('spS').textContent = sp ? 'On' : 'Off';
+            if (sp) $('sSp').classList.add('on');
+            buildSeg(); render();
+            await Promise.all([loadSaved(), loadPublic()]);
+            clist();
+            await loadStats();
+            await loadActivity();
+            document.querySelectorAll('.bl').forEach(b => b.onclick = () => b.classList.toggle('show'));
+            await loadExistingSiriToken();
+        }
 
-@app.post("/api/community/configs")
-async def create_community(request: Request, data: dict):
-    name = (data.get("name") or "").strip()
-    desc = (data.get("description") or "").strip()
-    cfg = data.get("config_data")
-    if not name:
-        raise HTTPException(status_code=400, detail="Name required")
-    if not cfg or not isinstance(cfg, dict):
-        raise HTTPException(status_code=400, detail="Config data required")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        author = f"{lic_key[:6]}…{lic_key[-4:]}" if len(lic_key) > 12 else lic_key
-        cur.execute(
-            """INSERT INTO community_configs (author, name, description, config_data, likes, created_at)
-               VALUES (%s, %s, %s, %s, 0, %s) RETURNING id""",
-            (author, name[:60], desc[:500], json.dumps(cfg), _now()),
-        )
-        new_id = cur.fetchone()[0]
-        db.commit()
-        db.close()
-        return {"success": True, "id": new_id}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
+        document.addEventListener('pointerdown', e => { if (!e.target.closest('.dd')) document.querySelectorAll('.dd.open').forEach(d=>d.classList.remove('open')); });
+        const lg = document.querySelector('.lg');
+        if (lg) lg.onerror = () => lg.replaceWith(document.createTextNode('vile.'));
 
-
-@app.post("/api/community/configs/{config_id}/like")
-async def toggle_like(request: Request, config_id: int):
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute("SELECT id FROM community_likes WHERE config_id=%s AND author_license=%s",
-                    (config_id, lic_key))
-        existing = cur.fetchone()
-        if existing:
-            cur.execute("DELETE FROM community_likes WHERE id=%s", (existing[0],))
-            cur.execute("UPDATE community_configs SET likes = GREATEST(likes - 1, 0) WHERE id=%s",
-                        (config_id,))
-            liked = False
-        else:
-            cur.execute(
-                "INSERT INTO community_likes (config_id, author_license, created_at) VALUES (%s, %s, %s)",
-                (config_id, lic_key, _now()),
-            )
-            cur.execute("UPDATE community_configs SET likes = likes + 1 WHERE id=%s", (config_id,))
-            liked = True
-        cur.execute("SELECT likes FROM community_configs WHERE id=%s", (config_id,))
-        row = cur.fetchone()
-        likes = row[0] if row else 0
-        db.commit()
-        db.close()
-        return {"success": True, "liked": liked, "likes": likes}
-    except HTTPException:
-        try: db.close()
-        except: pass
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/community/configs/save-mine")
-async def save_community_to_mine(request: Request, data: dict):
-    cid = data.get("community_config_id")
-    if not cid:
-        raise HTTPException(status_code=400, detail="Missing config id")
-    db = get_db()
-    cur = db.cursor()
-    try:
-        lic_key = _require_license(cur, request)
-        cur.execute("SELECT name, config_data FROM community_configs WHERE id=%s", (cid,))
-        row = cur.fetchone()
-        if not row:
-            db.close()
-            raise HTTPException(status_code=404, detail="Config not found")
-        base_name, cfg_json = row
-        name = base_name
-        suffix = 1
-        while True:
-            cur.execute("SELECT id FROM saved_configs WHERE license_key=%s AND config_name=%s",
-                        (lic_key, name))
-            if not cur.fetchone():
-                break
-            name = f"{base_name} ({suffix})"
-            suffix += 1
-        cur.execute(
-            """INSERT INTO saved_configs (license_key, config_name, config_data, visibility, created_at)
-               VALUES (%s, %s, %s, %s, %s)""",
-            (lic_key, name, cfg_json, "private", _now()),
-        )
-        db.commit()
-        db.close()
-        return {"success": True, "name": name}
-    except HTTPException:
-        raise
-    except Exception as e:
-        try: db.close()
-        except: pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/", response_class=HTMLResponse)
-async def serve_dashboard():
-    return HTMLResponse(load_dashboard())
-
-
-@app.get("/api/keepalive")
-def keepalive():
-    return {"status": "alive", "timestamp": datetime.now().isoformat()}
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+        trySession();
+    </script>
+    </body>
+</html>
