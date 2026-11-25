@@ -155,8 +155,9 @@
             .do:hover{background:var(--line)}
             .do.on{color:var(--text)}
             .lg{height:46px;display:block}
-            /* login */
-            .login{max-width:340px;margin:70px auto 0;padding:0 16px}
+            /* login — centered */
+            .loginWrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px 16px}
+            .login{width:100%;max-width:340px}
             .login h1{font-size:32px;font-weight:700;letter-spacing:-.8px;margin:0 0 4px;color:#e2e2e4}
             .login h1 i{font-style:normal;color:var(--faint)}
             .login p{color:var(--dim);margin:0 0 22px;font-size:12px}
@@ -170,15 +171,17 @@
     </head>
     <body>
 
-    <div class="login" id="loginView">
-        <h1>vile<i>.</i></h1>
-        <p>Sign in with your license and token.</p>
-        <label for="liKey">License key</label>
-        <input id="liKey" autocomplete="off" spellcheck="false" placeholder="VILE-XXXX-XXXX-XXXX-XXXX">
-        <label for="liToken">Token</label>
-        <input id="liToken" autocomplete="off" spellcheck="false" placeholder="Your token from the bot">
-        <button id="liBtn">Sign in</button>
-        <div class="err" id="liErr"></div>
+    <div class="loginWrap" id="loginView">
+        <div class="login">
+            <h1>vile<i>.</i></h1>
+            <p>Sign in with your license and token.</p>
+            <label for="liKey">License key</label>
+            <input id="liKey" autocomplete="off" spellcheck="false" placeholder="VILE-XXXX-XXXX-XXXX-XXXX">
+            <label for="liToken">Token</label>
+            <input id="liToken" autocomplete="off" spellcheck="false" placeholder="Your token from the bot">
+            <button id="liBtn">Sign in</button>
+            <div class="err" id="liErr"></div>
+        </div>
     </div>
 
     <div class="wrap" id="appView" style="display:none">
@@ -205,10 +208,10 @@
             </div>
             <div class="h"><span>Summary</span></div>
             <div class="grid">
-                <div class="card mini"><small>Average per day usage</small><b class="num" id="avg"></b><span>hours active</span></div>
-                <div class="card mini"><small>Sessions</small><b class="num">nil</b><span>this month</span></div>
-                <div class="card mini"><small>This month</small><b class="num" id="total"></b><span>total usage</span></div>
-                <div class="card mini"><small>Streak</small><b class="num">nil</b><span>active in a row</span></div>
+                <div class="card mini"><small>Average per day usage</small><b class="num" id="avg">0</b><span>hours active</span></div>
+                <div class="card mini"><small>Sessions</small><b class="num" id="sess">0</b><span>total logins</span></div>
+                <div class="card mini"><small>This month</small><b class="num" id="total">0</b><span>hours used</span></div>
+                <div class="card mini"><small>Streak</small><b class="num" id="streak">0</b><span>days in a row</span></div>
             </div>
             <div class="pair">
                 <div>
@@ -223,12 +226,7 @@
                 </div>
                 <div>
                     <div class="h"><span>Recent</span></div>
-                    <div class="card sc feed" id="feed">
-                        <div><span>nil<br><small>nil</small></span><em>nil</em></div>
-                        <div><span>nil<br><small>nil</small></span><em>nil</em></div>
-                        <div><span>nil<br><small>nil</small></span><em>nil</em></div>
-                        <div><span>nil<br><small>nil</small></span><em>nil</em></div>
-                    </div>
+                    <div class="card sc feed" id="feed"></div>
                 </div>
             </div>
         </section>
@@ -273,7 +271,6 @@
             return fp;
         }
 
-        // exact JSON shape, but with full defaults for fresh accounts
         const DEFAULTS = {
             visuals: { enabled: true, fov_visible: true, fov_radius: 120, labels: { enabled: true, username: true, distance: true } },
             bounding_box: { enabled: true, corners: false, corner_size: 5, corner_color: [255,255,255,255], fill: true, gradient: true, gradient_color: [255,255,255,255], fill_opacity: 40 },
@@ -339,9 +336,10 @@
             if (cur === nx) return;
             cur.classList.add('out');
             setTimeout(() => { cur.classList.remove('out','on'); nx.classList.add('on'); scrollTo(0,0); }, 130);
+            if (b.dataset.p === 'stats') { loadStats(); loadActivity(); }
         });
 
-        // ---------- helpers (unchanged from your file) ----------
+        // ---------- helpers ----------
         function drag(el, fn) {
             const f = e => {
                 const r = el.getBoundingClientRect();
@@ -370,7 +368,44 @@
         const closeM = () => ov.classList.remove('open');
         ov.onmousedown = e => { if (e.target === ov) closeM(); };
 
-        // ---------- color picker (unchanged) ----------
+        // ---------- stats + activity ----------
+        function relTime(iso) {
+            try {
+                const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+                if (s < 60) return 'just now';
+                if (s < 3600) return Math.floor(s / 60) + 'm ago';
+                if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+                return Math.floor(s / 86400) + 'd ago';
+            } catch { return ''; }
+        }
+        async function loadStats() {
+            const s = await api.get('/api/stats');
+            if (!s || s.detail) return;
+            $('avg').textContent = s.avg_hours_per_day ?? 0;
+            $('sess').textContent = s.sessions ?? 0;
+            $('total').textContent = s.this_month_hours ?? 0;
+            $('streak').textContent = s.streak_days ?? 0;
+        }
+        async function loadActivity() {
+            const r = await api.get('/api/activity');
+            const feed = $('feed');
+            if (!r || !r.activity || !r.activity.length) {
+                feed.innerHTML = '<div><span>No activity yet</span><em></em></div>';
+                return;
+            }
+            feed.innerHTML = r.activity.map(a => {
+                const label = (a.action || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                const detail = a.detail ? `<small>${esc(a.detail)}</small>` : '';
+                return `<div><span>${esc(label)}<br>${detail}</span><em>${relTime(a.created_at)}</em></div>`;
+            }).join('');
+        }
+        async function logActivity(action, detail) {
+            try { await api.post('/api/activity', {action, detail: detail || null}); } catch {}
+            await loadActivity();
+            await loadStats();
+        }
+
+        // ---------- color picker ----------
         const h2r = (h,s,v) => { const f=n=>{const k=(n+h/60)%6;return v-v*s*Math.max(0,Math.min(k,4-k,1));}; return [f(5),f(3),f(1)].map(x=>Math.round(x*255)); };
         const r2h = (r,g,b) => { r/=255; g/=255; b/=255; const m=Math.max(r,g,b), d=m-Math.min(r,g,b); let h=0; if(d){h=m===r?((g-b)/d)%6:m===g?(b-r)/d+2:(r-g)/d+4;h*=60;if(h<0)h+=360;} return [h, m?d/m:0, m]; };
         const hex = a => '#' + a.map(x => x.toString(16).padStart(2, '0')).join('');
@@ -413,7 +448,7 @@
             upd();
         }
 
-        // ---------- main tab: your JSON, organized ----------
+        // ---------- main tab ----------
         const SECTIONS = {
             visuals: [
                 ['Bounding box', [
@@ -623,7 +658,6 @@
                     </div>`;
                 }).join('') + '<div class="cq mkt" id="mkCfg"><i>+</i><span>Create config</span><small>or else bud</small></div></div>';
             }
-            if (list.length) inner = inner.replace('<div class="cq mkt"', '<div class="cq mkt"');
             el.innerHTML = inner;
             el.querySelectorAll('.cq[data-id]').forEach(card => card.onclick = () => cmodal(+card.dataset.id));
             const mk = $('mkCfg'); if (mk) mk.onclick = createCfg;
@@ -642,10 +676,11 @@
                     ${!isPub ? `<button id="rm" style="color:#c98">Delete</button>` : ''}
                 </div>`);
             $('cx').onclick = closeM;
-            $('ld').onclick = () => {
+            $('ld').onclick = async () => {
                 const data = isPub ? c.config_data : c.data;
                 CONFIG = deepMerge(DEFAULTS, data || {});
                 save(); render(); closeM(); toast(c.name + ' loaded');
+                await logActivity('config_loaded', c.name);
             };
             if (isPub) {
                 $('sv').onclick = async () => {
@@ -693,19 +728,44 @@
             $('cx').onclick = $('no').onclick = closeM;
             $('yes').onclick = () => { closeM(); fn(); };
         }
-        $('sLoad').onclick = async () => { await loadSaved(); csub='library'; document.querySelector('.tabs button[data-p="configs"]').click(); clist(); };
-        $('sInj').onclick = () => confirmM('Inject','Inject into target now.','Inject',()=>toast('Injected'));
-        $('sDes').onclick = () => confirmM('Self destruct','Remove all traces.','Self destruct',()=>toast('Complete'));
-        let sp=false;
-        $('sSp').onclick = () => { sp=!sp; $('sSp').classList.toggle('on',sp); $('spS').textContent = sp?'On':'Off'; CONFIG.streamproof = sp; save(); };
-        $('sPn').onclick = () => toast('Panic');
+        $('sLoad').onclick = async () => {
+            await loadSaved();
+            csub = 'library';
+            document.querySelector('.tabs button[data-p="configs"]').click();
+            clist();
+        };
+        $('sInj').onclick = () => confirmM('Inject','Inject into target now.','Inject', async () => {
+            toast('Injected');
+            await logActivity('inject');
+        });
+        $('sDes').onclick = () => confirmM('Self destruct','Remove all traces.','Self destruct', async () => {
+            toast('Complete');
+            await logActivity('selfdestruct');
+        });
+        let sp = false;
+        $('sSp').onclick = async () => {
+            sp = !sp;
+            $('sSp').classList.toggle('on', sp);
+            $('spS').textContent = sp ? 'On' : 'Off';
+            if (CONFIG) { CONFIG.streamproof = sp; save(); }
+            await logActivity(sp ? 'streamproof_on' : 'streamproof_off');
+        };
+        $('sPn').onclick = async () => {
+            toast('Panic');
+            await logActivity('panic');
+        };
 
         // ---------- boot ----------
         async function boot() {
             CONFIG = deepMerge(DEFAULTS, await api.get('/api/config') || {});
+            sp = !!CONFIG.streamproof;
+            $('spS').textContent = sp ? 'On' : 'Off';
+            if (sp) $('sSp').classList.add('on');
             buildSeg(); render();
             await Promise.all([loadSaved(), loadPublic()]);
             clist();
+            await loadStats();
+            await loadActivity();
             document.querySelectorAll('.bl').forEach(b => b.onclick = () => b.classList.toggle('show'));
         }
 
