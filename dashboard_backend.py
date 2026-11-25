@@ -1,7 +1,7 @@
 # dashboard_backend.py — Vile dashboard backend (standalone)
 # Serves dashboard.html at / + login/config/saved/community/activity/stats.
 # Also exposes client-facing /api/client/config endpoints so the Python client
-# can pull/push configs live using license_key + token (no cookie needed).
+# can pull/push configs live using client_id + session_token (no cookie needed).
 # Same Postgres schema as main.py, plus one extra `activity` table.
 
 from fastapi import FastAPI, HTTPException, Request
@@ -81,23 +81,32 @@ def _require_license(cur, request: Request) -> str:
     return lic_key
 
 
-def _validate_key_token(cur, key: str, tok: str) -> str:
-    """Validates license_key + redeem token. Returns license_key."""
-    if not key or not tok:
-        raise HTTPException(status_code=400, detail="license_key and token required")
-    cur.execute("SELECT active, expires_at FROM licenses WHERE license_key=%s", (key,))
+def _validate_client(cur, client_id: str, session_token: str) -> str:
+    """Validates client_id + session_token against the clients table.
+    Requires the client to have completed /api/client/authenticate in main.py.
+    Returns the license_key the client is authenticated as."""
+    if not client_id or not session_token:
+        raise HTTPException(status_code=400, detail="client_id and session_token required")
+    cur.execute(
+        "SELECT authenticated, license_key FROM clients WHERE client_id=%s AND session_token=%s",
+        (client_id, session_token),
+    )
     row = cur.fetchone()
     if not row:
-        raise HTTPException(status_code=401, detail="Invalid license key")
-    active, exp = row
+        raise HTTPException(status_code=401, detail="Invalid client credentials")
+    authenticated, lic_key = row
+    if not authenticated or not lic_key:
+        raise HTTPException(status_code=401, detail="Client not authenticated")
+    cur.execute("SELECT active, expires_at FROM licenses WHERE license_key=%s", (lic_key,))
+    lrow = cur.fetchone()
+    if not lrow:
+        raise HTTPException(status_code=401, detail="License no longer exists")
+    active, exp = lrow
     if not active:
         raise HTTPException(status_code=403, detail="License inactive")
     if _expired(exp):
         raise HTTPException(status_code=403, detail="License expired")
-    cur.execute("SELECT discord_id FROM redeem_tokens WHERE token=%s AND license_key=%s", (tok, key))
-    if not cur.fetchone():
-        raise HTTPException(status_code=401, detail="Invalid token for this license")
-    return key
+    return lic_key
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +147,8 @@ class ActivityBody(BaseModel):
     detail: Optional[str] = None
 
 class ClientCfgReq(BaseModel):
-    license_key: str
-    token: str
+    client_id: str
+    session_token: str
 
 class ClientCfgSave(ClientCfgReq):
     config: dict
@@ -289,7 +298,7 @@ async def logout(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Client-facing config (license_key + token, no cookie)
+# Client-facing config (client_id + session_token, no cookie)
 # Python client uses these to pull/push configs live.
 # Reads/writes the SAME `settings` row the dashboard edits.
 # ---------------------------------------------------------------------------
@@ -299,7 +308,7 @@ async def client_get_config(data: ClientCfgReq):
     db = get_db()
     cur = db.cursor()
     try:
-        key = _validate_key_token(cur, (data.license_key or "").strip(), (data.token or "").strip())
+        key = _validate_client(cur, (data.client_id or "").strip(), (data.session_token or "").strip())
         cur.execute("SELECT config FROM settings WHERE key=%s", (key,))
         row = cur.fetchone()
         db.close()
@@ -324,7 +333,7 @@ async def client_save_config(data: ClientCfgSave):
     db = get_db()
     cur = db.cursor()
     try:
-        key = _validate_key_token(cur, (data.license_key or "").strip(), (data.token or "").strip())
+        key = _validate_client(cur, (data.client_id or "").strip(), (data.session_token or "").strip())
         cur.execute(
             """INSERT INTO settings (key, config) VALUES (%s, %s)
                ON CONFLICT (key) DO UPDATE SET config = EXCLUDED.config""",
