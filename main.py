@@ -30,6 +30,16 @@ if HAS_LIMITER:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
 
+# ---------------------------------------------------------------------------
+# Mount the dashboard backend under /dash
+# ---------------------------------------------------------------------------
+try:
+    from dashboard_backend import app as dashboard_app
+    app.mount("/dash", dashboard_app)
+    print("dashboard mounted at /dash", flush=True)
+except Exception as e:
+    print(f"dashboard mount failed: {e}", flush=True)
+
 BASE_DIR = pathlib.Path(__file__).parent
 
 
