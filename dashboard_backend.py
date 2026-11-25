@@ -1,9 +1,6 @@
 # dashboard_backend.py — Vile dashboard backend (standalone)
-# Serves dashboard.html at / and provides license+token login, config,
-# saved configs, community configs, /api/me, /api/logout.
-# Uses the same Postgres schema as main.py (licenses, login_sessions,
-# redeem_tokens, settings, saved_configs, community_configs, community_likes).
-# Run:  uvicorn dashboard_backend:app --host 0.0.0.0 --port 8000
+# Serves dashboard.html at / + login/config/saved/community/activity/stats.
+# Same Postgres schema as main.py, plus one extra `activity` table.
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -14,7 +11,7 @@ import os
 import json
 import secrets
 import pathlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 app = FastAPI(title="Vile Dashboard")
 
@@ -40,6 +37,10 @@ def get_db():
 
 def _now() -> str:
     return datetime.now().isoformat()
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _expired(exp_iso: Optional[str]) -> bool:
@@ -83,6 +84,30 @@ def _require_license(cur, request: Request) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Ensure activity table exists
+# ---------------------------------------------------------------------------
+
+def _ensure_activity_table():
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS activity (
+            id SERIAL PRIMARY KEY,
+            license_key TEXT NOT NULL,
+            action TEXT NOT NULL,
+            detail TEXT,
+            created_at TEXT NOT NULL)""")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_activity_license ON activity(license_key, created_at DESC)")
+        db.commit()
+        db.close()
+    except Exception:
+        pass
+
+
+_ensure_activity_table()
+
+
+# ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
 
@@ -90,6 +115,10 @@ class LicenseLogin(BaseModel):
     license_key: str
     token: str
     fingerprint: Optional[str] = None
+
+class ActivityBody(BaseModel):
+    action: str
+    detail: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -126,10 +155,8 @@ async def login(request: Request, data: LicenseLogin):
             db.close()
             raise HTTPException(status_code=403, detail="License expired")
 
-        cur.execute(
-            "SELECT discord_id FROM redeem_tokens WHERE token=%s AND license_key=%s",
-            (tok, lic_key),
-        )
+        cur.execute("SELECT discord_id FROM redeem_tokens WHERE token=%s AND license_key=%s",
+                    (tok, lic_key))
         trow = cur.fetchone()
         if not trow:
             db.close()
@@ -157,6 +184,10 @@ async def login(request: Request, data: LicenseLogin):
             """INSERT INTO login_sessions (session_id, license_key, created_at, expires_at, ip_address)
                VALUES (%s, %s, %s, %s, %s)""",
             (session_id, lic_key, _now(), exp_iso, request.client.host if request.client else None),
+        )
+        cur.execute(
+            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
+            (lic_key, "login", None, _now()),
         )
         db.commit()
         db.close()
@@ -234,7 +265,139 @@ async def logout(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Config (the exact JSON shape)
+# Stats + activity
+# ---------------------------------------------------------------------------
+
+@app.get("/api/stats")
+async def stats(request: Request):
+    db = get_db()
+    cur = db.cursor()
+    try:
+        lic_key = _require_license(cur, request)
+
+        # All sessions for this license
+        cur.execute(
+            "SELECT created_at, expires_at FROM login_sessions WHERE license_key=%s ORDER BY created_at ASC",
+            (lic_key,),
+        )
+        rows = cur.fetchall()
+
+        now = datetime.now()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        sessions_total = len(rows)
+        total_minutes_all = 0.0
+        total_minutes_month = 0.0
+        active_days = set()
+
+        for created_iso, expires_iso in rows:
+            try:
+                created = datetime.fromisoformat(created_iso)
+            except Exception:
+                continue
+            try:
+                expires = datetime.fromisoformat(expires_iso)
+            except Exception:
+                expires = created
+            # Clamp to now (session may not have actually been used full 30 days)
+            end = min(expires, now)
+            if end <= created:
+                dur_min = 0.0
+            else:
+                dur_min = (end - created).total_seconds() / 60.0
+            total_minutes_all += dur_min
+            if created >= month_start:
+                total_minutes_month += dur_min
+            active_days.add(created.date())
+
+        # Avg hours/day over the days where they had any session, capped at today
+        if active_days:
+            days_span = (now.date() - min(active_days)).days + 1
+            days_span = max(1, days_span)
+            avg_hours_per_day = (total_minutes_all / 60.0) / days_span
+        else:
+            avg_hours_per_day = 0.0
+
+        # Streak = consecutive days ending today that have a session
+        streak = 0
+        d = now.date()
+        while d in active_days:
+            streak += 1
+            d = d - timedelta(days=1)
+
+        # This-month usage in hours
+        this_month_hours = total_minutes_month / 60.0
+
+        db.close()
+        return {
+            "avg_hours_per_day": round(avg_hours_per_day, 2),
+            "sessions": sessions_total,
+            "this_month_hours": round(this_month_hours, 2),
+            "streak_days": streak,
+        }
+    except HTTPException:
+        try: db.close()
+        except: pass
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/activity")
+async def get_activity(request: Request):
+    db = get_db()
+    cur = db.cursor()
+    try:
+        lic_key = _require_license(cur, request)
+        cur.execute(
+            "SELECT action, detail, created_at FROM activity WHERE license_key=%s ORDER BY created_at DESC LIMIT 20",
+            (lic_key,),
+        )
+        rows = cur.fetchall()
+        db.close()
+        out = []
+        for action, detail, created in rows:
+            out.append({"action": action, "detail": detail, "created_at": created})
+        return {"activity": out}
+    except HTTPException:
+        try: db.close()
+        except: pass
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/activity")
+async def add_activity(request: Request, data: ActivityBody):
+    if not data.action:
+        raise HTTPException(status_code=400, detail="action required")
+    db = get_db()
+    cur = db.cursor()
+    try:
+        lic_key = _require_license(cur, request)
+        cur.execute(
+            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
+            (lic_key, data.action[:40], (data.detail or "")[:120] or None, _now()),
+        )
+        db.commit()
+        db.close()
+        return {"success": True}
+    except HTTPException:
+        try: db.close()
+        except: pass
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Config
 # ---------------------------------------------------------------------------
 
 @app.get("/api/config")
@@ -345,6 +508,10 @@ async def create_saved(request: Request, data: dict):
             (lic_key, name[:60], json.dumps(cfg), vis, _now()),
         )
         new_id = cur.fetchone()[0]
+        cur.execute(
+            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
+            (lic_key, "config_saved", name[:60], _now()),
+        )
         db.commit()
         db.close()
         return {"success": True, "id": new_id}
@@ -550,7 +717,7 @@ async def save_community_to_mine(request: Request, data: dict):
 
 
 # ---------------------------------------------------------------------------
-# Serve dashboard
+# Serve
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
