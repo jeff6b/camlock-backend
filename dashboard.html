@@ -167,6 +167,16 @@
             .login button{width:100%;margin-top:18px;padding:12px;background:var(--acc);border:0;border-radius:var(--r);font-weight:600;cursor:pointer;color:#111}
             .login button:disabled{opacity:.5}
             .login .err{color:#c98;margin-top:10px;font-size:12px;min-height:16px}
+            /* Siri token row */
+            .siri-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 0;border-top:1px solid var(--line);flex-wrap:wrap}
+            .siri-token{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#e0e0e2;word-break:break-all;flex:1;min-width:0}
+            .siri-actions{display:flex;gap:6px;flex:none}
+            .btn-sm{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r);padding:6px 10px;font-size:11px;color:var(--text);cursor:pointer;transition:background .2s,border-color .2s}
+            .btn-sm:hover{border-color:var(--faint)}
+            .btn-sm.p{background:var(--acc);border-color:var(--acc);color:#111;font-weight:600}
+            .btn-sm.danger{color:#c98}
+            .siri-hint{font-size:11px;color:var(--faint);padding:0 0 12px;border-top:1px solid var(--line);padding-top:10px}
+            .siri-hint code{background:var(--panel2);border:1px solid var(--line);border-radius:2px;padding:1px 4px;font-size:10px;color:var(--dim)}
         </style>
     </head>
     <body>
@@ -204,6 +214,20 @@
                 <div class="kl">
                     <div class="t"><small>Key time left</small><b id="accLeft">—</b></div>
                     <div class="bar"><i id="accBar" style="width:0%"></i></div>
+                </div>
+            </div>
+            <div class="h"><span>Siri shortcut</span></div>
+            <div class="card ac">
+                <div class="siri-row" id="siriRow">
+                    <span class="siri-token" id="siriToken">—</span>
+                    <div class="siri-actions">
+                        <button class="btn-sm" id="siriReveal">Reveal</button>
+                        <button class="btn-sm p" id="siriGet">Get token</button>
+                    </div>
+                </div>
+                <div class="siri-hint">
+                    Build a shortcut with <code>Ask for Text</code> → <code>Get Contents of URL</code>.<br>
+                    URL: <code>/api/quick/run</code> — JSON body: <code>{"token": "...", "action": "inject"}</code>
                 </div>
             </div>
             <div class="h"><span>Summary</span></div>
@@ -262,6 +286,8 @@
         let SAVED = [];
         let PUBLIC = [];
         let csub = 'library';
+        let SIRI_TOKEN = null;
+        let siriRevealed = false;
 
         function getFingerprint() {
             let fp = localStorage.getItem('vile_fp');
@@ -405,6 +431,47 @@
             await loadActivity();
             await loadStats();
         }
+
+        // ---------- Siri token ----------
+        function maskToken(t) {
+            if (!t) return '—';
+            if (t.length <= 10) return '•'.repeat(t.length);
+            return t.slice(0, 6) + '•'.repeat(Math.min(20, t.length - 10)) + t.slice(-4);
+        }
+        function renderSiriToken() {
+            const el = $('siriToken');
+            if (!SIRI_TOKEN) {
+                el.textContent = 'No token yet';
+                $('siriReveal').textContent = 'Reveal';
+                $('siriReveal').disabled = true;
+                return;
+            }
+            el.textContent = siriRevealed ? SIRI_TOKEN : maskToken(SIRI_TOKEN);
+            $('siriReveal').textContent = siriRevealed ? 'Hide' : 'Reveal';
+            $('siriReveal').disabled = false;
+        }
+        async function fetchSiriToken(rotate) {
+            const endpoint = rotate ? '/api/quick/token/rotate' : '/api/quick/token';
+            const r = await api.post(endpoint, {});
+            if (!r || r.detail) { toast(r && r.detail ? r.detail : 'Token fetch failed'); return; }
+            SIRI_TOKEN = r.token;
+            siriRevealed = true;
+            renderSiriToken();
+            toast(rotate ? 'Token rotated' : 'Token ready');
+        }
+        $('siriGet').onclick = () => {
+            if (SIRI_TOKEN) {
+                // Already have one — offer rotate in a confirm modal
+                openM(`<div class="mh"><div><b>Siri token</b><small>Already generated</small></div><button class="x" id="cx">✕</button></div>
+                    <p>Your token is shown above. Rotating will invalidate the old one — any existing shortcuts will stop working.</p>
+                    <div class="btns"><button id="no">Cancel</button><button class="p" id="rot">Rotate</button></div>`);
+                $('cx').onclick = $('no').onclick = closeM;
+                $('rot').onclick = async () => { closeM(); await fetchSiriToken(true); };
+            } else {
+                fetchSiriToken(false);
+            }
+        };
+        $('siriReveal').onclick = () => { siriRevealed = !siriRevealed; renderSiriToken(); };
 
         // ---------- color picker ----------
         const h2r = (h,s,v) => { const f=n=>{const k=(n+h/60)%6;return v-v*s*Math.max(0,Math.min(k,4-k,1));}; return [f(5),f(3),f(1)].map(x=>Math.round(x*255)); };
@@ -768,6 +835,9 @@
             await loadStats();
             await loadActivity();
             document.querySelectorAll('.bl').forEach(b => b.onclick = () => b.classList.toggle('show'));
+            // Fetch existing Siri token silently (does NOT create one — /api/quick/token creates on POST only)
+            // We call /api/quick/token only when user taps "Get token". Initially show masked placeholder.
+            renderSiriToken();
         }
 
         document.addEventListener('pointerdown', e => { if (!e.target.closest('.dd')) document.querySelectorAll('.dd.open').forEach(d=>d.classList.remove('open')); });
