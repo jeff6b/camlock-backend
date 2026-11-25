@@ -1,9 +1,4 @@
-# dashboard_backend.py — Vile dashboard backend (standalone)
-# Serves dashboard.html at / + login/config/saved/community/activity/stats.
-# Client-facing config + command endpoints use client_id + session_token (no cookie).
-# Per-user quick-command tokens (Siri) — no shared secret.
-# Same Postgres schema as main.py, plus `activity`, `commands`, and `quick_tokens` tables.
-
+# dashboard_backend.py (patched)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -31,11 +26,6 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql://neondb_owner:npg_S7hoDMeaw2cQ@ep-wandering-dream-ah21egpt-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require",
 )
-
-# Shared SIRI_SECRET is intentionally removed — per-user tokens replace it.
-# If you still want a personal master secret, uncomment below and the old
-# /api/quick-command endpoint still exists at the bottom.
-# SIRI_SECRET = os.environ.get("SIRI_SECRET", "")
 
 
 def get_db():
@@ -87,9 +77,6 @@ def _require_license(cur, request: Request) -> str:
 
 
 def _validate_client(cur, client_id: str, session_token: str) -> str:
-    """Validates client_id + session_token against the clients table.
-    Requires the client to have completed /api/client/authenticate in main.py.
-    Returns the license_key the client is authenticated as."""
     if not client_id or not session_token:
         raise HTTPException(status_code=400, detail="client_id and session_token required")
     cur.execute(
@@ -113,10 +100,6 @@ def _validate_client(cur, client_id: str, session_token: str) -> str:
         raise HTTPException(status_code=403, detail="License expired")
     return lic_key
 
-
-# ---------------------------------------------------------------------------
-# Ensure activity + commands + quick_tokens tables exist
-# ---------------------------------------------------------------------------
 
 def _ensure_tables():
     try:
@@ -154,14 +137,9 @@ def _ensure_tables():
 _ensure_tables()
 
 
-# ---------------------------------------------------------------------------
-# Models
-# ---------------------------------------------------------------------------
-
 class LicenseLogin(BaseModel):
     license_key: str
     token: str
-    fingerprint: Optional[str] = None
 
 class ActivityBody(BaseModel):
     action: str
@@ -181,21 +159,15 @@ class ClientCfgSave(ClientCfgReq):
 class ClientLoadCfg(ClientCfgReq):
     config_name: str
 
-# New per-user quick-command model (no secret in body — token IS the auth)
 class QuickCmdToken(BaseModel):
     token: str
     action: str
 
-# Legacy (personal use only, requires SIRI_SECRET env)
 class QuickCmd(BaseModel):
     license_key: str
     action: str
     secret: str
 
-
-# ---------------------------------------------------------------------------
-# Login / me / logout
-# ---------------------------------------------------------------------------
 
 @app.post("/api/login")
 async def login(request: Request, data: LicenseLogin):
@@ -203,10 +175,6 @@ async def login(request: Request, data: LicenseLogin):
     tok = (data.token or "").strip()
     if not key or not tok:
         raise HTTPException(status_code=400, detail="License key and token required")
-
-    fp = request.cookies.get("vile_fp") or (data.fingerprint or "").strip()
-    if not fp:
-        fp = secrets.token_hex(16)
 
     db = get_db()
     cur = db.cursor()
@@ -239,14 +207,9 @@ async def login(request: Request, data: LicenseLogin):
             raise HTTPException(status_code=403, detail="Token does not belong to this license")
 
         if not bound_hwid:
+            new_hwid = secrets.token_hex(16)
             cur.execute("UPDATE licenses SET hwid=%s, last_login=%s WHERE license_key=%s",
-                        (fp, _now(), lic_key))
-        elif bound_hwid != fp:
-            db.close()
-            raise HTTPException(
-                status_code=403,
-                detail="This license is locked to another browser. Ask admin to reset HWID.",
-            )
+                        (new_hwid, _now(), lic_key))
         else:
             cur.execute("UPDATE licenses SET last_login=%s WHERE license_key=%s", (_now(), lic_key))
 
@@ -272,7 +235,6 @@ async def login(request: Request, data: LicenseLogin):
         })
         resp.set_cookie("session_id", session_id, httponly=True, max_age=2592000, samesite="lax")
         resp.set_cookie("license_key", lic_key, httponly=True, max_age=2592000, samesite="lax")
-        resp.set_cookie("vile_fp", fp, httponly=True, max_age=60 * 60 * 24 * 365, samesite="lax")
         return resp
     except HTTPException:
         raise
@@ -335,10 +297,6 @@ async def logout(request: Request):
     resp.delete_cookie("license_key")
     return resp
 
-
-# ---------------------------------------------------------------------------
-# Client-facing config (client_id + session_token, no cookie)
-# ---------------------------------------------------------------------------
 
 @app.post("/api/client/config")
 async def client_get_config(data: ClientCfgReq):
@@ -458,13 +416,8 @@ async def client_load_config(data: ClientLoadCfg):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ---------------------------------------------------------------------------
-# Shortcut command queue
-# ---------------------------------------------------------------------------
-
 @app.post("/api/command")
 async def enqueue_command(request: Request, data: CommandBody):
-    """Browser enqueues a shortcut (inject/panic/etc) for the logged-in license."""
     if not data.action:
         raise HTTPException(status_code=400, detail="action required")
     db = get_db()
@@ -495,7 +448,6 @@ async def enqueue_command(request: Request, data: CommandBody):
 
 @app.post("/api/client/commands")
 async def client_pull_commands(data: ClientCfgReq):
-    """Client pulls + consumes pending commands for its license."""
     db = get_db()
     cur = db.cursor()
     try:
@@ -522,10 +474,6 @@ async def client_pull_commands(data: ClientCfgReq):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ---------------------------------------------------------------------------
-# Per-user quick-command tokens (Siri / external trigger)
-# ---------------------------------------------------------------------------
-
 VALID_QUICK_ACTIONS = ("inject", "streamproof_on", "streamproof_off", "panic", "selfdestruct")
 
 
@@ -543,8 +491,6 @@ def _enqueue_for_license(cur, lic_key: str, action: str):
 
 @app.post("/api/quick/token")
 async def get_quick_token(request: Request):
-    """Returns (creating if necessary) the caller's personal Siri token.
-    Authenticated by dashboard cookie session."""
     db = get_db()
     cur = db.cursor()
     try:
@@ -582,7 +528,6 @@ async def get_quick_token(request: Request):
 
 @app.post("/api/quick/token/rotate")
 async def rotate_quick_token(request: Request):
-    """Revokes existing token(s) and issues a fresh one. Useful if leaked."""
     db = get_db()
     cur = db.cursor()
     try:
@@ -613,9 +558,6 @@ async def rotate_quick_token(request: Request):
 
 @app.post("/api/quick/run")
 async def quick_run(data: QuickCmdToken):
-    """Per-user token auth. Called from a Siri shortcut.
-    Body: {token: "vq_...", action: "inject"}
-    The token identifies the license — no shared secret, no license key needed."""
     action = (data.action or "").strip().lower()
     if action not in VALID_QUICK_ACTIONS:
         raise HTTPException(status_code=400, detail="invalid action")
@@ -662,17 +604,10 @@ async def quick_run(data: QuickCmdToken):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ---------------------------------------------------------------------------
-# Legacy quick command (personal use only; requires SIRI_SECRET env)
-# Leave disabled in production unless you set SIRI_SECRET yourself.
-# ---------------------------------------------------------------------------
-
 LEGACY_SIRI_SECRET = os.environ.get("SIRI_SECRET", "")
 
 @app.post("/api/quick-command")
 async def quick_command(data: QuickCmd):
-    """DEPRECATED for distribution. Only works if SIRI_SECRET env is set.
-    Use /api/quick/run with a per-user token instead."""
     if not LEGACY_SIRI_SECRET or (data.secret or "") != LEGACY_SIRI_SECRET:
         raise HTTPException(status_code=401, detail="bad secret")
     action = (data.action or "").strip().lower()
@@ -699,10 +634,6 @@ async def quick_command(data: QuickCmd):
         except: pass
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# ---------------------------------------------------------------------------
-# Stats + activity (browser)
-# ---------------------------------------------------------------------------
 
 @app.get("/api/stats")
 async def stats(request: Request):
@@ -827,10 +758,6 @@ async def add_activity(request: Request, data: ActivityBody):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ---------------------------------------------------------------------------
-# Config (browser)
-# ---------------------------------------------------------------------------
-
 @app.get("/api/config")
 async def get_config(request: Request):
     db = get_db()
@@ -879,10 +806,6 @@ async def set_config(request: Request, data: dict):
         except: pass
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# ---------------------------------------------------------------------------
-# Saved configs (browser)
-# ---------------------------------------------------------------------------
 
 @app.get("/api/configs")
 async def list_saved(request: Request):
@@ -999,10 +922,6 @@ async def set_visibility(request: Request, config_id: int, data: dict):
         except: pass
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# ---------------------------------------------------------------------------
-# Community configs
-# ---------------------------------------------------------------------------
 
 @app.get("/api/community/configs")
 async def list_community(request: Request):
@@ -1146,10 +1065,6 @@ async def save_community_to_mine(request: Request, data: dict):
         except: pass
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# ---------------------------------------------------------------------------
-# Serve
-# ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():
