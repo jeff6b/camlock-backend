@@ -1,5 +1,5 @@
 # main.py — Vile backend
-# License-key auth + HWID. Redeem-token flow. No pairing/launcher/username.
+# License + token login. No HWID field; browser fingerprint auto-binds as HWID.
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -131,7 +131,8 @@ init_db()
 
 class LicenseLogin(BaseModel):
     license_key: str
-    hwid: str
+    token: str
+    fingerprint: Optional[str] = None
 
 class ClientRegister(BaseModel):
     client_id: str
@@ -168,7 +169,7 @@ def _now() -> str:
     return datetime.now().isoformat()
 
 def _expired(exp_iso: Optional[str]) -> bool:
-    if not exp_iso:
+    if not exp_iso or exp_iso == "never":
         return False
     try:
         return datetime.now() > datetime.fromisoformat(exp_iso)
@@ -211,28 +212,32 @@ def _check_bot_auth(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Auth
+# Auth — license + token, HWID auto from browser fingerprint
 # ---------------------------------------------------------------------------
 
 @app.post("/api/login")
 async def login(request: Request, data: LicenseLogin):
     key = (data.license_key or "").strip()
-    hwid = (data.hwid or "").strip()
-    if not key or not hwid:
-        raise HTTPException(status_code=400, detail="License key and HWID required")
+    tok = (data.token or "").strip()
+    if not key or not tok:
+        raise HTTPException(status_code=400, detail="License key and token required")
+
+    fp = request.cookies.get("vile_fp") or (data.fingerprint or "").strip()
+    if not fp:
+        fp = secrets.token_hex(16)
 
     db = get_db()
     cur = db.cursor()
     try:
         cur.execute(
-            "SELECT license_key, hwid, hwid_resets, active, expires_at FROM licenses WHERE license_key=%s",
+            "SELECT license_key, hwid, hwid_resets, active, expires_at, discord_id FROM licenses WHERE license_key=%s",
             (key,),
         )
         row = cur.fetchone()
         if not row:
             db.close()
             raise HTTPException(status_code=401, detail="Invalid license key")
-        lic_key, bound_hwid, hwid_resets, active, exp = row
+        lic_key, bound_hwid, hwid_resets, active, exp, lic_discord = row
         if not active:
             db.close()
             raise HTTPException(status_code=403, detail="License inactive")
@@ -240,14 +245,29 @@ async def login(request: Request, data: LicenseLogin):
             db.close()
             raise HTTPException(status_code=403, detail="License expired")
 
+        cur.execute("SELECT discord_id FROM redeem_tokens WHERE token=%s AND license_key=%s",
+                    (tok, lic_key))
+        trow = cur.fetchone()
+        if not trow:
+            db.close()
+            raise HTTPException(status_code=401, detail="Invalid token for this license")
+        tok_discord = trow[0]
+        if lic_discord and tok_discord and lic_discord != tok_discord:
+            db.close()
+            raise HTTPException(status_code=403, detail="Token does not belong to this license")
+
         if not bound_hwid:
             cur.execute("UPDATE licenses SET hwid=%s, last_login=%s WHERE license_key=%s",
-                        (hwid, _now(), lic_key))
-        elif bound_hwid != hwid:
+                        (fp, _now(), lic_key))
+        elif bound_hwid != fp:
             db.close()
-            raise HTTPException(status_code=403, detail="HWID mismatch — license bound to another PC")
+            raise HTTPException(
+                status_code=403,
+                detail="This license is locked to another browser. Ask admin to reset HWID."
+            )
         else:
-            cur.execute("UPDATE licenses SET last_login=%s WHERE license_key=%s", (_now(), lic_key))
+            cur.execute("UPDATE licenses SET last_login=%s WHERE license_key=%s",
+                        (_now(), lic_key))
 
         session_id = secrets.token_hex(16)
         exp_iso = (datetime.now() + timedelta(days=30)).isoformat()
@@ -267,6 +287,7 @@ async def login(request: Request, data: LicenseLogin):
         })
         resp.set_cookie("session_id", session_id, httponly=True, max_age=2592000, samesite="lax")
         resp.set_cookie("license_key", lic_key, httponly=True, max_age=2592000, samesite="lax")
+        resp.set_cookie("vile_fp", fp, httponly=True, max_age=60 * 60 * 24 * 365, samesite="lax")
         return resp
     except HTTPException:
         raise
@@ -331,7 +352,7 @@ async def logout(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Config (the exact JSON shape)
+# Config
 # ---------------------------------------------------------------------------
 
 @app.get("/api/config")
@@ -842,16 +863,11 @@ async def save_community_to_mine(request: Request, data: dict):
 
 @app.post("/api/bot/create-key")
 async def bot_create_key(request: Request, data: _BotCreateKeyReq):
-    """
-    Creates license + one-time redeem token, both bound to discord_id.
-    Returns license_key AND token. Admin should show both or let bot DM user.
-    """
     _check_bot_auth(request)
     now = datetime.now()
     exp = (now + timedelta(days=max(1, int(data.days)))).isoformat()
     license_key = "VILE-" + "-".join(secrets.token_hex(2).upper() for _ in range(4))
-    token = secrets.token_urlsafe(9)
-    token_exp = (now + timedelta(minutes=10)).isoformat()
+    token = secrets.token_urlsafe(12)
 
     db = get_db()
     cur = db.cursor()
@@ -868,7 +884,7 @@ async def bot_create_key(request: Request, data: _BotCreateKeyReq):
         cur.execute(
             """INSERT INTO redeem_tokens (token, discord_id, license_key, created_at, expires_at, redeemed)
                VALUES (%s, %s, %s, %s, %s, 0)""",
-            (token, data.discord_id, license_key, now.isoformat(), token_exp),
+            (token, data.discord_id, license_key, now.isoformat(), "never"),
         )
         db.commit()
         db.close()
@@ -876,7 +892,6 @@ async def bot_create_key(request: Request, data: _BotCreateKeyReq):
             "ok": True,
             "license_key": license_key,
             "token": token,
-            "token_expires_at": token_exp,
             "license_expires_at": exp,
             "days": data.days,
         }
@@ -890,9 +905,6 @@ async def bot_create_key(request: Request, data: _BotCreateKeyReq):
 
 @app.post("/api/bot/redeem-token")
 async def bot_redeem_token(request: Request, data: _BotRedeemReq):
-    """
-    Called by the bot when the user DMs it their token. Returns their license key once.
-    """
     _check_bot_auth(request)
     token = (data.token or "").strip()
     if not token:
@@ -901,38 +913,27 @@ async def bot_redeem_token(request: Request, data: _BotRedeemReq):
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute(
-            "SELECT discord_id, license_key, expires_at, redeemed FROM redeem_tokens WHERE token=%s",
-            (token,),
-        )
+        cur.execute("SELECT discord_id, license_key FROM redeem_tokens WHERE token=%s", (token,))
         row = cur.fetchone()
         if not row:
             db.close()
             raise HTTPException(status_code=404, detail="Invalid token")
-        owner_discord, license_key, expires_at, redeemed = row
-        if redeemed:
-            db.close()
-            raise HTTPException(status_code=409, detail="Token already redeemed")
+        owner_discord, license_key = row
         if owner_discord != data.discord_id:
             db.close()
             raise HTTPException(status_code=403, detail="Token belongs to a different Discord account")
-        if _expired(expires_at):
-            db.close()
-            raise HTTPException(status_code=410, detail="Token expired")
 
         cur.execute("SELECT expires_at FROM licenses WHERE license_key=%s", (license_key,))
         lrow = cur.fetchone()
         license_exp = lrow[0] if lrow else None
 
-        cur.execute("UPDATE redeem_tokens SET redeemed=1, redeemed_at=%s WHERE token=%s",
-                    (_now(), token))
+        cur.execute(
+            "UPDATE redeem_tokens SET redeemed=1, redeemed_at=COALESCE(redeemed_at,%s) WHERE token=%s",
+            (_now(), token),
+        )
         db.commit()
         db.close()
-        return {
-            "ok": True,
-            "license_key": license_key,
-            "license_expires_at": license_exp,
-        }
+        return {"ok": True, "license_key": license_key, "license_expires_at": license_exp}
     except HTTPException:
         raise
     except Exception as e:
@@ -1045,11 +1046,6 @@ async def serve_root():
 @app.get("/connect", response_class=HTMLResponse)
 async def serve_connect():
     return HTMLResponse(content=CONNECT_HTML)
-
-
-@app.get("/dashboard", response_class=HTMLResponse)
-async def serve_dashboard():
-    return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
 
 
 @app.get("/api/keepalive")
