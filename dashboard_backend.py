@@ -1,8 +1,8 @@
 # dashboard_backend.py — Vile dashboard backend (standalone)
 # Serves dashboard.html at / + login/config/saved/community/activity/stats.
 # Client-facing config + command endpoints use client_id + session_token (no cookie).
-# Quick-command endpoint for Siri uses a static SIRI_SECRET env var.
-# Same Postgres schema as main.py, plus `activity` and `commands` tables.
+# Per-user quick-command tokens (Siri) — no shared secret.
+# Same Postgres schema as main.py, plus `activity`, `commands`, and `quick_tokens` tables.
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -32,7 +32,10 @@ DATABASE_URL = os.environ.get(
     "postgresql://neondb_owner:npg_S7hoDMeaw2cQ@ep-wandering-dream-ah21egpt-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require",
 )
 
-SIRI_SECRET = os.environ.get("SIRI_SECRET", "")
+# Shared SIRI_SECRET is intentionally removed — per-user tokens replace it.
+# If you still want a personal master secret, uncomment below and the old
+# /api/quick-command endpoint still exists at the bottom.
+# SIRI_SECRET = os.environ.get("SIRI_SECRET", "")
 
 
 def get_db():
@@ -112,7 +115,7 @@ def _validate_client(cur, client_id: str, session_token: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Ensure activity + commands tables exist
+# Ensure activity + commands + quick_tokens tables exist
 # ---------------------------------------------------------------------------
 
 def _ensure_tables():
@@ -134,6 +137,14 @@ def _ensure_tables():
             created_at TEXT NOT NULL,
             consumed INTEGER DEFAULT 0)""")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_commands_pending ON commands(license_key, consumed, id)")
+        cur.execute("""CREATE TABLE IF NOT EXISTS quick_tokens (
+            id SERIAL PRIMARY KEY,
+            license_key TEXT NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            last_used TEXT)""")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_quick_tokens_license ON quick_tokens(license_key)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_quick_tokens_token ON quick_tokens(token)")
         db.commit()
         db.close()
     except Exception:
@@ -170,6 +181,12 @@ class ClientCfgSave(ClientCfgReq):
 class ClientLoadCfg(ClientCfgReq):
     config_name: str
 
+# New per-user quick-command model (no secret in body — token IS the auth)
+class QuickCmdToken(BaseModel):
+    token: str
+    action: str
+
+# Legacy (personal use only, requires SIRI_SECRET env)
 class QuickCmd(BaseModel):
     license_key: str
     action: str
@@ -506,15 +523,160 @@ async def client_pull_commands(data: ClientCfgReq):
 
 
 # ---------------------------------------------------------------------------
-# Quick command (Siri / external trigger, static secret auth)
+# Per-user quick-command tokens (Siri / external trigger)
 # ---------------------------------------------------------------------------
+
+VALID_QUICK_ACTIONS = ("inject", "streamproof_on", "streamproof_off", "panic", "selfdestruct")
+
+
+def _enqueue_for_license(cur, lic_key: str, action: str):
+    cur.execute(
+        """INSERT INTO commands (license_key, action, detail, created_at, consumed)
+           VALUES (%s, %s, %s, %s, 0)""",
+        (lic_key, action, None, _now()),
+    )
+    cur.execute(
+        "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
+        (lic_key, action, None, _now()),
+    )
+
+
+@app.post("/api/quick/token")
+async def get_quick_token(request: Request):
+    """Returns (creating if necessary) the caller's personal Siri token.
+    Authenticated by dashboard cookie session."""
+    db = get_db()
+    cur = db.cursor()
+    try:
+        lic_key = _require_license(cur, request)
+        cur.execute(
+            "SELECT token, created_at FROM quick_tokens WHERE license_key=%s ORDER BY id ASC LIMIT 1",
+            (lic_key,),
+        )
+        row = cur.fetchone()
+        if row:
+            token, created = row
+        else:
+            token = "vq_" + secrets.token_urlsafe(32)
+            created = _now()
+            cur.execute(
+                "INSERT INTO quick_tokens (license_key, token, created_at, last_used) VALUES (%s, %s, %s, %s)",
+                (lic_key, token, created, None),
+            )
+            cur.execute(
+                "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
+                (lic_key, "quick_token_created", None, _now()),
+            )
+        db.commit()
+        db.close()
+        return {"token": token, "created_at": created}
+    except HTTPException:
+        try: db.close()
+        except: pass
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/quick/token/rotate")
+async def rotate_quick_token(request: Request):
+    """Revokes existing token(s) and issues a fresh one. Useful if leaked."""
+    db = get_db()
+    cur = db.cursor()
+    try:
+        lic_key = _require_license(cur, request)
+        cur.execute("DELETE FROM quick_tokens WHERE license_key=%s", (lic_key,))
+        token = "vq_" + secrets.token_urlsafe(32)
+        created = _now()
+        cur.execute(
+            "INSERT INTO quick_tokens (license_key, token, created_at, last_used) VALUES (%s, %s, %s, %s)",
+            (lic_key, token, created, None),
+        )
+        cur.execute(
+            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
+            (lic_key, "quick_token_rotated", None, _now()),
+        )
+        db.commit()
+        db.close()
+        return {"token": token, "created_at": created}
+    except HTTPException:
+        try: db.close()
+        except: pass
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/quick/run")
+async def quick_run(data: QuickCmdToken):
+    """Per-user token auth. Called from a Siri shortcut.
+    Body: {token: "vq_...", action: "inject"}
+    The token identifies the license — no shared secret, no license key needed."""
+    action = (data.action or "").strip().lower()
+    if action not in VALID_QUICK_ACTIONS:
+        raise HTTPException(status_code=400, detail="invalid action")
+    tok = (data.token or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="token required")
+
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute(
+            "SELECT license_key FROM quick_tokens WHERE token=%s",
+            (tok,),
+        )
+        row = cur.fetchone()
+        if not row:
+            db.close()
+            raise HTTPException(status_code=401, detail="invalid token")
+        lic_key = row[0]
+
+        cur.execute("SELECT active, expires_at FROM licenses WHERE license_key=%s", (lic_key,))
+        lrow = cur.fetchone()
+        if not lrow:
+            db.close()
+            raise HTTPException(status_code=401, detail="license no longer exists")
+        active, exp = lrow
+        if not active:
+            db.close()
+            raise HTTPException(status_code=403, detail="license inactive")
+        if _expired(exp):
+            db.close()
+            raise HTTPException(status_code=403, detail="license expired")
+
+        _enqueue_for_license(cur, lic_key, action)
+        cur.execute("UPDATE quick_tokens SET last_used=%s WHERE token=%s", (_now(), tok))
+        db.commit()
+        db.close()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        try: db.close()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Legacy quick command (personal use only; requires SIRI_SECRET env)
+# Leave disabled in production unless you set SIRI_SECRET yourself.
+# ---------------------------------------------------------------------------
+
+LEGACY_SIRI_SECRET = os.environ.get("SIRI_SECRET", "")
 
 @app.post("/api/quick-command")
 async def quick_command(data: QuickCmd):
-    if not SIRI_SECRET or (data.secret or "") != SIRI_SECRET:
+    """DEPRECATED for distribution. Only works if SIRI_SECRET env is set.
+    Use /api/quick/run with a per-user token instead."""
+    if not LEGACY_SIRI_SECRET or (data.secret or "") != LEGACY_SIRI_SECRET:
         raise HTTPException(status_code=401, detail="bad secret")
     action = (data.action or "").strip().lower()
-    if action not in ("inject", "streamproof_on", "streamproof_off", "panic", "selfdestruct"):
+    if action not in VALID_QUICK_ACTIONS:
         raise HTTPException(status_code=400, detail="invalid action")
     key = (data.license_key or "").strip()
     if not key:
@@ -526,15 +688,7 @@ async def quick_command(data: QuickCmd):
         if not cur.fetchone():
             db.close()
             raise HTTPException(status_code=404, detail="license not found")
-        cur.execute(
-            """INSERT INTO commands (license_key, action, detail, created_at, consumed)
-               VALUES (%s, %s, %s, %s, 0)""",
-            (key, action, None, _now()),
-        )
-        cur.execute(
-            "INSERT INTO activity (license_key, action, detail, created_at) VALUES (%s, %s, %s, %s)",
-            (key, action, None, _now()),
-        )
+        _enqueue_for_license(cur, key, action)
         db.commit()
         db.close()
         return {"success": True}
