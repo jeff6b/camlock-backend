@@ -736,11 +736,11 @@
         };
         $('sInj').onclick = () => confirmM('Inject','Inject into target now.','Inject', async () => {
             toast('Injected');
-            await logActivity('inject');
+            await api.post('/api/command', {action: 'inject'});
         });
         $('sDes').onclick = () => confirmM('Self destruct','Remove all traces.','Self destruct', async () => {
             toast('Complete');
-            await logActivity('selfdestruct');
+            await api.post('/api/command', {action: 'selfdestruct'});
         });
         let sp = false;
         $('sSp').onclick = async () => {
@@ -748,11 +748,11 @@
             $('sSp').classList.toggle('on', sp);
             $('spS').textContent = sp ? 'On' : 'Off';
             if (CONFIG) { CONFIG.streamproof = sp; save(); }
-            await logActivity(sp ? 'streamproof_on' : 'streamproof_off');
+            await api.post('/api/command', {action: sp ? 'streamproof_on' : 'streamproof_off'});
         };
         $('sPn').onclick = async () => {
             toast('Panic');
-            await logActivity('panic');
+            await api.post('/api/command', {action: 'panic'});
         };
 
         // ---------- boot ----------
