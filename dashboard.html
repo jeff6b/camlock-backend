@@ -33,10 +33,12 @@
             .mini small{color:var(--dim);font-size:11px}
             .mini b{display:block;font-size:19px;font-weight:600;letter-spacing:-.6px;margin:3px 0 2px;color:#e0e0e2}
             .mini span{font-size:11px;color:var(--faint)}
-            .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-            .pair>div{display:flex;flex-direction:column;min-width:0}
-            .pair>div>.h:first-child{margin-top:26px}
-            .pair>div>.card{flex:1;min-height:0}
+            /* pair: both columns exactly same height */
+            .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch}
+            .pair>div{display:flex;flex-direction:column;min-width:0;min-height:0}
+            .pair>div>.h{margin-top:26px;flex:none}
+            .pair>div>.h:first-child{margin-top:0}
+            .pair>div>.card{flex:1;min-height:0;display:flex;flex-direction:column}
             .pair.g{margin-top:12px}
             .pair.g .gb{margin-top:0;padding:13px 11px 4px}
             .pair .it{gap:8px}
@@ -172,18 +174,21 @@
             .siri-field{display:flex;align-items:center;gap:8px;margin-bottom:8px}
             .siri-field:last-child{margin-bottom:0}
             .siri-field label{font-size:10px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.9px;flex:none;width:52px}
-            .siri-val{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#e0e0e2;background:#0f0f11;border:1px solid var(--line2);border-radius:var(--r);padding:6px 9px;word-break:break-all;user-select:all;cursor:text}
+            .siri-val{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#e0e0e2;background:#0f0f11;border:1px solid var(--line2);border-radius:var(--r);padding:6px 9px;word-break:break-all;user-select:all;cursor:text;transition:filter .2s}
             .siri-val.body{white-space:pre-wrap}
+            .siri-val.blur{filter:blur(5px);user-select:none}
             .btn-sm{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r);padding:6px 10px;font-size:11px;color:var(--text);cursor:pointer;transition:background .2s,border-color .2s;flex:none}
             .btn-sm:hover{border-color:var(--faint)}
             .btn-sm.p{background:var(--acc);border-color:var(--acc);color:#111;font-weight:600}
             .siri-actions{display:flex;gap:6px;margin-top:10px}
             .siri-actions .btn-sm{flex:1;text-align:center}
             .siri-empty{font-size:12px;color:var(--faint);padding:10px 0 4px;border-top:1px solid var(--line)}
-            /* Recent feed: fixed height + scroll */
-            .feed{max-height:322px;overflow-y:auto;scrollbar-width:thin}
+            .siri-body-row{display:flex;align-items:center;gap:8px}
+            .siri-body-row .siri-field{flex:1;margin-bottom:0}
+            /* Recent feed: matches Shortcuts height, custom white scrollbar */
+            .feed{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#ffffff transparent}
             .feed::-webkit-scrollbar{width:6px}
-            .feed::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
+            .feed::-webkit-scrollbar-thumb{background:#ffffff;border-radius:3px}
             .feed::-webkit-scrollbar-track{background:transparent}
         </style>
     </head>
@@ -287,6 +292,7 @@
         let PUBLIC = [];
         let csub = 'library';
         let SIRI_TOKEN = null;
+        let SIRI_REVEALED = false;
 
         function getFingerprint() {
             let fp = localStorage.getItem('vile_fp');
@@ -447,16 +453,21 @@
                 return;
             }
             const {url, body} = siriRequest();
+            const bodyCls = SIRI_REVEALED ? 'siri-val body' : 'siri-val body blur';
             box.innerHTML = `
                 <div class="siri-block">
                     <div class="siri-field"><label>URL</label><div class="siri-val" id="svUrl">${escAttr(url)}</div></div>
                     <div class="siri-field"><label>Method</label><div class="siri-val">POST</div></div>
-                    <div class="siri-field"><label>Body</label><div class="siri-val body" id="svBody">${escAttr(body)}</div></div>
+                    <div class="siri-body-row">
+                        <div class="siri-field"><label>Body</label><div class="${bodyCls}" id="svBody">${escAttr(body)}</div></div>
+                        <button class="btn-sm" id="siriReveal">${SIRI_REVEALED ? 'Hide' : 'Reveal'}</button>
+                    </div>
                 </div>
                 <div class="siri-actions">
                     <button class="btn-sm p" id="siriCopy">Copy request</button>
                     <button class="btn-sm" id="siriRotate">Rotate</button>
                 </div>`;
+            $('siriReveal').onclick = () => { SIRI_REVEALED = !SIRI_REVEALED; renderSiri(); };
             $('siriCopy').onclick = async () => {
                 const text = `URL: ${url}\nMethod: POST\nHeaders: Content-Type: application/json\nBody: ${body}`;
                 try { await navigator.clipboard.writeText(text); toast('Copied'); }
@@ -470,11 +481,23 @@
                 $('rot').onclick = async () => { closeM(); await fetchSiriToken(true); };
             };
         }
+        async function loadExistingSiriToken() {
+            // GET the existing token without creating one.
+            const r = await api.post('/api/quick/token', {});
+            if (r && r.token) {
+                SIRI_TOKEN = r.token;
+                SIRI_REVEALED = false;
+                renderSiri();
+            } else {
+                renderSiri();
+            }
+        }
         async function fetchSiriToken(rotate) {
             const endpoint = rotate ? '/api/quick/token/rotate' : '/api/quick/token';
             const r = await api.post(endpoint, {});
             if (!r || r.detail) { toast(r && r.detail ? r.detail : 'Token fetch failed'); return; }
             SIRI_TOKEN = r.token;
+            SIRI_REVEALED = true;
             renderSiri();
             toast(rotate ? 'Token rotated' : 'Token ready');
         }
@@ -841,7 +864,7 @@
             await loadStats();
             await loadActivity();
             document.querySelectorAll('.bl').forEach(b => b.onclick = () => b.classList.toggle('show'));
-            renderSiri();
+            await loadExistingSiriToken();
         }
 
         document.addEventListener('pointerdown', e => { if (!e.target.closest('.dd')) document.querySelectorAll('.dd.open').forEach(d=>d.classList.remove('open')); });
