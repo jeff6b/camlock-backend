@@ -284,11 +284,17 @@
 
     <script>
         const $ = id => document.getElementById(id);
-        const API_BASE = '.';
+        // Auto-detect mount prefix: works at "/" or "/dash" (or any subpath).
+        // e.g. location.pathname "/dash/" -> BASE "/dash"; "/" -> BASE "".
+        const BASE = (() => {
+            let p = location.pathname.replace(/\/[^/]*$/, ''); // strip trailing file
+            if (p === '/' || p === '') return '';
+            return p;
+        })();
         const api = {
-            get: p => fetch(API_BASE + p, {credentials:'include'}).then(r => r.json()),
-            post: (p, b) => fetch(API_BASE + p, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(b)}).then(r => r.json()),
-            del: p => fetch(API_BASE + p, {method:'DELETE', credentials:'include'}).then(r => r.json()),
+            get: p => fetch(BASE + p, {credentials:'include'}).then(r => r.json()),
+            post: (p, b) => fetch(BASE + p, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(b)}).then(r => r.json()),
+            del: p => fetch(BASE + p, {method:'DELETE', credentials:'include'}).then(r => r.json()),
         };
 
         // ---------- state ----------
@@ -302,7 +308,7 @@
             visuals: { enabled: true, fov_visible: true, fov_radius: 120, labels: { enabled: true, username: true, distance: true } },
             bounding_box: { enabled: true, corners: false, corner_size: 5, corner_color: [255,255,255,255], fill: true, gradient: true, gradient_color: [255,255,255,255], fill_opacity: 40 },
             camlock: { closest_part: true, smoothing: 0.12, fov_enabled: true, fov_unlock: false, max_distance: 500.0, keybind: 'q', mode: 'toggle' },
-            triggerbot: { enabled: true, keybind: 'x', delay: 0, hitchance: 100, switch_delay: 0.35, mode: 'Hold' },
+            triggerbot: { enabled: true, keybind: 'x', delay: 0, hitchance: 100, switch_delay: 0.35, mode: 'Hold', hit_mode: 'Humanoid', radius: 3, max_distance: 500 },
             checks: { unlockondeath: true, self_death: true },
             streamproof: false,
             indicator: { enabled: true, text: 'vile.cc', font_size: 12, color: [255,255,255,255] }
@@ -435,7 +441,7 @@
         // ---------- Siri request ----------
         function escAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
         function siriRequest() {
-            const url = location.origin + '/api/quick/run';
+            const url = location.origin + BASE + '/api/quick/run';
             const body = JSON.stringify({token: SIRI_TOKEN, action: "inject"});
             return {url, body};
         }
@@ -447,21 +453,26 @@
                 $('siriGet').onclick = () => fetchSiriToken(false);
                 return;
             }
-            const {body} = siriRequest();
+            const {url, body} = siriRequest();
             box.innerHTML = `
                 <div class="siri-block">
+                    <div class="siri-field"><label>URL</label><div class="siri-val" id="svUrl">${escAttr(url)}</div></div>
                     <div class="siri-body-row">
                         <div class="siri-field"><label>Body</label><div class="siri-val body blur" id="svBody">${escAttr(body)}</div></div>
                     </div>
                 </div>
                 <div class="siri-actions">
-                    <button class="btn-sm p" id="siriCopy">Copy request</button>
+                    <button class="btn-sm p" id="siriCopy">Copy URL</button>
+                    <button class="btn-sm" id="siriCopyBody">Copy body</button>
                     <button class="btn-sm" id="siriRotate">Rotate</button>
                 </div>`;
             $('svBody').onclick = () => $('svBody').classList.toggle('blur');
             $('siriCopy').onclick = async () => {
-                const text = `URL: ${location.origin + '/api/quick/run'}\nMethod: POST\nHeaders: Content-Type: application/json\nBody: ${body}`;
-                try { await navigator.clipboard.writeText(text); toast('Copied'); }
+                try { await navigator.clipboard.writeText(url); toast('URL copied'); }
+                catch { toast('Copy failed'); }
+            };
+            $('siriCopyBody').onclick = async () => {
+                try { await navigator.clipboard.writeText(body); toast('Body copied'); }
                 catch { toast('Copy failed'); }
             };
             $('siriRotate').onclick = () => {
@@ -571,6 +582,11 @@
                     ['triggerbot.enabled','tg','Enabled'],
                     ['triggerbot.keybind','key','Keybind'],
                     ['triggerbot.mode','sel','Mode',['Hold','Toggle','Always']],
+                ]],
+                ['Hit mode', [
+                    ['triggerbot.hit_mode','sel','Hit mode',['Humanoid','Radius']],
+                    ['triggerbot.radius','sl','Radius',0,15,1,''],
+                    ['triggerbot.max_distance','sl','Max distance',10,1000,10,'m'],
                 ]],
                 ['Timing', [
                     ['triggerbot.delay','sl','Delay',0,300,1,'ms'],
