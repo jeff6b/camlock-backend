@@ -33,6 +33,7 @@
             .mini small{color:var(--dim);font-size:11px}
             .mini b{display:block;font-size:19px;font-weight:600;letter-spacing:-.6px;margin:3px 0 2px;color:#e0e0e2}
             .mini span{font-size:11px;color:var(--faint)}
+            /* pair: both columns exactly same height, with spacing above and bounded height */
             .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch;margin-top:18px}
             .pair>div{display:flex;flex-direction:column;min-width:0;min-height:0}
             .pair>div>.h{margin-top:0;flex:none;margin-bottom:10px}
@@ -134,6 +135,7 @@
             .sb b{display:block;font-weight:600;color:#e0e0e2}
             .sb small{color:var(--faint);font-size:11px}
             .card.sc{padding:10px}
+            /* Scrollable quick-actions column */
             .sc.scrollable{overflow-y:auto;max-height:260px;scrollbar-width:thin;scrollbar-color:#ffffff transparent}
             .sc.scrollable::-webkit-scrollbar{width:6px}
             .sc.scrollable::-webkit-scrollbar-thumb{background:#ffffff;border-radius:3px}
@@ -159,6 +161,7 @@
             .do:hover{background:var(--line)}
             .do.on{color:var(--text)}
             .lg{height:46px;display:block}
+            /* login — centered */
             .loginWrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px 16px}
             .login{width:100%;max-width:340px}
             .login h1{font-size:32px;font-weight:700;letter-spacing:-.8px;margin:0 0 4px;color:#e2e2e4}
@@ -170,6 +173,7 @@
             .login button{width:100%;margin-top:18px;padding:12px;background:var(--acc);border:0;border-radius:var(--r);font-weight:600;cursor:pointer;color:#111}
             .login button:disabled{opacity:.5}
             .login .err{color:#c98;margin-top:10px;font-size:12px;min-height:16px}
+            /* Siri request block */
             .siri-block{padding:13px 0 4px;border-top:1px solid var(--line)}
             .siri-field{display:flex;align-items:center;gap:8px;margin-bottom:8px}
             .siri-field:last-child{margin-bottom:0}
@@ -186,6 +190,7 @@
             .siri-empty{font-size:12px;color:var(--faint);padding:10px 0 4px;border-top:1px solid var(--line)}
             .siri-body-row{display:flex;align-items:center;gap:8px}
             .siri-body-row .siri-field{flex:1;margin-bottom:0}
+            /* Recent feed: bounded height + custom white scrollbar */
             .feed{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#ffffff transparent}
             .feed::-webkit-scrollbar{width:6px}
             .feed::-webkit-scrollbar-thumb{background:#ffffff;border-radius:3px}
@@ -250,7 +255,7 @@
                         <button class="sb" id="sInj"><b>Inject</b><small>Attach now</small></button>
                         <button class="sb" id="sSp"><b>Streamproof</b><small id="spS">Off</small></button>
                         <button class="sb" id="sPn"><b>Panic</b><small>Hide everything</small></button>
-                        <button class="sb" id="sDes"><b>Self destruct</b><small>Remove all traces</small></button>
+                        <button class="sb" id="sBoot"><b>Run on boot</b><small id="bootS">Off</small></button>
                     </div>
                 </div>
                 <div>
@@ -279,6 +284,7 @@
 
     <script>
         const $ = id => document.getElementById(id);
+        // Auto-detect mount prefix: works at "/" or "/dash" (or any subpath).
         const BASE = (() => {
             let p = location.pathname.replace(/\/[^/]*$/, '');
             if (p === '/' || p === '') return '';
@@ -290,6 +296,7 @@
             del: p => fetch(BASE + p, {method:'DELETE', credentials:'include'}).then(r => r.json()),
         };
 
+        // ---------- state ----------
         let CONFIG = null;
         let SAVED = [];
         let PUBLIC = [];
@@ -300,9 +307,10 @@
             visuals: { enabled: true, fov_visible: true, fov_radius: 120, labels: { enabled: true, username: true, distance: true } },
             bounding_box: { enabled: true, corners: false, corner_size: 5, corner_color: [255,255,255,255], fill: true, gradient: true, gradient_color: [255,255,255,255], fill_opacity: 40 },
             camlock: { closest_part: true, smoothing: 0.12, fov_enabled: true, fov_unlock: false, max_distance: 500.0, keybind: 'q', mode: 'toggle' },
-            triggerbot: { enabled: true, keybind: 'x', delay: 0, hitchance: 100, switch_delay: 0.35, mode: 'Hold', hit_mode: 'Humanoid', radius: 3, max_distance: 500 },
+            triggerbot: { enabled: true, keybind: 'x', delay: 0, hitchance: 100, switch_delay: 0.35, mode: 'Hold', hit_mode: 'Humanoid', radius: 3, max_distance: 500, low_hp_air_only: false },
             checks: { unlockondeath: true, self_death: true },
             streamproof: false,
+            startup: false,
             indicator: { enabled: true, text: 'vile.cc', font_size: 12, color: [255,255,255,255] }
         };
 
@@ -317,6 +325,7 @@
         function getPath(o, p) { return p.split('.').reduce((a,k)=>a?a[k]:undefined, o); }
         function setPath(o, p, v) { const s = p.split('.'); let c = o; for (let i=0;i<s.length-1;i++){ if(!c[s[i]]||typeof c[s[i]]!=='object')c[s[i]]={}; c=c[s[i]]; } c[s[s.length-1]]=v; }
 
+        // ---------- login ----------
         async function trySession() {
             const me = await api.get('/api/me');
             if (me.authenticated) {
@@ -353,6 +362,7 @@
             await trySession();
         };
 
+        // ---------- tabs ----------
         document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
             document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
             const cur = document.querySelector('.page.on'), nx = $('p-' + b.dataset.p);
@@ -362,6 +372,7 @@
             if (b.dataset.p === 'stats') { loadStats(); loadActivity(); }
         });
 
+        // ---------- helpers ----------
         function drag(el, fn) {
             const f = e => {
                 const r = el.getBoundingClientRect();
@@ -390,6 +401,7 @@
         const closeM = () => ov.classList.remove('open');
         ov.onmousedown = e => { if (e.target === ov) closeM(); };
 
+        // ---------- stats + activity ----------
         function relTime(iso) {
             try {
                 const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -426,6 +438,7 @@
             await loadStats();
         }
 
+        // ---------- Siri request ----------
         function escAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
         function siriRequest() {
             const url = location.origin + BASE + '/api/quick/run';
@@ -483,6 +496,7 @@
             toast(rotate ? 'Token rotated' : 'Token ready');
         }
 
+        // ---------- color picker ----------
         const h2r = (h,s,v) => { const f=n=>{const k=(n+h/60)%6;return v-v*s*Math.max(0,Math.min(k,4-k,1));}; return [f(5),f(3),f(1)].map(x=>Math.round(x*255)); };
         const r2h = (r,g,b) => { r/=255; g/=255; b/=255; const m=Math.max(r,g,b), d=m-Math.min(r,g,b); let h=0; if(d){h=m===r?((g-b)/d)%6:m===g?(b-r)/d+2:(r-g)/d+4;h*=60;if(h<0)h+=360;} return [h, m?d/m:0, m]; };
         const hex = a => '#' + a.map(x => x.toString(16).padStart(2, '0')).join('');
@@ -525,6 +539,7 @@
             upd();
         }
 
+        // ---------- main tab ----------
         const SECTIONS = {
             visuals: [
                 ['Bounding box', [
@@ -576,6 +591,7 @@
                 ['Checks', [
                     ['checks.unlockondeath','tg','Unlock on death'],
                     ['checks.self_death','tg','Self death check'],
+                    ['triggerbot.low_hp_air_only','tg','Low HP air only'],
                 ]],
             ],
             camlock: [
@@ -716,6 +732,7 @@
             return r;
         }
 
+        // ---------- configs tab ----------
         const cseg = $('cseg');
         cseg.onclick = e => {
             if (e.target.dataset.k) {
@@ -815,6 +832,7 @@
             };
         }
 
+        // ---------- shortcuts ----------
         function confirmM(t, d, label, fn) {
             openM(`<div class="mh"><div><b>${t}</b><small>Are you sure?</small></div><button class="x" id="cx">✕</button></div><p>${d}</p>
                 <div class="btns"><button id="no">Cancel</button><button class="p" id="yes">${label}</button></div>`);
@@ -831,10 +849,6 @@
             toast('Injected');
             await api.post('/api/command', {action: 'inject'});
         });
-        $('sDes').onclick = () => confirmM('Self destruct','Remove all traces.','Self destruct', async () => {
-            toast('Complete');
-            await api.post('/api/command', {action: 'selfdestruct'});
-        });
         let sp = false;
         $('sSp').onclick = async () => {
             sp = !sp;
@@ -847,12 +861,25 @@
             toast('Panic');
             await api.post('/api/command', {action: 'panic'});
         };
+        // Run on boot toggle (replaces self destruct)
+        let boot = false;
+        $('sBoot').onclick = async () => {
+            boot = !boot;
+            $('sBoot').classList.toggle('on', boot);
+            $('bootS').textContent = boot ? 'On' : 'Off';
+            if (CONFIG) { CONFIG.startup = boot; save(); }
+            await api.post('/api/command', {action: boot ? 'startup_on' : 'startup_off'});
+        };
 
-        async function boot() {
+        // ---------- boot ----------
+        async function bootApp() {
             CONFIG = deepMerge(DEFAULTS, await api.get('/api/config') || {});
             sp = !!CONFIG.streamproof;
             $('spS').textContent = sp ? 'On' : 'Off';
             if (sp) $('sSp').classList.add('on');
+            boot = !!CONFIG.startup;
+            $('bootS').textContent = boot ? 'On' : 'Off';
+            if (boot) $('sBoot').classList.add('on');
             buildSeg(); render();
             await Promise.all([loadSaved(), loadPublic()]);
             clist();
@@ -866,7 +893,21 @@
         const lg = document.querySelector('.lg');
         if (lg) lg.onerror = () => lg.replaceWith(document.createTextNode('vile.'));
 
-        trySession();
+        // Note: renamed boot() -> bootApp() to avoid clash with the `boot` boolean.
+        async function trySessionAndBoot() {
+            const me = await api.get('/api/me');
+            if (me.authenticated) {
+                $('loginView').style.display = 'none';
+                $('appView').style.display = 'block';
+                $('accLicense').textContent = me.license_key || '—';
+                $('accHwid').textContent = (me.hwid || 'not bound').slice(0, 24);
+                renderExpiry(me.expires_at);
+                await bootApp();
+                return true;
+            }
+            return false;
+        }
+        trySessionAndBoot();
     </script>
     </body>
 </html>
