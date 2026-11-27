@@ -557,10 +557,8 @@
                     ['visuals.labels.username','tg','Username'],
                     ['visuals.labels.distance','tg','Distance'],
                 ]],
-                ['FOV', [
-                    ['visuals.enabled','tg','Visuals'],
-                    ['visuals.fov_visible','tg','FOV circle'],
-                    ['visuals.fov_radius','sl','FOV radius',10,360,1,'°'],
+                ['Visuals', [
+                    ['visuals.enabled','tg','Enabled'],
                 ]],
                 ['Indicator', [
                     ['indicator.enabled','tg','Enabled'],
@@ -602,9 +600,13 @@
                 ]],
                 ['Aim', [
                     ['camlock.smoothing','sl','Smoothing',0,100,1,'%'],
+                    ['camlock.max_distance','sl','Max distance',10,2000,10,'m'],
+                ]],
+                ['FOV', [
                     ['camlock.fov_enabled','tg','FOV enabled'],
                     ['camlock.fov_unlock','tg','FOV unlock'],
-                    ['camlock.max_distance','sl','Max distance',10,2000,10,'m'],
+                    ['visuals.fov_visible','tg','Show FOV circle'],
+                    ['visuals.fov_radius','sl','FOV radius',10,360,1,'°'],
                 ]],
             ],
         };
